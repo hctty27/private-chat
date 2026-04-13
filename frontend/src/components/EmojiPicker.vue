@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white border-t rounded-t-lg p-3 relative" @click.stop>
+  <div class="bg-white border rounded-t-lg p-3 relative shadow-lg" @click.stop>
     <div class="grid grid-cols-8 gap-1 max-h-[180px] overflow-y-auto">
       <button
         v-for="emoji in emojis"

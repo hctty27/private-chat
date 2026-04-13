@@ -133,13 +133,18 @@
     </div>
 
     <!-- Input area - fixed at bottom -->
-    <div v-if="chatStore.currentContact" class="bg-white border-t px-3 py-2 flex-shrink-0 safe-area-bottom">
+    <div v-if="chatStore.currentContact" class="bg-white border-t px-3 py-2 flex-shrink-0 safe-area-bottom relative">
       <!-- Upload progress -->
       <div v-if="uploadProgress > 0 && uploadProgress < 100" class="mb-2">
         <div class="h-1 bg-gray-200 rounded-full overflow-hidden">
           <div class="h-full bg-blue-500 transition-all" :style="{ width: uploadProgress + '%' }"></div>
         </div>
         <div class="text-xs text-gray-400 text-right mt-0.5">{{ uploadProgress }}%</div>
+      </div>
+
+      <!-- Emoji picker - pops up above input -->
+      <div v-if="showEmoji" class="absolute bottom-full left-0 right-0 mb-1 px-3">
+        <EmojiPicker @select="onEmojiSelect" @close="showEmoji = false" />
       </div>
 
       <div class="flex items-end gap-2">
@@ -197,9 +202,6 @@
           发送
         </el-button>
       </div>
-
-      <!-- Emoji picker -->
-      <EmojiPicker v-if="showEmoji" @select="onEmojiSelect" @close="showEmoji = false" />
     </div>
   </div>
 </template>
