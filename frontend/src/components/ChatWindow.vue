@@ -175,11 +175,12 @@
             ref="inputRef"
             v-model="inputText"
             rows="1"
-            class="w-full resize-none border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 max-h-[100px]"
+            class="ios-input w-full resize-none border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-400 max-h-[100px]"
             placeholder="输入消息..."
             @keydown.enter.exact.prevent="sendText"
             @input="autoResize"
             @focus="onInputFocus"
+            @blur="onInputBlur"
           ></textarea>
         </div>
 
@@ -341,11 +342,28 @@ function resetTextareaHeight() {
   }
 }
 
-// iOS: scroll into view when input is focused
+// iOS: handle keyboard showing/hiding
 function onInputFocus() {
+  // Scroll message list to bottom when keyboard appears
   setTimeout(() => {
-    inputRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    scrollToBottom(true)
+    // On iOS, visualViewport shrinks when keyboard shows
+    if (window.visualViewport) {
+      const vv = window.visualViewport
+      const handler = () => {
+        if (messagesContainer.value) {
+          messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+        }
+      }
+      vv.addEventListener('resize', handler, { once: true })
+    }
   }, 300)
+}
+
+function onInputBlur() {
+  // Scroll back to top on iOS when keyboard hides
+  window.scrollTo(0, 0)
+  scrollToBottom(true)
 }
 
 async function onScroll() {
@@ -392,5 +410,18 @@ async function loadMore() {
 .overflow-y-auto {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+
+/* iOS: font-size 16px prevents auto-zoom on focus */
+.ios-input {
+  font-size: 16px !important;
+  line-height: 1.4;
+}
+
+/* iOS: prevent viewport shift when keyboard appears */
+@supports (-webkit-touch-callout: none) {
+  .flex.flex-col.h-full {
+    height: 100dvh;
+  }
 }
 </style>

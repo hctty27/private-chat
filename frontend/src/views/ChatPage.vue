@@ -72,5 +72,6 @@ html, body {
   height: 100%;
   overflow: hidden;
   touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 </style>
