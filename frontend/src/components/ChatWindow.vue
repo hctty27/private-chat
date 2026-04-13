@@ -1,10 +1,10 @@
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- Chat header - fixed -->
-    <div class="px-4 py-3 bg-white border-b flex items-center flex-shrink-0 safe-area-top">
+  <div ref="containerRef" class="chat-container">
+    <!-- Chat header -->
+    <div class="chat-header">
       <button
         v-if="showBack"
-        class="md:hidden mr-3 p-1 -ml-1 text-gray-500 hover:text-gray-700"
+        class="back-btn"
         @click="$emit('back')"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -12,218 +12,150 @@
         </svg>
       </button>
 
-      <div v-if="chatStore.currentContact" class="flex items-center gap-3 flex-1">
-        <div class="relative">
-          <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
-            {{ chatStore.currentContact.nickname[0] }}
-          </div>
-          <div
-            v-if="chatStore.currentContact.online"
-            class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"
-          ></div>
+      <div v-if="chatStore.currentContact" class="header-info">
+        <div class="avatar-wrapper">
+          <div class="avatar">{{ chatStore.currentContact.nickname[0] }}</div>
+          <div v-if="chatStore.currentContact.online" class="online-dot"></div>
         </div>
         <div>
-          <div class="font-medium text-sm text-gray-900">{{ chatStore.currentContact.nickname }}</div>
-          <div class="text-xs text-gray-400">{{ chatStore.currentContact.online ? '在线' : '离线' }}</div>
+          <div class="name">{{ chatStore.currentContact.nickname }}</div>
+          <div class="status">{{ chatStore.currentContact.online ? '在线' : '离线' }}</div>
         </div>
       </div>
-      <div v-else class="text-sm text-gray-400">选择一个联系人开始聊天</div>
+      <div v-else class="no-contact">选择一个联系人开始聊天</div>
     </div>
 
-    <!-- Messages area - ONLY this scrolls -->
+    <!-- Messages area -->
     <div
       v-if="chatStore.currentContact"
-      ref="messagesContainer"
-      class="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-gray-50"
+      ref="msgListRef"
+      class="msg-list"
       @scroll="onScroll"
     >
-      <!-- Load more -->
-      <div v-if="chatStore.hasMore" class="text-center py-2">
-        <button
-          class="text-xs text-blue-500 hover:text-blue-600"
-          :class="{ 'opacity-50 pointer-events-none': loadingMore }"
-          @click="loadMore"
-        >
+      <div v-if="chatStore.hasMore" class="load-more">
+        <button :disabled="loadingMore" @click="loadMore">
           {{ loadingMore ? '加载中...' : '加载更多' }}
         </button>
       </div>
 
       <template v-for="(msg, index) in chatStore.messages" :key="msg.id">
-        <!-- Time separator -->
-        <div
-          v-if="shouldShowTime(msg, index)"
-          class="text-center py-2"
-        >
-          <span class="text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded">
-            {{ formatChatTime(msg.createdAt) }}
-          </span>
+        <div v-if="shouldShowTime(msg, index)" class="time-sep">
+          <span>{{ formatChatTime(msg.createdAt) }}</span>
         </div>
 
-        <!-- Message bubble -->
-        <div
-          class="flex"
-          :class="msg.senderId === userStore.userId ? 'justify-end' : 'justify-start'"
-        >
-          <div
-            class="max-w-[70%] flex flex-col"
-            :class="msg.senderId === userStore.userId ? 'items-end' : 'items-start'"
-          >
-            <div
-              class="rounded-2xl px-3 py-2 text-sm break-words"
-              :class="getBubbleClass(msg)"
-            >
-              <!-- Text -->
-              <template v-if="msg.msgType === 1">
-                {{ msg.content }}
-              </template>
-
-              <!-- Emoji (large) -->
-              <template v-else-if="msg.msgType === 4">
-                <span class="text-4xl">{{ msg.content }}</span>
-              </template>
-
-              <!-- Image -->
-              <template v-else-if="msg.msgType === 2 && msg.fileUrl">
-                <img
-                  :src="msg.fileUrl"
-                  class="max-w-[250px] max-h-[300px] rounded-lg cursor-pointer"
-                  @click="previewImage(msg.fileUrl!)"
-                />
-              </template>
-
-              <!-- File -->
-              <template v-else-if="msg.msgType === 3 && msg.fileUrl">
-                <a
-                  :href="msg.fileUrl"
-                  target="_blank"
-                  download
-                  class="flex items-center gap-2 text-blue-600 hover:text-blue-700"
-                >
-                  <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  <div class="min-w-0">
-                    <div class="text-sm truncate max-w-[180px]">{{ msg.fileName }}</div>
-                    <div class="text-xs text-gray-400">{{ formatFileSize(msg.fileSize) }}</div>
-                  </div>
-                </a>
-              </template>
-            </div>
-
-            <!-- Read status for last sent message -->
-            <span
-              v-if="msg.senderId === userStore.userId && index === chatStore.messages.length - 1"
-              class="text-xs text-gray-400 mt-1"
-            >
-              {{ msg.isRead ? '已读' : '未读' }}
-            </span>
+        <div class="msg-row" :class="isMine(msg) ? 'mine' : 'theirs'">
+          <div class="msg-bubble" :class="getBubbleClass(msg)">
+            <template v-if="msg.msgType === 1">{{ msg.content }}</template>
+            <template v-else-if="msg.msgType === 4"><span class="big-emoji">{{ msg.content }}</span></template>
+            <template v-else-if="msg.msgType === 2 && msg.fileUrl">
+              <img :src="msg.fileUrl" class="msg-img" @click="previewImage(msg.fileUrl!)" />
+            </template>
+            <template v-else-if="msg.msgType === 3 && msg.fileUrl">
+              <a :href="msg.fileUrl" target="_blank" download class="msg-file">
+                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <div class="min-w-0">
+                  <div class="file-name">{{ msg.fileName }}</div>
+                  <div class="file-size">{{ formatFileSize(msg.fileSize) }}</div>
+                </div>
+              </a>
+            </template>
+          </div>
+          <div v-if="isMine(msg) && index === chatStore.messages.length - 1" class="read-status">
+            {{ msg.isRead ? '已读' : '未读' }}
           </div>
         </div>
       </template>
 
-      <!-- Empty state -->
-      <div v-if="chatStore.messages.length === 0" class="flex items-center justify-center h-full text-gray-400 text-sm">
-        发送第一条消息吧
-      </div>
+      <div v-if="chatStore.messages.length === 0" class="empty-msg">发送第一条消息吧</div>
     </div>
 
-    <!-- No contact selected -->
-    <div v-else class="flex-1 flex items-center justify-center text-gray-400 text-sm">
-      选择一个联系人开始聊天
-    </div>
+    <div v-else class="msg-list empty-msg">选择一个联系人开始聊天</div>
 
-    <!-- Input area - fixed at bottom -->
-    <div v-if="chatStore.currentContact" class="bg-white border-t px-3 py-2 flex-shrink-0 safe-area-bottom relative">
-      <!-- Upload progress -->
-      <div v-if="uploadProgress > 0 && uploadProgress < 100" class="mb-2">
-        <div class="h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div class="h-full bg-blue-500 transition-all" :style="{ width: uploadProgress + '%' }"></div>
+    <!-- Emoji panel -->
+    <transition name="slide-up">
+      <div v-if="showEmoji" class="emoji-panel">
+        <div class="emoji-header">
+          <span>表情</span>
+          <button class="emoji-close" @click="showEmoji = false">✕</button>
         </div>
-        <div class="text-xs text-gray-400 text-right mt-0.5">{{ uploadProgress }}%</div>
+        <div class="emoji-grid">
+          <button v-for="e in emojis" :key="e" class="emoji-btn" @click="insertEmoji(e)">{{ e }}</button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Toolbar area -->
+    <div v-if="chatStore.currentContact" class="toolbar" :class="{ 'emoji-open': showEmoji }">
+      <!-- Upload progress -->
+      <div v-if="uploadProgress > 0 && uploadProgress < 100" class="upload-bar">
+        <div class="upload-track">
+          <div class="upload-fill" :style="{ width: uploadProgress + '%' }"></div>
+        </div>
+        <span class="upload-pct">{{ uploadProgress }}%</span>
       </div>
 
-      <!-- Emoji picker - pops up above input -->
-      <div v-if="showEmoji" class="absolute bottom-full left-0 right-0 mb-1 px-3">
-        <EmojiPicker @select="onEmojiSelect" @close="showEmoji = false" />
-      </div>
-
-      <div class="flex items-end gap-2">
-        <!-- Emoji button -->
-        <button
-          class="p-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
-          @click="showEmoji = !showEmoji"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+      <div class="toolbar-row">
+        <!-- Toggle emoji -->
+        <button class="tool-btn" :class="{ active: showEmoji }" @click="toggleEmoji">
+          <span class="tool-icon">😊</span>
         </button>
 
         <!-- File upload -->
-        <button
-          class="p-2 text-gray-400 hover:text-gray-600 flex-shrink-0"
-          @click="fileInputRef?.click()"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button class="tool-btn" @click="fileInputRef?.click()">
+          <svg class="tool-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
           </svg>
         </button>
-        <input
-          ref="fileInputRef"
-          type="file"
-          class="hidden"
-          @change="onFileSelect"
-        />
+        <input ref="fileInputRef" type="file" class="hidden" @change="onFileSelect" />
 
         <!-- Text input -->
-        <div class="flex-1 relative">
+        <div class="input-wrap">
           <textarea
             ref="inputRef"
             v-model="inputText"
             rows="1"
-            class="ios-input w-full resize-none border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-400 max-h-[100px]"
+            class="chat-input"
             placeholder="输入消息..."
             @keydown.enter.exact.prevent="sendText"
             @input="autoResize"
-            @focus="onInputFocus"
-            @blur="onInputBlur"
-          ></textarea>
+            @focus="onFocus"
+            @blur="onBlur"
+          />
         </div>
 
-        <!-- Send button -->
-        <el-button
-          type="primary"
-          size="small"
-          :disabled="!inputText.trim() && !selectedFile"
-          :loading="sending"
-          class="flex-shrink-0"
-          style="border-radius: 12px;"
+        <!-- Send -->
+        <button
+          class="send-btn"
+          :class="{ disabled: !canSend }"
+          :disabled="!canSend"
           @click="sendText"
         >
           发送
-        </el-button>
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, computed } from 'vue'
+import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import type { Message } from '../types'
 import { formatChatTime, shouldShowTimeSeparator, formatFileSize } from '../utils/time'
-import EmojiPicker from './EmojiPicker.vue'
 
-defineEmits<{
-  back: []
-}>()
+defineEmits<{ back: [] }>()
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
 
 const showBack = computed(() => window.innerWidth < 768)
+const canSend = computed(() => inputText.value.trim().length > 0 || selectedFile.value !== null)
 
-const messagesContainer = ref<HTMLElement | null>(null)
+const containerRef = ref<HTMLElement | null>(null)
+const msgListRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const inputText = ref('')
@@ -233,93 +165,86 @@ const loadingMore = ref(false)
 const uploadProgress = ref(0)
 const selectedFile = ref<File | null>(null)
 
-// Scroll to bottom
-async function scrollToBottom(smooth = false) {
-  await nextTick()
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTo({
-      top: messagesContainer.value.scrollHeight,
-      behavior: smooth ? 'smooth' : 'auto',
-    })
-  }
-}
+const emojis = [
+  '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
+  '😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐',
+  '😯','😪','😫','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲',
+  '🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😱','🥵','🥶',
+  '👍','👎','👏','🙌','🤝','❤️','🔥','🎉',
+]
 
-// Watch for new messages and scroll
-watch(
-  () => chatStore.messages.length,
-  () => {
-    scrollToBottom(true)
-  }
-)
-
-// Watch for contact change
-watch(
-  () => chatStore.currentContact?.userId,
-  () => {
-    scrollToBottom(false)
-  }
-)
-
-function shouldShowTime(msg: Message, index: number): boolean {
-  if (index === 0) return true
-  const prevMsg = chatStore.messages[index - 1]
-  return shouldShowTimeSeparator(msg.createdAt, prevMsg.createdAt)
+function isMine(msg: Message) {
+  return msg.senderId === userStore.userId
 }
 
 function getBubbleClass(msg: Message): string {
-  const isMine = msg.senderId === userStore.userId
-  if (msg.msgType === 4) return 'bg-transparent'
-  return isMine
-    ? 'bg-green-500 text-white rounded-br-sm'
-    : 'bg-white text-gray-800 rounded-bl-sm shadow-sm'
+  if (msg.msgType === 4) return 'emoji-bubble'
+  return isMine(msg) ? 'bubble-mine' : 'bubble-theirs'
 }
 
-async function sendText() {
-  const text = inputText.value.trim()
-  if (!text) return
-
-  sending.value = true
-  inputText.value = ''
-  resetTextareaHeight()
-  showEmoji.value = false
-
-  // Check if the text is a single emoji
-  const emojiRegex = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u
-  const msgType = emojiRegex.test(text) ? (4 as const) : (1 as const)
-
-  chatStore.sendMessage(text, msgType)
-  await scrollToBottom(true)
-  sending.value = false
+function shouldShowTime(msg: Message, index: number): boolean {
+  if (index === 0) return true
+  return shouldShowTimeSeparator(msg.createdAt, chatStore.messages[index - 1].createdAt)
 }
 
-function onEmojiSelect(emoji: string) {
+async function scrollToBottom(smooth = false) {
+  await nextTick()
+  if (msgListRef.value) {
+    msgListRef.value.scrollTo({ top: msgListRef.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  }
+}
+
+watch(() => chatStore.messages.length, () => scrollToBottom(true))
+watch(() => chatStore.currentContact?.userId, () => scrollToBottom(false))
+
+function toggleEmoji() {
+  showEmoji.value = !showEmoji.value
+  if (showEmoji.value) {
+    inputRef.value?.focus()
+  }
+}
+
+function insertEmoji(emoji: string) {
   inputText.value += emoji
   inputRef.value?.focus()
 }
 
-function onFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (input.files && input.files[0]) {
+async function sendText() {
+  const text = inputText.value.trim()
+  if (!text || sending.value) return
+  sending.value = true
+  showEmoji.value = false
+  inputText.value = ''
+  resetTextarea()
+
+  const emojiRegex = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u
+  const msgType = emojiRegex.test(text) ? 4 : 1
+  chatStore.sendMessage(text, msgType as 1 | 4)
+  await scrollToBottom(true)
+  sending.value = false
+}
+
+function onFileSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files?.[0]) {
     const file = input.files[0]
     if (file.size > 50 * 1024 * 1024) {
       alert('文件大小不能超过50MB')
       input.value = ''
       return
     }
-    handleFileUpload(file)
+    handleFile(file)
   }
   input.value = ''
 }
 
-async function handleFileUpload(file: File) {
+async function handleFile(file: File) {
   sending.value = true
   uploadProgress.value = 0
   try {
-    await chatStore.sendFile(file, (p) => {
-      uploadProgress.value = p
-    })
+    await chatStore.sendFile(file, p => { uploadProgress.value = p })
     await scrollToBottom(true)
-  } catch (e) {
+  } catch {
     alert('文件上传失败')
   } finally {
     sending.value = false
@@ -327,112 +252,396 @@ async function handleFileUpload(file: File) {
   }
 }
 
-function previewImage(url: string) {
-  window.open(url, '_blank')
-}
+function previewImage(url: string) { window.open(url, '_blank') }
 
 function autoResize() {
   if (!inputRef.value) return
   inputRef.value.style.height = 'auto'
-  const maxH = 100
-  inputRef.value.style.height = Math.min(inputRef.value.scrollHeight, maxH) + 'px'
+  inputRef.value.style.height = Math.min(inputRef.value.scrollHeight, 100) + 'px'
 }
 
-function resetTextareaHeight() {
-  if (inputRef.value) {
-    inputRef.value.style.height = 'auto'
-  }
+function resetTextarea() {
+  if (inputRef.value) inputRef.value.style.height = 'auto'
 }
 
-// iOS: handle keyboard showing/hiding
-function onInputFocus() {
-  // Use visualViewport to reliably detect keyboard
+// iOS keyboard handling
+let vvHandler: (() => void) | null = null
+
+function onFocus() {
+  showEmoji.value = false
+  // Listen to viewport changes
   if (window.visualViewport) {
-    const vv = window.visualViewport
-    const onResize = () => {
-      // Keep scrolling to bottom as viewport shrinks
-      scrollToBottom(false)
-    }
-    vv.addEventListener('resize', onResize)
-    // Store cleanup function
-    ;(inputRef.value as any).__vvCleanup = () => vv.removeEventListener('resize', onResize)
+    vvHandler = () => { scrollToBottom(false) }
+    window.visualViewport.addEventListener('resize', vvHandler)
   }
-  // Fallback: scroll into view after keyboard animation
-  setTimeout(() => {
-    inputRef.value?.scrollIntoView({ block: 'end', behavior: 'smooth' })
-    scrollToBottom(false)
-  }, 100)
-  setTimeout(() => {
-    inputRef.value?.scrollIntoView({ block: 'end', behavior: 'smooth' })
-    scrollToBottom(false)
-  }, 500)
+  // Double scroll after keyboard animation
+  setTimeout(() => scrollToBottom(false), 150)
+  setTimeout(() => scrollToBottom(false), 600)
 }
 
-function onInputBlur() {
-  // Cleanup visualViewport listener
-  if (inputRef.value && (inputRef.value as any).__vvCleanup) {
-    ;(inputRef.value as any).__vvCleanup()
-    delete (inputRef.value as any).__vvCleanup
+function onBlur() {
+  if (window.visualViewport && vvHandler) {
+    window.visualViewport.removeEventListener('resize', vvHandler)
+    vvHandler = null
   }
-  window.scrollTo(0, 0)
 }
 
 async function onScroll() {
-  if (!messagesContainer.value) return
-  if (messagesContainer.value.scrollTop < 20 && chatStore.hasMore && !loadingMore.value) {
+  if (!msgListRef.value) return
+  if (msgListRef.value.scrollTop < 20 && chatStore.hasMore && !loadingMore.value) {
     await loadMore()
   }
 }
 
 async function loadMore() {
-  if (!messagesContainer.value || loadingMore.value) return
+  if (!msgListRef.value || loadingMore.value) return
   loadingMore.value = true
-  const prevHeight = messagesContainer.value.scrollHeight
+  const prevH = msgListRef.value.scrollHeight
   await chatStore.loadMessages('loadMore')
   await nextTick()
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight - prevHeight
-  }
+  if (msgListRef.value) msgListRef.value.scrollTop = msgListRef.value.scrollHeight - prevH
   loadingMore.value = false
 }
 </script>
 
 <style scoped>
-/* iOS safe area */
-.safe-area-top {
-  padding-top: env(safe-area-inset-top);
-}
-.safe-area-bottom {
-  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
-}
-
-/* Prevent iOS bounce scroll on the whole container */
-:host,
-.flex.flex-col.h-full {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  height: 100dvh;
   overflow: hidden;
+  background: #f5f5f5;
 }
 
-/* Only message area scrolls, with momentum */
-.overflow-y-auto {
+/* Header */
+.chat-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  background: #fff;
+  border-bottom: 1px solid #e5e5e5;
+  flex-shrink: 0;
+  min-height: 56px;
+}
+.back-btn {
+  margin-right: 12px;
+  padding: 4px;
+  color: #666;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+.avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+.online-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  background: #22c55e;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+.name {
+  font-weight: 500;
+  font-size: 15px;
+  color: #111;
+}
+.status {
+  font-size: 12px;
+  color: #999;
+}
+.no-contact {
+  font-size: 14px;
+  color: #999;
+}
+
+/* Messages */
+.msg-list {
+  flex: 1;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  padding: 12px 16px;
+}
+.load-more {
+  text-align: center;
+  padding: 8px;
+}
+.load-more button {
+  font-size: 13px;
+  color: #3b82f6;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.time-sep {
+  text-align: center;
+  padding: 8px 0;
+}
+.time-sep span {
+  font-size: 12px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.msg-row {
+  display: flex;
+  margin-bottom: 4px;
+}
+.msg-row.mine {
+  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.msg-row.theirs {
+  justify-content: flex-start;
+}
+.msg-bubble {
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.bubble-mine {
+  background: #95ec69;
+  color: #111;
+  border-bottom-right-radius: 4px;
+}
+.bubble-theirs {
+  background: #fff;
+  color: #111;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+.emoji-bubble {
+  background: transparent;
+  padding: 4px;
+}
+.big-emoji {
+  font-size: 48px;
+  line-height: 1.2;
+}
+.msg-img {
+  max-width: 220px;
+  max-height: 280px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: block;
+}
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2563eb;
+  text-decoration: none;
+}
+.file-name {
+  font-size: 14px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-size {
+  font-size: 12px;
+  color: #999;
+}
+.read-status {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+  padding-right: 4px;
+}
+.empty-msg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 14px;
 }
 
-/* iOS: font-size 16px prevents auto-zoom on focus */
-.ios-input {
+/* Emoji panel */
+.emoji-panel {
+  background: #fff;
+  border-top: 1px solid #e5e5e5;
+}
+.emoji-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #666;
+  border-bottom: 1px solid #f0f0f0;
+}
+.emoji-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.emoji-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.emoji-btn:active {
+  background: #f0f0f0;
+}
+
+/* Toolbar */
+.toolbar {
+  background: #fff;
+  border-top: 1px solid #e5e5e5;
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.upload-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+}
+.upload-track {
+  flex: 1;
+  height: 3px;
+  background: #e5e5e5;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.upload-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.2s;
+}
+.upload-pct {
+  font-size: 12px;
+  color: #999;
+  flex-shrink: 0;
+}
+.toolbar-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+}
+.tool-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+.tool-btn:active, .tool-btn.active {
+  background: #f0f0f0;
+}
+.tool-icon {
+  width: 22px;
+  height: 22px;
+  font-size: 22px;
+  color: #666;
+}
+.input-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.chat-input {
+  width: 100%;
+  resize: none;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px;
+  padding: 8px 14px;
   font-size: 16px !important;
   line-height: 1.4;
+  max-height: 100px;
+  outline: none;
+  background: #fff;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+}
+.chat-input:focus {
+  border-color: #3b82f6;
+}
+.send-btn {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.send-btn:active {
+  background: #2563eb;
+}
+.send-btn.disabled {
+  background: #c0c0c0;
+  cursor: default;
 }
 
-/* iOS: prevent viewport shift when keyboard appears */
-@supports (-webkit-touch-callout: none) {
-  .flex.flex-col.h-full {
-    height: 100dvh;
-  }
+/* Slide up transition */
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: all 0.2s ease;
+}
+.slide-up-enter-from, .slide-up-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
 }
 </style>
