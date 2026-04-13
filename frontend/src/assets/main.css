@@ -5,6 +5,7 @@ html, body, #app {
   padding: 0;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
 * {
@@ -20,4 +21,9 @@ html, body, #app {
 }
 ::-webkit-scrollbar-track {
   background-color: transparent;
+}
+
+/* iOS: prevent auto-zoom on input focus (font-size must be >= 16px) */
+input, textarea, select, .el-input__inner, .el-textarea__inner {
+  font-size: 16px !important;
 }
