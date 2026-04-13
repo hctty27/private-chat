@@ -344,26 +344,35 @@ function resetTextareaHeight() {
 
 // iOS: handle keyboard showing/hiding
 function onInputFocus() {
-  // Scroll message list to bottom when keyboard appears
-  setTimeout(() => {
-    scrollToBottom(true)
-    // On iOS, visualViewport shrinks when keyboard shows
-    if (window.visualViewport) {
-      const vv = window.visualViewport
-      const handler = () => {
-        if (messagesContainer.value) {
-          messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-        }
-      }
-      vv.addEventListener('resize', handler, { once: true })
+  // Use visualViewport to reliably detect keyboard
+  if (window.visualViewport) {
+    const vv = window.visualViewport
+    const onResize = () => {
+      // Keep scrolling to bottom as viewport shrinks
+      scrollToBottom(false)
     }
-  }, 300)
+    vv.addEventListener('resize', onResize)
+    // Store cleanup function
+    ;(inputRef.value as any).__vvCleanup = () => vv.removeEventListener('resize', onResize)
+  }
+  // Fallback: scroll into view after keyboard animation
+  setTimeout(() => {
+    inputRef.value?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+    scrollToBottom(false)
+  }, 100)
+  setTimeout(() => {
+    inputRef.value?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+    scrollToBottom(false)
+  }, 500)
 }
 
 function onInputBlur() {
-  // Scroll back to top on iOS when keyboard hides
+  // Cleanup visualViewport listener
+  if (inputRef.value && (inputRef.value as any).__vvCleanup) {
+    ;(inputRef.value as any).__vvCleanup()
+    delete (inputRef.value as any).__vvCleanup
+  }
   window.scrollTo(0, 0)
-  scrollToBottom(true)
 }
 
 async function onScroll() {
