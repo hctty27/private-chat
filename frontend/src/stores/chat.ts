@@ -196,7 +196,13 @@ export const useChatStore = defineStore('chat', () => {
     ws.value.onclose = () => {
       wsConnected.value = false
       if (heartbeatTimer) clearInterval(heartbeatTimer)
-      reconnectTimer = setTimeout(connectWs, 3000)
+      // 如果 token 过期，跳转到伪装页
+      if (!userStore.token) {
+        userStore.logout()
+        window.location.href = '/'
+      } else {
+        reconnectTimer = setTimeout(connectWs, 3000)
+      }
     }
 
     ws.value.onerror = () => {
