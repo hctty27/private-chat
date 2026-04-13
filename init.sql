@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS t_message (
     is_read         TINYINT DEFAULT 0 COMMENT '0:未读 1:已读',
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_conversation (conversation_id, created_at),
-    INDEX idx_receiver_unread (receiver_id, is_read, created_at)
+    INDEX idx_receiver_unread (receiver_id, is_read, created_at),
+    INDEX idx_conv_sender_receiver_read (conversation_id, sender_id, receiver_id, is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 测试用户（密码都是 123456 的 BCrypt 加密）
