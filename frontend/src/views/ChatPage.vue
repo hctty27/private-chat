@@ -4,7 +4,10 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <h2>消息</h2>
-        <span class="ws-dot" :class="{ on: chatStore.wsConnected }"></span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="ws-dot" :class="{ on: chatStore.wsConnected }"></span>
+          <button class="logout-btn" @click="logout">退出</button>
+        </div>
       </div>
       <div class="sidebar-list">
         <div
@@ -39,7 +42,10 @@
       <div v-if="isMobile && !mobileChat" class="mobile-contacts">
         <div class="mobile-header">
           <h2>消息</h2>
-          <span class="ws-dot" :class="{ on: chatStore.wsConnected }"></span>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="ws-dot" :class="{ on: chatStore.wsConnected }"></span>
+            <button class="logout-btn" @click="logout">退出</button>
+          </div>
         </div>
         <div class="mobile-list">
           <div
@@ -137,7 +143,7 @@
             <div class="prog-fill" :style="{ width: progress + '%' }"></div>
           </div>
           <div class="input-row">
-            <button class="ibtn" :class="{ on: emojiOpen }" @click="emojiOpen = !emojiOpen; inputEl?.focus()">
+            <button class="ibtn" :class="{ on: emojiOpen }" @click="emojiOpen = !emojiOpen">
               😊
             </button>
             <button class="ibtn" @click="fileEl?.click()">
@@ -169,9 +175,11 @@ import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import type { Message } from '../types'
 import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize, formatTime as fmtTime } from '../utils/time'
+import { useRouter } from 'vue-router'
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
+const router = useRouter()
 const uid = computed(() => userStore.userId)
 const isMobile = ref(window.innerWidth < 768)
 const mobileChat = ref(false)
@@ -229,6 +237,13 @@ async function scrollTo(smooth = false) {
   listEl.value?.scrollTo({ top: listEl.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
 }
 function preview(url: string) { window.open(url, '_blank') }
+
+function logout() {
+  chatStore.disconnectWs()
+  userStore.logout()
+  chatStore.clearState()
+  router.replace('/')
+}
 watch(() => chatStore.messages.length, () => scrollTo(true))
 watch(() => chatStore.currentContact?.userId, () => scrollTo(false))
 
@@ -342,6 +357,12 @@ html, body, #app {
 .sidebar-header h2 {
   margin: 0; font-size: 16px; font-weight: 600;
 }
+.logout-btn {
+  font-size: 13px; color: #999; background: none; border: 1px solid #ddd;
+  border-radius: 4px; padding: 2px 8px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.logout-btn:active { background: #f0f0f0; }
 .sidebar-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* WS dot */
@@ -470,6 +491,7 @@ html, body, #app {
   background: none; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   -webkit-tap-highlight-color: transparent; border-radius: 6px;
+  touch-action: manipulation;
 }
 .emoji-list button:active { background: #f0f0f0; }
 

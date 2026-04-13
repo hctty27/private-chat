@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg sticky top-0 z-50">
       <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-xl font-bold tracking-wide">微博</h1>
+        <h1 class="text-xl font-bold tracking-wide">有趣</h1>
         <div class="flex items-center gap-3 text-sm">
           <span class="cursor-pointer hover:underline">消息</span>
           <span class="cursor-pointer hover:underline">发现</span>
@@ -19,7 +19,7 @@
           @click="onHotClick"
         >
           <span class="text-orange-500 font-bold text-sm">🔥</span>
-          <h2 class="ml-2 font-semibold text-gray-800" id="hot-title">微博热搜</h2>
+          <h2 class="ml-2 font-semibold text-gray-800" id="hot-title">有趣热搜</h2>
         </div>
         <ul class="divide-y divide-gray-100">
           <li
@@ -151,3 +151,11 @@ function onHotClick() {
   }
 }
 </script>
+
+<style>
+html, body {
+  margin: 0; padding: 0;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+</style>
