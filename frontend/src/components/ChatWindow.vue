@@ -1,7 +1,7 @@
 <template>
-  <div class="flex flex-col h-full bg-gray-50">
-    <!-- Chat header -->
-    <div class="px-4 py-3 bg-white border-b flex items-center flex-shrink-0">
+  <div class="flex flex-col h-full overflow-hidden">
+    <!-- Chat header - fixed -->
+    <div class="px-4 py-3 bg-white border-b flex items-center flex-shrink-0 safe-area-top">
       <button
         v-if="showBack"
         class="md:hidden mr-3 p-1 -ml-1 text-gray-500 hover:text-gray-700"
@@ -30,12 +30,11 @@
       <div v-else class="text-sm text-gray-400">选择一个联系人开始聊天</div>
     </div>
 
-    <!-- Messages area -->
+    <!-- Messages area - ONLY this scrolls -->
     <div
       v-if="chatStore.currentContact"
       ref="messagesContainer"
-      class="flex-1 overflow-y-auto px-4 py-3 space-y-1"
-      style="-webkit-overflow-scrolling: touch; padding-bottom: env(safe-area-inset-bottom);"
+      class="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-gray-50"
       @scroll="onScroll"
     >
       <!-- Load more -->
@@ -133,8 +132,8 @@
       选择一个联系人开始聊天
     </div>
 
-    <!-- Input area -->
-    <div v-if="chatStore.currentContact" class="bg-white border-t px-3 py-2 flex-shrink-0" style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom))">
+    <!-- Input area - fixed at bottom -->
+    <div v-if="chatStore.currentContact" class="bg-white border-t px-3 py-2 flex-shrink-0 safe-area-bottom">
       <!-- Upload progress -->
       <div v-if="uploadProgress > 0 && uploadProgress < 100" class="mb-2">
         <div class="h-1 bg-gray-200 rounded-full overflow-hidden">
@@ -180,6 +179,7 @@
             placeholder="输入消息..."
             @keydown.enter.exact.prevent="sendText"
             @input="autoResize"
+            @focus="onInputFocus"
           ></textarea>
         </div>
 
@@ -341,6 +341,13 @@ function resetTextareaHeight() {
   }
 }
 
+// iOS: scroll into view when input is focused
+function onInputFocus() {
+  setTimeout(() => {
+    inputRef.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, 300)
+}
+
 async function onScroll() {
   if (!messagesContainer.value) return
   if (messagesContainer.value.scrollTop < 20 && chatStore.hasMore && !loadingMore.value) {
@@ -360,3 +367,30 @@ async function loadMore() {
   loadingMore.value = false
 }
 </script>
+
+<style scoped>
+/* iOS safe area */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-area-bottom {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
+/* Prevent iOS bounce scroll on the whole container */
+:host,
+.flex.flex-col.h-full {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+/* Only message area scrolls, with momentum */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+</style>

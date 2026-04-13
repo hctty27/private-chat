@@ -1,12 +1,12 @@
 <template>
-  <div class="h-screen flex overflow-hidden bg-gray-100">
+  <div class="fixed inset-0 flex overflow-hidden bg-gray-100">
     <!-- Desktop: sidebar + chat window -->
     <ContactList
       class="hidden md:flex w-[280px] flex-shrink-0 border-r border-gray-200"
       @select="onContactSelect"
     />
     <ChatWindow
-      class="hidden md:flex flex-1"
+      class="hidden md:flex flex-1 min-w-0"
     />
 
     <!-- Mobile: show either list or chat -->
@@ -63,3 +63,14 @@ function onMobileContactSelect(userId: number) {
   mobileChatVisible.value = true
 }
 </script>
+
+<style>
+/* Prevent iOS body bounce */
+html, body {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+</style>
