@@ -64,7 +64,12 @@ export interface WsHeartbeatAck {
   data: {}
 }
 
-export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsHeartbeatAck
+export interface WsKickedMessage {
+  type: 'kicked'
+  data: { message: string }
+}
+
+export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsHeartbeatAck | WsKickedMessage
 
 export interface WsClientChat {
   type: 'chat'

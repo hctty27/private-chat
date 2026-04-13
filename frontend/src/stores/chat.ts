@@ -185,6 +185,13 @@ export const useChatStore = defineStore('chat', () => {
     ws.value.onmessage = (event) => {
       try {
         const data: WsServerMessage = JSON.parse(event.data)
+        if (data.type === 'kicked') {
+          // 被踢下线
+          userStore.logout()
+          disconnectWs()
+          window.location.href = '/'
+          return
+        }
         if (data.type !== 'heartbeat_ack') {
           handleWsMessage(data)
         }

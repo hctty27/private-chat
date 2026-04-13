@@ -39,6 +39,19 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) {
         Long userId = (Long) session.getAttributes().get("userId");
         if (userId != null) {
+            // 踢掉旧连接（单点登录）
+            WebSocketSession oldSession = SESSION_MAP.get(userId);
+            if (oldSession != null && oldSession.isOpen()) {
+                try {
+                    // 发送被踢下线的消息
+                    sendMessage(oldSession, "kicked", Map.of("message", "您的账号在其他地方登录"));
+                    oldSession.close(CloseStatus.NORMAL.withReason("账号在其他地方登录"));
+                    log.info("Kicked old session for user {}", userId);
+                } catch (IOException e) {
+                    log.error("Failed to close old session for user {}", userId, e);
+                }
+            }
+            
             SESSION_MAP.put(userId, session);
             redisTemplate.opsForValue().set("online:" + userId, "1", Duration.ofMinutes(2));
             broadcastOnlineStatus(userId, true);
@@ -50,10 +63,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Long userId = (Long) session.getAttributes().get("userId");
         if (userId != null) {
-            SESSION_MAP.remove(userId);
-            redisTemplate.delete("online:" + userId);
-            broadcastOnlineStatus(userId, false);
-            log.info("User {} disconnected", userId);
+            // 只有当前session才清除
+            if (SESSION_MAP.get(userId) == session) {
+                SESSION_MAP.remove(userId);
+                redisTemplate.delete("online:" + userId);
+                broadcastOnlineStatus(userId, false);
+                log.info("User {} disconnected", userId);
+            }
         }
     }
 
