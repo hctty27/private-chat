@@ -101,12 +101,12 @@
               <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
             </div>
 
-            <div v-for="(m, i) in chatStore.messages" :key="m.id">
-              <div v-if="showTime(m, i)" class="time-bar">
-                <span>{{ fmtChatTime(m.createdAt) }}</span>
-              </div>
+          <div v-for="(m, i) in chatStore.messages" :key="m.id">
+            <div v-if="showTime(m, i)" class="time-bar">
+              <span>{{ fmtChatTime(m.createdAt) }}</span>
+            </div>
 
-              <div class="msg" :class="m.senderId === uid ? 'right' : 'left'">
+            <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id">
                 <div class="bubble" :class="bubbleType(m)">
                   <template v-if="m.msgType === 1">{{ m.content }}</template>
                   <template v-else-if="m.msgType === 4"><span class="emoji-big">{{ m.content }}</span></template>
@@ -212,6 +212,7 @@ let prevMsgCount = 0
 
 let vvHandler: (() => void) | null = null
 let scrollHandler: (() => void) | null = null
+let readObserver: IntersectionObserver | null = null
 
 const emojiList = [
   '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
@@ -231,6 +232,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   removeScrollListener()
+  teardownReadObserver()
   chatStore.clearState()
 })
 
@@ -251,11 +253,73 @@ function bindScrollListener() {
   })
 }
 
+// 已读：IntersectionObserver 检测消息是否进入视口
+function setupReadObserver() {
+  teardownReadObserver()
+  nextTick(() => {
+    if (!listEl.value) return
+    readObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const el = entry.target as HTMLElement
+          const msgId = el.dataset.msgId
+          if (!msgId) continue
+          const msg = chatStore.messages.find(m => String(m.id) === msgId)
+          // 对方发的未读消息，进入视口 → 标记已读
+          if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
+            markVisibleAsRead()
+            break  // 一条触发就够了，markVisibleAsRead 会批量处理
+          }
+        }
+      },
+      { root: listEl.value, threshold: 0.5 }
+    )
+    // 观察所有消息元素
+    listEl.value.querySelectorAll('.msg[data-msg-id]').forEach(el => {
+      readObserver!.observe(el)
+    })
+  })
+}
+
+function teardownReadObserver() {
+  if (readObserver) {
+    readObserver.disconnect()
+    readObserver = null
+  }
+}
+
+let markReadTimer: ReturnType<typeof setTimeout> | null = null
+function markVisibleAsRead() {
+  if (markReadTimer) clearTimeout(markReadTimer)
+  markReadTimer = setTimeout(() => {
+    if (!chatStore.currentContact || !listEl.value) return
+    // 找到所有视口内的未读消息（对方发的）
+    const hasUnread = chatStore.messages.some(
+      m => m.senderId !== uid.value && m.isRead !== 1
+    )
+    if (hasUnread) {
+      chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
+    }
+    markReadTimer = null
+  }, 200)
+}
+
+// 新消息来了 → 重新观察
+watch(() => chatStore.messages.length, () => {
+  if (!readObserver || !listEl.value) return
+  // 观察新增的元素
+  listEl.value.querySelectorAll('.msg[data-msg-id]').forEach(el => {
+    readObserver!.observe(el)
+  })
+})
+
 // 桌面端：列表始终存在，立即绑定
 // 移动端：打开聊天时绑定
 watch(() => chatStore.currentContact?.userId, () => {
   prevMsgCount = chatStore.messages.length
   bindScrollListener()
+  setupReadObserver()
   scrollToBottom(false)
 })
 

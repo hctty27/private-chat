@@ -129,6 +129,7 @@ export const useChatStore = defineStore('chat', () => {
             if (!messages.value.find((m) => m.id === msg.id)) {
               messages.value.push(msg)
             }
+            // 不在这里发 read，由 IntersectionObserver 在消息进入视口时触发
           }
         }
         // Update contact last message
