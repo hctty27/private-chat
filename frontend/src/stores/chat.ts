@@ -48,11 +48,12 @@ export const useChatStore = defineStore('chat', () => {
   async function loadMessages(mode: 'init' | 'loadMore' = 'init') {
     if (!currentContact.value) return
     try {
-      let cursor: string | undefined
-      if (mode === 'loadMore' && messages.value.length > 0) {
-        cursor = messages.value[0].createdAt
-      }
-      const res = await getMessages(currentContact.value.userId, cursor, 20, mode)
+    let cursor: string | undefined
+    if (mode === 'loadMore' && messages.value.length > 0) {
+      const d = new Date(messages.value[0].createdAt)
+      cursor = String(d.getTime())  // 传毫秒时间戳
+    }
+    const res = await getMessages(currentContact.value.userId, cursor, 20, mode)
       if (res.data.code === 200) {
         const { messages: msgs, hasMore: more } = res.data.data
         if (mode === 'init') {

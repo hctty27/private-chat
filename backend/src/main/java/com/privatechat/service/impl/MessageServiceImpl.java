@@ -54,24 +54,35 @@ public class MessageServiceImpl implements MessageService {
         int pageSize = size != null ? size : defaultPageSize;
 
         List<Message> messages;
+        boolean hasMore;
 
         if ("loadMore".equals(mode) && cursor != null) {
             // Load messages before cursor timestamp
             messages = messageMapper.selectList(
                     new LambdaQueryWrapper<Message>()
                             .eq(Message::getConversationId, conversationId)
-                            .lt(Message::getCreatedAt, LocalDateTime.ofEpochSecond(cursor / 1000, 0, java.time.ZoneOffset.UTC))
+                            .lt(Message::getCreatedAt, LocalDateTime.ofEpochSecond(cursor / 1000, 0, java.time.ZoneId.systemDefault().getRules().getOffset(java.time.Instant.now())))
                             .orderByDesc(Message::getCreatedAt)
                             .last("LIMIT " + (pageSize + 1))
             );
+            hasMore = messages.size() > pageSize;
+            if (hasMore) {
+                messages = messages.subList(0, pageSize);
+            }
+            // Reverse to ascending
+            messages.sort(Comparator.comparing(Message::getCreatedAt));
         } else {
             // Init mode: return last N messages + all unread messages
             List<Message> lastMessages = messageMapper.selectList(
                     new LambdaQueryWrapper<Message>()
                             .eq(Message::getConversationId, conversationId)
                             .orderByDesc(Message::getCreatedAt)
-                            .last("LIMIT " + pageSize)
+                            .last("LIMIT " + (pageSize + 1))
             );
+            hasMore = lastMessages.size() > pageSize;
+            if (hasMore) {
+                lastMessages = lastMessages.subList(0, pageSize);
+            }
 
             List<Message> unreadMessages = messageMapper.selectList(
                     new LambdaQueryWrapper<Message>()
@@ -92,11 +103,6 @@ public class MessageServiceImpl implements MessageService {
 
             // Sort by created_at ascending
             messages.sort(Comparator.comparing(Message::getCreatedAt));
-        }
-
-        boolean hasMore = messages.size() > pageSize;
-        if (hasMore) {
-            messages = messages.subList(0, pageSize);
         }
 
         List<MessageDTO> messageDTOs = messages.stream().map(this::convertToDTO).collect(Collectors.toList());
