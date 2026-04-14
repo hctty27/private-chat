@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Contact, Message, WsClientMessage, WsServerMessage } from '../types'
-import { getContacts, getMessages, uploadFile, getMessages as fetchMessages } from '../api'
+import { getContacts, getMessages, uploadFile } from '../api'
 import { useUserStore } from './user'
 
 export const useChatStore = defineStore('chat', () => {
