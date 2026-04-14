@@ -37,11 +37,12 @@ export const useChatStore = defineStore('chat', () => {
     const c = contacts.value.find((c) => c.userId === targetId)
     if (c) {
       currentContact.value = c
-      c.unreadCount = 0
+      // 不在这里清 unreadCount，等消息被看到（IntersectionObserver）再清
     }
     messages.value = []
     hasMore.value = false
     await loadMessages('init')
+    // 发送已读请求，让后端标记已读
     sendWsMessage({ type: 'read', data: { targetId } })
   }
 

@@ -260,6 +260,8 @@ function markVisibleAsRead() {
     const hasUnread = chatStore.messages.some(m => m.senderId !== uid.value && m.isRead !== 1)
     if (hasUnread) {
       chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
+      // 消息被看到后才清未读角标
+      chatStore.currentContact.unreadCount = 0
     }
     markReadTimer = null
   }, 200)
