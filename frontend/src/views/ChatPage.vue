@@ -60,7 +60,7 @@
               <div v-if="showTime(m, i)" class="time-bar">
                 <span>{{ fmtChatTime(m.createdAt) }}</span>
               </div>
-              <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id">
+              <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id" :ref="el => onMsgRef(String(m.id), el as Element | null)">
                 <div class="bubble" :class="bubbleType(m)">
                   <template v-if="m.msgType === 1">{{ m.content }}</template>
                   <template v-else-if="m.msgType === 4"><span class="emoji-big">{{ m.content }}</span></template>
@@ -194,7 +194,6 @@ onUnmounted(() => {
 function cleanup() {
   removeScrollListener()
   teardownReadObserver()
-  if (markReadTimer) clearTimeout(markReadTimer)
   if (vvHandler && window.visualViewport) {
     window.visualViewport.removeEventListener('resize', vvHandler)
   }
@@ -228,48 +227,54 @@ function scrollToBottom(smooth = false) {
 }
 
 // ========== Read Observer ==========
+// 用 Map 缓存元素，避免 querySelector 全量扫描 DOM
+const msgEls = new Map<string, Element>()
+
+function onMsgRef(id: string, el: Element | null) {
+  if (el) msgEls.set(id, el)
+  else msgEls.delete(id)
+}
+
 function setupReadObserver() {
   teardownReadObserver()
-  pendingReadIds.clear()
   nextTick(() => {
     if (!listEl.value) return
     readObserver = new IntersectionObserver(
       (entries) => {
-        let needsMark = false
         for (const entry of entries) {
           if (!entry.isIntersecting) continue
           const el = entry.target as HTMLElement
           const msgId = el.dataset.msgId
           if (msgId && pendingReadIds.has(msgId)) {
-            needsMark = true
-            // 已触发的停止观察
-            readObserver!.unobserve(entry.target)
+            sendReadReceipt()
+            return
           }
         }
-        if (needsMark) markVisibleAsRead()
       },
       { root: listEl.value, threshold: 0.1 }
     )
-    // 初始：观察所有对方的未读消息
-    addUnreadToObserver()
+    observeLastUnread()
   })
 }
 
-function addUnreadToObserver() {
-  if (!readObserver || !listEl.value) return
-  chatStore.messages.forEach(m => {
-    const id = String(m.id)
-    if (m.senderId !== uid.value && m.isRead !== 1 && !pendingReadIds.has(id)) {
-      pendingReadIds.add(id)
-      const el = listEl.value!.querySelector(`.msg[data-msg-id="${id}"]`)
-      if (el) readObserver!.observe(el)
-    }
-  })
-}
-
-function teardownReadObserver() {
-  if (readObserver) { readObserver.disconnect(); readObserver = null }
+// 只观察最后一条未读消息 — 看到它说明之前的消息也都看到了
+function observeLastUnread() {
+  if (!readObserver) return
+  // 先取消之前的观察
+  readObserver.disconnect()
   pendingReadIds.clear()
+
+  // 从后往前找最后一条对方未读消息
+  for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+    const m = chatStore.messages[i]
+    if (m.senderId !== uid.value && m.isRead !== 1) {
+      const id = String(m.id)
+      pendingReadIds.add(id)
+      const el = msgEls.get(id)
+      if (el) readObserver.observe(el)
+      return
+    }
+  }
 }
 
 function sendReadReceipt() {
@@ -279,22 +284,16 @@ function sendReadReceipt() {
   pendingReadIds.clear()
 }
 
+function teardownReadObserver() {
+  if (readObserver) { readObserver.disconnect(); readObserver = null }
+  pendingReadIds.clear()
+}
+
 function markAsReadIfVisible() {
   if (!chatStore.currentContact || !pendingReadIds.size) return
   if (isNearBottom(200)) {
-    if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null }
     sendReadReceipt()
   }
-}
-
-let markReadTimer: ReturnType<typeof setTimeout> | null = null
-function markVisibleAsRead() {
-  if (markReadTimer) clearTimeout(markReadTimer)
-  markReadTimer = setTimeout(() => {
-    if (!chatStore.currentContact) return
-    sendReadReceipt()
-    markReadTimer = null
-  }, 50)
 }
 
 // ========== Unified Watchers ==========
@@ -311,7 +310,7 @@ watch(mobileChat, (v) => { if (v) bindScrollListener() })
 watch(listEl, (el) => { if (el) bindScrollListener() })
 // New messages
 watch(() => chatStore.messages.length, (newLen) => {
-  addUnreadToObserver()
+  nextTick(observeLastUnread)
   markAsReadIfVisible()
   if (isLoadingMore) return
   if (newLen > prevMsgCount && isNearBottom()) {
