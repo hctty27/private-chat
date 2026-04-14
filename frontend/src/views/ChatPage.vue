@@ -1,6 +1,6 @@
 <template>
   <div class="chat-page">
-    <!-- Desktop sidebar -->
+    <!-- 侧边栏 -->
     <aside class="sidebar">
       <ContactList
         :contacts="chatStore.sortedContacts"
@@ -11,51 +11,32 @@
       />
     </aside>
 
-    <!-- Main -->
+    <!-- 主区域 -->
     <main class="chat-main">
-      <!-- Mobile: contact list -->
-      <div v-if="isMobile && !mobileChat" class="mobile-contacts">
-        <ContactList
-          :contacts="chatStore.sortedContacts"
-          :current-id="chatStore.currentContact?.userId ?? null"
-          :ws-connected="chatStore.wsConnected"
-          @select="openChat"
-          @logout="logout"
-        />
-      </div>
-
-      <!-- Chat view -->
-      <div v-if="!isMobile || mobileChat" class="chat-view">
+      <!-- 有联系人时 -->
+      <template v-if="chatStore.currentContact">
         <!-- Header -->
         <div class="chat-head">
-          <button v-if="isMobile" class="back" @click="mobileChat = false">‹</button>
-          <template v-if="chatStore.currentContact">
-            <div class="ch-avatar">{{ chatStore.currentContact.nickname[0] }}</div>
-            <div class="ch-info">
-              <div class="ch-name">{{ chatStore.currentContact.nickname }}</div>
-              <div class="ch-status">{{ chatStore.currentContact.online ? '在线' : '离线' }}</div>
-            </div>
-          </template>
-          <span v-else class="ch-empty">选择联系人</span>
+          <div class="ch-avatar">{{ chatStore.currentContact.nickname[0] }}</div>
+          <div class="ch-info">
+            <div class="ch-name">{{ chatStore.currentContact.nickname }}</div>
+            <div class="ch-status">{{ chatStore.currentContact.online ? '在线' : '离线' }}</div>
+          </div>
         </div>
 
-        <!-- WS disconnect bar -->
-        <div v-if="chatStore.currentContact && !chatStore.wsConnected" class="ws-bar">
-          连接已断开，正在重连...
-        </div>
+        <!-- WS 断连提示 -->
+        <div v-if="!chatStore.wsConnected" class="ws-bar">连接已断开，正在重连...</div>
 
-        <!-- Messages -->
-        <div v-if="chatStore.currentContact" ref="listEl" class="msg-scroll">
-          <div ref="msgContentRef" class="msg-content" :style="loadMoreStyle">
-            <!-- Load more -->
+        <!-- 消息列表 -->
+        <div ref="listEl" class="msg-scroll">
+          <div class="msg-content" :style="scroll.loadMoreStyle.value">
             <div class="load-more">
-              <span class="spinner" v-if="loading"></span>
-              <span class="load-text" v-if="loading">加载历史消息...</span>
+              <span class="spinner" v-if="scroll.loading.value"></span>
+              <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
               <span class="load-text" v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
               <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
             </div>
 
-            <!-- Messages -->
             <div v-for="(m, i) in chatStore.messages" :key="m.id">
               <div v-if="showTime(m, i)" class="time-bar">
                 <span>{{ fmtChatTime(m.createdAt) }}</span>
@@ -84,14 +65,7 @@
           </div>
         </div>
 
-        <!-- Empty state (no contact selected) -->
-        <div v-else class="empty-state">
-          <div class="empty-icon">💬</div>
-          <div class="empty-title">私聊</div>
-          <div class="empty-desc">选择一个联系人开始聊天</div>
-        </div>
-
-        <!-- Emoji -->
+        <!-- 表情面板 -->
         <div v-if="emojiOpen" class="emoji-box">
           <div class="emoji-head">
             <span>表情</span>
@@ -102,8 +76,8 @@
           </div>
         </div>
 
-        <!-- Input -->
-        <div v-if="chatStore.currentContact" class="input-bar">
+        <!-- 输入栏 -->
+        <div class="input-bar">
           <div v-if="progress > 0 && progress < 100" class="prog">
             <div class="prog-fill" :style="{ width: progress + '%' }"></div>
           </div>
@@ -119,21 +93,27 @@
               placeholder="输入消息..."
               @keydown.enter.exact.prevent="send"
               @input="grow"
-              @focus="onFocus"
-              @blur="onBlur"
             />
             <button class="sbtn" :disabled="!text.trim()" @click="send">发送</button>
           </div>
         </div>
+      </template>
+
+      <!-- 未选择联系人 -->
+      <div v-else class="empty-state">
+        <div class="empty-icon">💬</div>
+        <div class="empty-title">私聊</div>
+        <div class="empty-desc">选择一个联系人开始聊天</div>
       </div>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
+import { useChatScroll } from '../composables/useChatScroll'
 import type { Message } from '../types'
 import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { useRouter } from 'vue-router'
@@ -143,186 +123,35 @@ const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
-const isMobile = ref(window.innerWidth < 768)
-const mobileChat = ref(false)
 
 const listEl = ref<HTMLElement | null>(null)
-const msgContentRef = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const text = ref('')
 const emojiOpen = ref(false)
-const loading = ref(false)
 const progress = ref(0)
 
-// Load more transform offset
-const loadMoreOffset = ref(0)
-const loadMoreStyle = computed(() =>
-  loadMoreOffset.value ? { transform: `translateY(${loadMoreOffset.value}px)` } : {}
-)
-
-let isLoadingMore = false
-let prevMsgCount = 0
-let vvHandler: (() => void) | null = null
-let scrollHandler: (() => void) | null = null
-let readObserver: IntersectionObserver | null = null
-// 只跟踪对方发来的未读消息 ID
-const pendingReadIds = new Set<string>()
-
-const emojiList = [
-  '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
-  '😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐',
-  '😯','😪','😫','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲',
-  '🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😱','🥵','🥶',
-  '👍','👎','👏','🙌','🤝','❤️','🔥','🎉',
-]
-
-function onResize() { isMobile.value = window.innerWidth < 768 }
+const scroll = useChatScroll(listEl, uid)
 
 // ========== Lifecycle ==========
 onMounted(async () => {
-  window.addEventListener('resize', onResize)
   await chatStore.loadContacts()
   chatStore.connectWs()
 })
-onUnmounted(() => {
-  window.removeEventListener('resize', onResize)
-  cleanup()
-  chatStore.clearState()
-})
 
-function cleanup() {
-  removeScrollListener()
-  teardownReadObserver()
-  if (vvHandler && window.visualViewport) {
-    window.visualViewport.removeEventListener('resize', vvHandler)
-  }
-}
-
-// ========== Scroll ==========
-function removeScrollListener() {
-  if (listEl.value && scrollHandler) {
-    listEl.value.removeEventListener('scroll', scrollHandler)
-    scrollHandler = null
-  }
-}
-function bindScrollListener() {
-  removeScrollListener()
-  nextTick(() => {
-    if (listEl.value) {
-      scrollHandler = onScroll
-      listEl.value.addEventListener('scroll', scrollHandler, { passive: true })
-    }
-  })
-}
-function isNearBottom(threshold = 100) {
-  if (!listEl.value) return true
-  const { scrollTop, scrollHeight, clientHeight } = listEl.value
-  return scrollHeight - scrollTop - clientHeight < threshold
-}
-function scrollToBottom(smooth = false) {
-  requestAnimationFrame(() => {
-    listEl.value?.scrollTo({ top: listEl.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
-  })
-}
-
-// ========== Read Observer ==========
-function setupReadObserver() {
-  teardownReadObserver()
-  nextTick(() => {
-    if (!listEl.value) return
-    readObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue
-          const el = entry.target as HTMLElement
-          const msgId = el.dataset.msgId
-          if (msgId && pendingReadIds.has(msgId)) {
-            sendReadReceipt()
-            return
-          }
-        }
-      },
-      { root: listEl.value, threshold: 0.1 }
-    )
-    observeLastUnread()
-  })
-}
-
-// 只观察最后一条未读消息 — 看到它说明之前的消息也都看到了
-function observeLastUnread() {
-  if (!readObserver || !listEl.value) return
-  // 先取消之前的观察
-  readObserver.disconnect()
-  pendingReadIds.clear()
-
-  // 从后往前找最后一条对方未读消息
-  for (let i = chatStore.messages.length - 1; i >= 0; i--) {
-    const m = chatStore.messages[i]
-    if (m.senderId !== uid.value && m.isRead !== 1) {
-      const id = String(m.id)
-      pendingReadIds.add(id)
-      // 只查一个元素，不是全量扫描
-      const el = listEl.value.querySelector(`.msg[data-msg-id="${id}"]`)
-      if (el) readObserver.observe(el)
-      return
-    }
-  }
-}
-
-function sendReadReceipt() {
-  if (!chatStore.currentContact) return
-  chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
-  chatStore.currentContact.unreadCount = 0
-  pendingReadIds.clear()
-}
-
-function teardownReadObserver() {
-  if (readObserver) { readObserver.disconnect(); readObserver = null }
-  pendingReadIds.clear()
-}
-
-function markAsReadIfVisible() {
-  if (!chatStore.currentContact || !pendingReadIds.size) return
-  if (isNearBottom(200)) {
-    sendReadReceipt()
-  }
-}
-
-// ========== Unified Watchers ==========
-// Contact change → bind everything
+// ========== Watchers ==========
 watch(() => chatStore.currentContact?.userId, () => {
-  prevMsgCount = chatStore.messages.length
-  bindScrollListener()
-  setupReadObserver()
-  scrollToBottom(false)
+  scroll.onContactChange()
 })
-// Mobile chat open
-watch(mobileChat, (v) => { if (v) bindScrollListener() })
-// Desktop first render
-watch(listEl, (el) => { if (el) bindScrollListener() })
-// New messages
-watch(() => chatStore.messages.length, (newLen) => {
-  nextTick(observeLastUnread)
-  markAsReadIfVisible()
-  if (isLoadingMore) return
-  if (newLen > prevMsgCount && isNearBottom()) {
-    scrollToBottom(true)
-  }
-  prevMsgCount = newLen
+watch(listEl, (el) => { scroll.onListReady(el) })
+watch(() => chatStore.messages.length, () => {
+  scroll.onMessagesChange()
 })
 
 // ========== Actions ==========
 async function pickContact(id: number) {
   await chatStore.selectContact(id)
-  prevMsgCount = chatStore.messages.length
-  scrollToBottom()
-}
-async function openChat(id: number) {
-  await chatStore.selectContact(id)
-  mobileChat.value = true
-  prevMsgCount = chatStore.messages.length
-  scrollToBottom()
+  scroll.onSelectContact()
 }
 
 function showTime(m: Message, i: number) {
@@ -353,7 +182,7 @@ async function send() {
   if (inputEl.value) inputEl.value.style.height = 'auto'
   const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(t)
   chatStore.sendMessage(t, isEmoji ? 4 : 1)
-  scrollToBottom(true)
+  scroll.scrollToBottom(true)
 }
 
 function onFile(e: Event) {
@@ -368,7 +197,7 @@ async function doUpload(f: File) {
   progress.value = 0
   try {
     await chatStore.sendFile(f, p => { progress.value = p })
-    scrollToBottom(true)
+    scroll.scrollToBottom(true)
   } catch { alert('上传失败') }
   progress.value = 0
 }
@@ -378,56 +207,14 @@ function grow() {
   inputEl.value.style.height = 'auto'
   inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 100) + 'px'
 }
-function onFocus() {
-  if (window.visualViewport) {
-    vvHandler = () => scrollToBottom(false)
-    window.visualViewport.addEventListener('resize', vvHandler)
-  }
-  setTimeout(() => scrollToBottom(false), 100)
-  setTimeout(() => scrollToBottom(false), 500)
-}
-function onBlur() {
-  if (window.visualViewport && vvHandler) {
-    window.visualViewport.removeEventListener('resize', vvHandler)
-    vvHandler = null
-  }
-}
 
-// ========== Load more ==========
-let scrollThrottle = false
-function onScroll() {
-  if (!listEl.value || loading.value || !chatStore.hasMore || scrollThrottle) return
-  if (listEl.value.scrollTop < 60) {
-    scrollThrottle = true
-    loadMore()
-    setTimeout(() => { scrollThrottle = false }, 300)
-  }
-}
-async function loadMore() {
-  if (!listEl.value || loading.value || !chatStore.hasMore) return
-  loading.value = true
-  isLoadingMore = true
-  const prevScrollHeight = listEl.value.scrollHeight
-
-  await chatStore.loadMessages('loadMore')
-  await nextTick()
-
-  if (!listEl.value) { loading.value = false; isLoadingMore = false; return }
-  const delta = listEl.value.scrollHeight - prevScrollHeight
-
-  if (delta > 0) {
-    loadMoreOffset.value = delta
-    requestAnimationFrame(() => {
-      if (listEl.value) listEl.value.scrollTop += delta
-      loadMoreOffset.value = 0
-      isLoadingMore = false
-      loading.value = false
-    })
-  } else {
-    isLoadingMore = false
-    loading.value = false
-  }
-}
+const emojiList = [
+  '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
+  '😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐',
+  '😯','😪','😫','😴','😌','😛','😜','😝','🤤','😒','😓','😔','😕','🙃','🤑','😲',
+  '🙁','😖','😞','😟','😤','😢','😭','😦','😧','😨','😩','🤯','😬','😱','🥵','🥶',
+  '👍','👎','👏','🙌','🤝','❤️','🔥','🎉',
+]
 </script>
 
 <style>
@@ -436,7 +223,6 @@ html, body, #app {
   width: 100%; height: 100%;
   overflow: hidden;
   position: fixed;
-  -webkit-text-size-adjust: 100%;
 }
 </style>
 
@@ -455,7 +241,6 @@ html, body, #app {
   flex-shrink: 0;
   border-right: 1px solid #e5e5e5;
 }
-@media (max-width: 767px) { .sidebar { display: none; } }
 
 .chat-main {
   flex: 1;
@@ -464,19 +249,7 @@ html, body, #app {
   min-width: 0;
 }
 
-.mobile-contacts {
-  height: 100%;
-}
-
 /* Chat view */
-.chat-view {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  min-height: 0;
-}
-
 .chat-head {
   display: flex;
   align-items: center;
@@ -485,13 +258,7 @@ html, body, #app {
   background: #fff;
   border-bottom: 1px solid #e5e5e5;
   flex-shrink: 0;
-  padding-top: calc(10px + env(safe-area-inset-top));
   min-height: 52px;
-}
-.back {
-  font-size: 28px; line-height: 1; color: #333;
-  background: none; border: none; cursor: pointer;
-  padding: 0 8px 0 0; font-weight: 300;
 }
 .ch-avatar {
   width: 34px; height: 34px; border-radius: 50%;
@@ -502,35 +269,24 @@ html, body, #app {
 .ch-info { display: flex; flex-direction: column; }
 .ch-name { font-size: 15px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
-.ch-empty { font-size: 14px; color: #999; }
 
 /* WS bar */
 .ws-bar {
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 13px;
-  text-align: center;
-  padding: 6px;
-  flex-shrink: 0;
+  background: #fef3c7; color: #92400e;
+  font-size: 13px; text-align: center;
+  padding: 6px; flex-shrink: 0;
 }
 
 /* Messages */
 .msg-scroll {
   flex: 1;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 12px;
   background: #ededed;
-  touch-action: pan-y;
 }
 .load-more {
-  text-align: center;
-  padding: 12px 8px;
-  min-height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  text-align: center; padding: 12px 8px; min-height: 20px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .load-text { font-size: 12px; color: #999; }
 .spinner {
@@ -561,9 +317,7 @@ html, body, #app {
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
 
-.read-tag {
-  font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px;
-}
+.read-tag { font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px; }
 .empty-tip { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
 
 /* Empty state */
@@ -590,20 +344,19 @@ html, body, #app {
 .emoji-list {
   display: grid; grid-template-columns: repeat(8, 1fr);
   gap: 0; padding: 8px;
-  max-height: 170px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  max-height: 170px; overflow-y: auto;
 }
 .emoji-list button {
   width: 100%; aspect-ratio: 1; font-size: 24px;
   background: none; border: none; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  -webkit-tap-highlight-color: transparent; border-radius: 6px; touch-action: manipulation;
+  border-radius: 6px;
 }
-.emoji-list button:active { background: #f0f0f0; }
+.emoji-list button:hover { background: #f0f0f0; }
 
 /* Input */
 .input-bar {
   background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 .prog { padding: 0 16px; height: 3px; }
 .prog-fill { height: 100%; background: #07c160; transition: width 0.2s; }
@@ -614,22 +367,22 @@ html, body, #app {
   width: 36px; height: 36px; flex-shrink: 0;
   background: none; border: none; font-size: 20px;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  -webkit-tap-highlight-color: transparent; border-radius: 6px; touch-action: manipulation;
+  border-radius: 6px;
 }
-.ibtn:active { background: #f0f0f0; }
+.ibtn:hover { background: #f0f0f0; }
 .ibtn.on { background: #f0f0f0; }
 .txt {
   flex: 1; border: 1px solid #ddd; border-radius: 8px;
   padding: 8px 12px; font-size: 15px; resize: none;
-  outline: none; line-height: 1.4; max-height: 100px; -webkit-appearance: none;
+  outline: none; line-height: 1.4; max-height: 100px;
 }
 .txt:focus { border-color: #07c160; }
 .sbtn {
   width: 56px; height: 36px; flex-shrink: 0;
   background: #07c160; color: #fff; border: none;
   border-radius: 8px; font-size: 14px; font-weight: 500;
-  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  cursor: pointer;
 }
 .sbtn:disabled { background: #ccc; }
-.sbtn:not(:disabled):active { background: #06ad56; }
+.sbtn:not(:disabled):hover { background: #06ad56; }
 </style>
