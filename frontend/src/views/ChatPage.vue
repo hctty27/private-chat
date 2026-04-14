@@ -166,6 +166,8 @@ let prevMsgCount = 0
 let vvHandler: (() => void) | null = null
 let scrollHandler: (() => void) | null = null
 let readObserver: IntersectionObserver | null = null
+// 只跟踪对方发来的未读消息 ID
+const pendingReadIds = new Set<string>()
 
 const emojiList = [
   '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
@@ -228,41 +230,58 @@ function scrollToBottom(smooth = false) {
 // ========== Read Observer ==========
 function setupReadObserver() {
   teardownReadObserver()
+  pendingReadIds.clear()
   nextTick(() => {
     if (!listEl.value) return
     readObserver = new IntersectionObserver(
       (entries) => {
+        let needsMark = false
         for (const entry of entries) {
           if (!entry.isIntersecting) continue
           const el = entry.target as HTMLElement
           const msgId = el.dataset.msgId
-          if (!msgId) continue
-          const msg = chatStore.messages.find(m => String(m.id) === msgId)
-          if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
-            markVisibleAsRead()
-            break
+          if (msgId && pendingReadIds.has(msgId)) {
+            needsMark = true
+            // 已触发的停止观察
+            readObserver!.unobserve(entry.target)
           }
         }
+        if (needsMark) markVisibleAsRead()
       },
       { root: listEl.value, threshold: 0.5 }
     )
-    listEl.value.querySelectorAll('.msg[data-msg-id]').forEach(el => readObserver!.observe(el))
+    // 初始：观察所有对方的未读消息
+    addUnreadToObserver()
   })
 }
+
+function addUnreadToObserver() {
+  if (!readObserver || !listEl.value) return
+  chatStore.messages.forEach(m => {
+    const id = String(m.id)
+    if (m.senderId !== uid.value && m.isRead !== 1 && !pendingReadIds.has(id)) {
+      pendingReadIds.add(id)
+      const el = listEl.value!.querySelector(`.msg[data-msg-id="${id}"]`)
+      if (el) readObserver!.observe(el)
+    }
+  })
+}
+
 function teardownReadObserver() {
   if (readObserver) { readObserver.disconnect(); readObserver = null }
+  pendingReadIds.clear()
 }
+
 let markReadTimer: ReturnType<typeof setTimeout> | null = null
 function markVisibleAsRead() {
   if (markReadTimer) clearTimeout(markReadTimer)
   markReadTimer = setTimeout(() => {
     if (!chatStore.currentContact) return
-    const hasUnread = chatStore.messages.some(m => m.senderId !== uid.value && m.isRead !== 1)
-    if (hasUnread) {
-      chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
-      // 消息被看到后才清未读角标
-      chatStore.currentContact.unreadCount = 0
-    }
+    // 有未读消息进入视口 → 发已读
+    chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
+    // 清未读角标
+    chatStore.currentContact.unreadCount = 0
+    pendingReadIds.clear()
     markReadTimer = null
   }, 200)
 }
@@ -281,10 +300,8 @@ watch(mobileChat, (v) => { if (v) bindScrollListener() })
 watch(listEl, (el) => { if (el) bindScrollListener() })
 // New messages
 watch(() => chatStore.messages.length, (newLen) => {
-  // Re-observe new elements
-  if (readObserver && listEl.value) {
-    listEl.value.querySelectorAll('.msg[data-msg-id]').forEach(el => readObserver!.observe(el))
-  }
+  // 只 observe 新来的未读消息
+  addUnreadToObserver()
   if (isLoadingMore) return
   if (newLen > prevMsgCount && isNearBottom()) {
     scrollToBottom(true)
