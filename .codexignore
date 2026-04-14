@@ -1,0 +1,43 @@
+# 构建产物
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+backend/target/
+*.jar
+
+# Docker & 数据
+docker-compose.yml
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+
+# 锁文件 & 生成文件
+package-lock.json
+pom.xml.bak
+*.log
+
+# 环境变量
+.env
+.env.*
+
+# 测试 & 覆盖率
+coverage/
+*.test.js
+*.test.ts
+__tests__/
+
+# 备份
+*.bak
+*.orig
