@@ -60,7 +60,7 @@
               <div v-if="showTime(m, i)" class="time-bar">
                 <span>{{ fmtChatTime(m.createdAt) }}</span>
               </div>
-              <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id" :ref="el => onMsgRef(String(m.id), el as Element | null)">
+              <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id">
                 <div class="bubble" :class="bubbleType(m)">
                   <template v-if="m.msgType === 1">{{ m.content }}</template>
                   <template v-else-if="m.msgType === 4"><span class="emoji-big">{{ m.content }}</span></template>
@@ -227,14 +227,6 @@ function scrollToBottom(smooth = false) {
 }
 
 // ========== Read Observer ==========
-// 用 Map 缓存元素，避免 querySelector 全量扫描 DOM
-const msgEls = new Map<string, Element>()
-
-function onMsgRef(id: string, el: Element | null) {
-  if (el) msgEls.set(id, el)
-  else msgEls.delete(id)
-}
-
 function setupReadObserver() {
   teardownReadObserver()
   nextTick(() => {
@@ -259,7 +251,7 @@ function setupReadObserver() {
 
 // 只观察最后一条未读消息 — 看到它说明之前的消息也都看到了
 function observeLastUnread() {
-  if (!readObserver) return
+  if (!readObserver || !listEl.value) return
   // 先取消之前的观察
   readObserver.disconnect()
   pendingReadIds.clear()
@@ -270,7 +262,8 @@ function observeLastUnread() {
     if (m.senderId !== uid.value && m.isRead !== 1) {
       const id = String(m.id)
       pendingReadIds.add(id)
-      const el = msgEls.get(id)
+      // 只查一个元素，不是全量扫描
+      const el = listEl.value.querySelector(`.msg[data-msg-id="${id}"]`)
       if (el) readObserver.observe(el)
       return
     }
