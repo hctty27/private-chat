@@ -146,7 +146,6 @@ export const useChatStore = defineStore('chat', () => {
         break
       }
       case 'read': {
-        // Mark messages as read
         const readerId = data.data.readerId
         if (currentContact.value && readerId === currentContact.value.userId) {
           messages.value.forEach((m) => {
@@ -154,7 +153,11 @@ export const useChatStore = defineStore('chat', () => {
               m.isRead = 1
             }
           })
+          currentContact.value.unreadCount = 0
         }
+        // 同步清联系人列表角标
+        const readerContact = contacts.value.find(c => c.userId === readerId)
+        if (readerContact) readerContact.unreadCount = 0
         break
       }
       case 'online': {

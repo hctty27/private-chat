@@ -248,7 +248,7 @@ function setupReadObserver() {
         }
         if (needsMark) markVisibleAsRead()
       },
-      { root: listEl.value, threshold: 0.5 }
+      { root: listEl.value, threshold: 0.1 }
     )
     // 初始：观察所有对方的未读消息
     addUnreadToObserver()
@@ -272,18 +272,29 @@ function teardownReadObserver() {
   pendingReadIds.clear()
 }
 
+function sendReadReceipt() {
+  if (!chatStore.currentContact) return
+  chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
+  chatStore.currentContact.unreadCount = 0
+  pendingReadIds.clear()
+}
+
+function markAsReadIfVisible() {
+  if (!chatStore.currentContact || !pendingReadIds.size) return
+  if (isNearBottom(200)) {
+    if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null }
+    sendReadReceipt()
+  }
+}
+
 let markReadTimer: ReturnType<typeof setTimeout> | null = null
 function markVisibleAsRead() {
   if (markReadTimer) clearTimeout(markReadTimer)
   markReadTimer = setTimeout(() => {
     if (!chatStore.currentContact) return
-    // 有未读消息进入视口 → 发已读
-    chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
-    // 清未读角标
-    chatStore.currentContact.unreadCount = 0
-    pendingReadIds.clear()
+    sendReadReceipt()
     markReadTimer = null
-  }, 200)
+  }, 50)
 }
 
 // ========== Unified Watchers ==========
@@ -300,8 +311,8 @@ watch(mobileChat, (v) => { if (v) bindScrollListener() })
 watch(listEl, (el) => { if (el) bindScrollListener() })
 // New messages
 watch(() => chatStore.messages.length, (newLen) => {
-  // 只 observe 新来的未读消息
   addUnreadToObserver()
+  markAsReadIfVisible()
   if (isLoadingMore) return
   if (newLen > prevMsgCount && isNearBottom()) {
     scrollToBottom(true)
