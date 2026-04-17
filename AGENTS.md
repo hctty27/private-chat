@@ -4,38 +4,37 @@
 私聊系统 — 伪装成"有趣"(微博克隆)的加密聊天网站。
 
 ## 技术栈
-- **后端**: Spring Boot 3.5.9 + MyBatis Plus + JWT + WebSocket + MinIO
+- **后端**: Go 1.23 + Gin + GORM + JWT + WebSocket + MinIO
 - **前端**: Vue 3 + TypeScript + Pinia + Element Plus + Tailwind CSS 4
-- **数据库**: MySQL 8.0 + Redis
+- **数据库**: PostgreSQL + Redis
 - **部署**: Docker Compose（my-network 网络）
 
 ## 项目结构
 
 ```
 private-chat/
-├── backend/                      # Spring Boot 后端
-│   ├── src/main/java/com/privatechat/
-│   │   ├── PrivateChatApplication.java
-│   │   ├── config/               # 配置类
-│   │   │   ├── SecurityConfig.java
-│   │   │   ├── WebSocketConfig.java
-│   │   │   ├── JwtAuthFilter.java
-│   │   │   ├── MinioConfig.java
-│   │   │   └── MybatisPlusConfig.java
-│   │   ├── controller/           # REST 控制器
-│   │   │   ├── AuthController.java      # 登录
-│   │   │   ├── ContactController.java   # 联系人
-│   │   │   ├── MessageController.java   # 消息查询
-│   │   │   └── FileController.java      # 文件上传/下载
-│   │   ├── service/              # 业务接口
-│   │   │   └── impl/             # 实现类
-│   │   ├── mapper/               # MyBatis Mapper
-│   │   ├── entity/               # 实体类
-│   │   ├── websocket/            # WebSocket 处理
-│   │   │   ├── ChatWebSocketHandler.java
-│   │   │   └── JwtHandshakeInterceptor.java
-│   │   └── util/                 # 工具类
-│   ├── pom.xml
+├── backend/                      # Go 后端
+│   ├── cmd/
+│   │   └── privatechat/
+│   │       └── main.go
+│   ├── internal/
+│   │   ├── app/
+│   │   │   ├── app.go
+│   │   │   ├── handlers.go
+│   │   │   ├── hub.go
+│   │   │   ├── utils.go
+│   │   │   └── ws.go
+│   │   ├── auth/
+│   │   │   └── jwt.go
+│   │   ├── config/
+│   │   │   └── config.go
+│   │   ├── model/
+│   │   │   └── model.go
+│   │   └── platform/
+│   │       └── db/
+│   │           └── db.go
+│   ├── go.mod
+│   ├── go.sum
 │   └── Dockerfile
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
@@ -58,7 +57,6 @@ private-chat/
 │   ├── Dockerfile
 │   └── nginx.conf
 ├── docker-compose.yml            # 服务编排
-├── init.sql                      # 数据库初始化脚本
 └── DESIGN.md                     # 设计文档
 ```
 
@@ -98,7 +96,7 @@ private-chat/
 |------|------|------|
 | POST | /api/auth/login | 登录（username/password → JWT） |
 | GET | /api/contacts | 联系人列表 |
-| GET | /api/messages?targetId=&cursor=&pageSize= | 历史消息（游标分页） |
+| GET | /api/messages/:targetId | 历史消息（游标分页） |
 | POST | /api/file/upload | 文件上传（multipart） |
 | GET | /api/file/download/{objectName} | 文件下载（后端代理 MinIO） |
 
@@ -115,7 +113,7 @@ private-chat/
 
 ```bash
 # 后端构建
-cd backend && mvn clean package -DskipTests
+cd backend && go build ./cmd/privatechat
 
 # 前端构建
 cd frontend && npm install && npm run build
@@ -139,7 +137,7 @@ docker logs pc-frontend --tail 50
 
 ## 环境变量（docker-compose.yml）
 
-- MySQL: root / ycy2026mysql
+- PostgreSQL: admin / ycy2026postgres
 - Redis: ycy2026redis
 - MinIO: admin / ycy2026minio
 - JWT Secret: 见 docker-compose.yml

@@ -1,12 +1,15 @@
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM golang:1.23-alpine AS build
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
-COPY src ./src
-RUN mvn clean package -DskipTests -B
+RUN apk add --no-cache git ca-certificates tzdata
+COPY go.mod go.sum ./
+RUN go env -w GOPROXY=https://proxy.golang.org,direct
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/private-chat-backend ./cmd/privatechat
 
-FROM eclipse-temurin:21-jre
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /out/private-chat-backend /app/private-chat-backend
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/app/private-chat-backend"]
