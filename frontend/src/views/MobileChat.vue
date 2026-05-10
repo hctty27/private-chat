@@ -48,10 +48,10 @@
                   <img :src="m.fileUrl" class="pic" @click="openPreview(m.fileUrl!, 'image')" />
                 </template>
                 <template v-else-if="m.msgType === 5 && m.fileUrl">
-                  <div class="video-wrap" @click="openPreview(m.fileUrl!, 'video')">
-                    <video :src="m.fileUrl" class="video-thumb" preload="metadata" playsinline webkit-playsinline muted />
-                    <div class="video-play">&#9654;</div>
-                  </div>
+                  <a :href="m.fileUrl" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
+                     {{ m.fileName }}
+                    <small v-if="m.fileSize">{{ fmtSize(m.fileSize) }}</small>
+                  </a>
                 </template>
                 <template v-else-if="m.msgType === 3 && m.fileUrl">
                   <a :href="m.fileUrl" target="_blank" download class="file-link">
@@ -144,6 +144,7 @@ const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
 
 const scroll = useChatScroll(listEl, uid)
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
 let vvHandler: (() => void) | null = null
 
@@ -371,14 +372,8 @@ html, body, #app {
 .emoji-big { font-size: 52px; line-height: 1.2; }
 
 .pic { max-width: 200px; max-height: 260px; border-radius: 8px; display: block; cursor: pointer; }
-.video-wrap { position: relative; display: inline-block; cursor: pointer; border-radius: 8px; overflow: hidden; }
-.video-thumb { max-width: 200px; max-height: 260px; display: block; }
-.video-play {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.3); color: #fff; font-size: 36px;
-  pointer-events: none;
-}
+.video-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
+.video-link small { display: block; color: #999; font-size: 12px; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
 
