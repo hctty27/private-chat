@@ -19,7 +19,7 @@ type App struct {
 	cfg    config.Config
 	db     *gorm.DB
 	redis  *redis.Client
-	minio  *minio.Client
+	storage *minio.Client
 	jwt    *auth.JWTManager
 	hub    *Hub
 	loc    *time.Location
@@ -47,11 +47,11 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("redis ping failed: %w", err)
 	}
 
-	minioClient, err := pdb.NewMinIOClient(cfg)
+	storageClient, err := pdb.NewObjectStorageClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	if err := pdb.EnsureBucket(context.Background(), minioClient, cfg.MinIOBucket); err != nil {
+	if err := pdb.EnsureBucket(context.Background(), storageClient, cfg.StorageBucket); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +59,7 @@ func NewApp() (*App, error) {
 		cfg:   cfg,
 		db:    db,
 		redis: rdb,
-		minio: minioClient,
+		storage: storageClient,
 		jwt:   auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
 		hub:   NewHub(),
 		loc:   loc,

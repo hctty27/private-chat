@@ -75,19 +75,19 @@ func postgresDialFunc(ctx context.Context, _ string, addr string) (net.Conn, err
 	return dialer.DialContext(ctx, "tcp4", addr)
 }
 
-func NewMinIOClient(cfg config.Config) (*minio.Client, error) {
-	endpoint, secure := parseMinIOEndpoint(cfg.MinIOEndpoint)
+func NewObjectStorageClient(cfg config.Config) (*minio.Client, error) {
+	endpoint, secure := parseObjectStorageEndpoint(cfg.StorageEndpoint)
 	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.MinIOAccessKey, cfg.MinIOSecretKey, ""),
+		Creds:  credentials.NewStaticV4(cfg.StorageAccessKey, cfg.StorageSecretKey, ""),
 		Secure: secure,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("minio init failed: %w", err)
+		return nil, fmt.Errorf("object storage init failed: %w", err)
 	}
 	return client, nil
 }
 
-func parseMinIOEndpoint(raw string) (string, bool) {
+func parseObjectStorageEndpoint(raw string) (string, bool) {
 	if strings.HasPrefix(raw, "http://") {
 		return strings.TrimPrefix(raw, "http://"), false
 	}
@@ -97,16 +97,21 @@ func parseMinIOEndpoint(raw string) (string, bool) {
 	return raw, false
 }
 
+type bucketChecker interface {
+	BucketExists(context.Context, string) (bool, error)
+}
+
 func EnsureBucket(ctx context.Context, client *minio.Client, bucket string) error {
-	exists, err := client.BucketExists(ctx, bucket)
+	return ensureBucketExists(ctx, client, bucket)
+}
+
+func ensureBucketExists(ctx context.Context, checker bucketChecker, bucket string) error {
+	exists, err := checker.BucketExists(ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("minio bucket check failed: %w", err)
+		return fmt.Errorf("object storage bucket check failed: %w", err)
 	}
-	if exists {
-		return nil
-	}
-	if err := client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
-		return fmt.Errorf("minio bucket create failed: %w", err)
+	if !exists {
+		return fmt.Errorf("object storage bucket %s does not exist", bucket)
 	}
 	return nil
 }

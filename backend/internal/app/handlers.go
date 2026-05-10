@@ -296,7 +296,8 @@ func (a *App) uploadHandler(c *gin.Context) {
 		contentType = "application/octet-stream"
 	}
 
-	_, err = a.minio.PutObject(c.Request.Context(), a.cfg.MinIOBucket, objectName, file, fileHeader.Size, minio.PutObjectOptions{
+	storageKey := objectStorageKey(a.cfg.ObjectStoragePrefix, objectName)
+	_, err = a.storage.PutObject(c.Request.Context(), a.cfg.StorageBucket, storageKey, file, fileHeader.Size, minio.PutObjectOptions{
 		ContentType: contentType,
 	})
 	if err != nil {
@@ -313,7 +314,8 @@ func (a *App) uploadHandler(c *gin.Context) {
 
 func (a *App) downloadHandler(c *gin.Context) {
 	objectName := c.Param("objectName")
-	obj, err := a.minio.GetObject(c.Request.Context(), a.cfg.MinIOBucket, objectName, minio.GetObjectOptions{})
+	storageKey := objectStorageKey(a.cfg.ObjectStoragePrefix, objectName)
+	obj, err := a.storage.GetObject(c.Request.Context(), a.cfg.StorageBucket, storageKey, minio.GetObjectOptions{})
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return

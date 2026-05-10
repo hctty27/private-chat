@@ -47,7 +47,7 @@ export function uploadFile(file: File, onProgress?: (p: number) => void) {
   formData.append('file', file)
   return api.post<ApiResponse<FileUploadResponse>>('/api/file/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 120000,
+    timeout: 600000,
     onUploadProgress: (e) => {
       if (e.total && onProgress) {
         onProgress(Math.round((e.loaded * 100) / e.total))

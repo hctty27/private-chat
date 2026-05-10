@@ -2,9 +2,41 @@ package db
 
 import (
 	"context"
+	"errors"
 	"net"
+	"strings"
 	"testing"
 )
+
+type bucketCheckerFunc func(context.Context, string) (bool, error)
+
+func (f bucketCheckerFunc) BucketExists(ctx context.Context, bucket string) (bool, error) {
+	return f(ctx, bucket)
+}
+
+func TestEnsureBucketExistsReturnsErrorWhenBucketMissing(t *testing.T) {
+	err := ensureBucketExists(context.Background(), bucketCheckerFunc(func(context.Context, string) (bool, error) {
+		return false, nil
+	}), "private-chat-r2")
+	if err == nil {
+		t.Fatal("expected missing bucket error")
+	}
+	if !strings.Contains(err.Error(), "object storage bucket private-chat-r2 does not exist") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEnsureBucketExistsWrapsCheckError(t *testing.T) {
+	err := ensureBucketExists(context.Background(), bucketCheckerFunc(func(context.Context, string) (bool, error) {
+		return false, errors.New("denied")
+	}), "private-chat-r2")
+	if err == nil {
+		t.Fatal("expected check error")
+	}
+	if !strings.Contains(err.Error(), "object storage bucket check failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
 
 func TestPostgresLookupFuncReturnsOnlyIPv4Addresses(t *testing.T) {
 	addrs, err := postgresLookupFunc(context.Background(), "localhost")
