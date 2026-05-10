@@ -23,7 +23,7 @@ export interface Message {
   id: number
   senderId: number
   receiverId: number
-  msgType: 1 | 2 | 3 | 4
+  msgType: 1 | 2 | 3 | 4 | 5
   content: string | null
   fileUrl: string | null
   fileName: string | null
@@ -41,6 +41,11 @@ export interface FileUploadResponse {
   url: string
   fileName: string
   fileSize: number
+}
+
+export interface FilePresignUploadResponse extends FileUploadResponse {
+  uploadUrl: string
+  headers: Record<string, string>
 }
 
 // WebSocket message types
@@ -75,7 +80,7 @@ export interface WsClientChat {
   type: 'chat'
   data: {
     receiverId: number
-    msgType: 1 | 2 | 3 | 4
+    msgType: 1 | 2 | 3 | 4 | 5
     content: string | null
     fileUrl: string | null
     fileName: string | null

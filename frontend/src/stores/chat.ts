@@ -97,11 +97,12 @@ export const useChatStore = defineStore('chat', () => {
       if (res.data.code === 200) {
         const { url, fileName, fileSize } = res.data.data
         const isImage = file.type.startsWith('image/')
+        const isVideo = file.type.startsWith('video/')
         sendWsMessage({
           type: 'chat',
           data: {
             receiverId: currentContact.value.userId,
-            msgType: isImage ? 2 : 3,
+            msgType: isImage ? 2 : isVideo ? 5 : 3,
             content: null,
             fileUrl: url,
             fileName,
@@ -137,7 +138,9 @@ export const useChatStore = defineStore('chat', () => {
         const contactId = msg.senderId === userStore.userId ? msg.receiverId : msg.senderId
         const contact = contacts.value.find((c) => c.userId === contactId)
         if (contact) {
-          contact.lastMessage = msg.content || msg.fileName || '[文件]'
+          contact.lastMessage = msg.content || msg.fileName
+            ? (msg.msgType === 2 ? '[图片]' : msg.msgType === 5 ? '[视频]' : msg.fileName || '[文件]')
+            : '[文件]'
           contact.lastMessageTime = msg.createdAt
           if (msg.senderId !== userStore.userId && (!currentContact.value || currentContact.value.userId !== contactId)) {
             contact.unreadCount++

@@ -16,14 +16,14 @@ import (
 )
 
 type App struct {
-	cfg    config.Config
-	db     *gorm.DB
-	redis  *redis.Client
+	cfg     config.Config
+	db      *gorm.DB
+	redis   *redis.Client
 	storage *minio.Client
-	jwt    *auth.JWTManager
-	hub    *Hub
-	loc    *time.Location
-	router *gin.Engine
+	jwt     *auth.JWTManager
+	hub     *Hub
+	loc     *time.Location
+	router  *gin.Engine
 }
 
 func NewApp() (*App, error) {
@@ -56,13 +56,13 @@ func NewApp() (*App, error) {
 	}
 
 	app := &App{
-		cfg:   cfg,
-		db:    db,
-		redis: rdb,
+		cfg:     cfg,
+		db:      db,
+		redis:   rdb,
 		storage: storageClient,
-		jwt:   auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
-		hub:   NewHub(),
-		loc:   loc,
+		jwt:     auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
+		hub:     NewHub(),
+		loc:     loc,
 	}
 	app.router = app.routes()
 	return app, nil
@@ -90,6 +90,7 @@ func (a *App) routes() *gin.Engine {
 		{
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/messages/:targetId", a.messagesHandler)
+			protected.POST("/file/presign-upload", a.presignUploadHandler)
 			protected.POST("/file/upload", a.uploadHandler)
 		}
 		api.GET("/file/download/:objectName", a.downloadHandler)

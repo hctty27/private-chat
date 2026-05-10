@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS t_message (
     file_size       BIGINT,
     is_read         SMALLINT NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT ck_message_msg_type CHECK (msg_type IN (1, 2, 3, 4)),
+    CONSTRAINT ck_message_msg_type CHECK (msg_type IN (1, 2, 3, 4, 5)),
     CONSTRAINT ck_message_is_read CHECK (is_read IN (0, 1))
 );
 

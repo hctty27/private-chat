@@ -24,3 +24,6 @@ frontend/.vite/
 # Environment
 .env
 .env.local
+
+
+temp/

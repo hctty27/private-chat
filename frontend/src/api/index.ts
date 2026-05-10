@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, LoginResponse, Contact, MessagesResponse, FileUploadResponse } from '../types'
+import type { ApiResponse, LoginResponse, Contact, MessagesResponse, FilePresignUploadResponse } from '../types'
 import router from '../router'
 
 const api = axios.create({
@@ -42,11 +42,20 @@ export function getMessages(targetId: number, cursor?: string, size = 20, mode: 
   return api.get<ApiResponse<MessagesResponse>>(`/api/messages/${targetId}`, { params })
 }
 
-export function uploadFile(file: File, onProgress?: (p: number) => void) {
-  const formData = new FormData()
-  formData.append('file', file)
-  return api.post<ApiResponse<FileUploadResponse>>('/api/file/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+export async function uploadFile(file: File, onProgress?: (p: number) => void) {
+  const contentType = file.type || 'application/octet-stream'
+  const presignRes = await api.post<ApiResponse<FilePresignUploadResponse>>('/api/file/presign-upload', {
+    fileName: file.name,
+    contentType,
+    fileSize: file.size,
+  })
+  if (presignRes.data.code !== 200) {
+    return presignRes
+  }
+
+  const { uploadUrl, headers } = presignRes.data.data
+  await axios.put(uploadUrl, file, {
+    headers: headers || { 'Content-Type': contentType },
     timeout: 600000,
     onUploadProgress: (e) => {
       if (e.total && onProgress) {
@@ -54,6 +63,8 @@ export function uploadFile(file: File, onProgress?: (p: number) => void) {
       }
     },
   })
+
+  return presignRes
 }
 
 export default api

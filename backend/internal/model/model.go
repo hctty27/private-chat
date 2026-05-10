@@ -57,6 +57,20 @@ type FileUploadDTO struct {
 	FileSize int64  `json:"fileSize"`
 }
 
+type FilePresignUploadRequest struct {
+	FileName    string `json:"fileName"`
+	ContentType string `json:"contentType"`
+	FileSize    int64  `json:"fileSize"`
+}
+
+type FilePresignUploadDTO struct {
+	UploadURL string            `json:"uploadUrl"`
+	URL       string            `json:"url"`
+	FileName  string            `json:"fileName"`
+	FileSize  int64             `json:"fileSize"`
+	Headers   map[string]string `json:"headers"`
+}
+
 type User struct {
 	ID        int64     `gorm:"column:id;primaryKey;autoIncrement"`
 	Username  string    `gorm:"column:username"`

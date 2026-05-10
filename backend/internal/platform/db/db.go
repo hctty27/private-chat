@@ -80,6 +80,7 @@ func NewObjectStorageClient(cfg config.Config) (*minio.Client, error) {
 	client, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.StorageAccessKey, cfg.StorageSecretKey, ""),
 		Secure: secure,
+		Region: "auto",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("object storage init failed: %w", err)

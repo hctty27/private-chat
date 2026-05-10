@@ -267,6 +267,62 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 	return model.MessagePageDTO{Messages: toMessageDTOs(merged, a.loc), HasMore: hasMore}, nil
 }
 
+const maxFileUploadSize = 100 * 1024 * 1024
+
+func (a *App) presignUploadHandler(c *gin.Context) {
+	_, ok := getUserID(c)
+	if !ok {
+		unauthorized(c)
+		return
+	}
+
+	var req model.FilePresignUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusOK, 500, "请求参数错误")
+		return
+	}
+	resp, err := a.presignUpload(c.Request.Context(), req, time.Hour)
+	if err != nil {
+		respondError(c, http.StatusOK, 500, "生成上传地址失败")
+		return
+	}
+	respondSuccess(c, resp)
+}
+
+func (a *App) presignUpload(ctx context.Context, req model.FilePresignUploadRequest, expiry time.Duration) (model.FilePresignUploadDTO, error) {
+	fileName := strings.TrimSpace(req.FileName)
+	if fileName == "" {
+		return model.FilePresignUploadDTO{}, fmt.Errorf("file name is empty")
+	}
+	if req.FileSize > maxFileUploadSize {
+		return model.FilePresignUploadDTO{}, fmt.Errorf("file too large")
+	}
+
+	ext := filepath.Ext(fileName)
+	objectName := uuid.NewString() + ext
+	contentType := strings.TrimSpace(req.ContentType)
+	if contentType == "" {
+		contentType = mime.TypeByExtension(strings.ToLower(ext))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	storageKey := objectStorageKey(a.cfg.ObjectStoragePrefix, objectName)
+	uploadURL, err := a.storage.PresignedPutObject(ctx, a.cfg.StorageBucket, storageKey, expiry)
+	if err != nil {
+		return model.FilePresignUploadDTO{}, err
+	}
+
+	return model.FilePresignUploadDTO{
+		UploadURL: uploadURL.String(),
+		URL:       "/api/file/download/" + objectName,
+		FileName:  fileName,
+		FileSize:  req.FileSize,
+		Headers:   map[string]string{"Content-Type": contentType},
+	}, nil
+}
+
 func (a *App) uploadHandler(c *gin.Context) {
 	_, ok := getUserID(c)
 	if !ok {
@@ -312,29 +368,91 @@ func (a *App) uploadHandler(c *gin.Context) {
 	})
 }
 
+func parseSingleRange(header string, size int64) (int64, int64, error) {
+	if size <= 0 || !strings.HasPrefix(header, "bytes=") {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+	spec := strings.TrimPrefix(header, "bytes=")
+	if strings.Contains(spec, ",") {
+		return 0, 0, fmt.Errorf("multiple ranges are not supported")
+	}
+	startText, endText, ok := strings.Cut(spec, "-")
+	if !ok {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+	if startText == "" {
+		suffix, err := strconv.ParseInt(endText, 10, 64)
+		if err != nil || suffix <= 0 {
+			return 0, 0, fmt.Errorf("invalid range")
+		}
+		if suffix > size {
+			suffix = size
+		}
+		return size - suffix, size - 1, nil
+	}
+	start, err := strconv.ParseInt(startText, 10, 64)
+	if err != nil || start < 0 || start >= size {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+	end := size - 1
+	if endText != "" {
+		end, err = strconv.ParseInt(endText, 10, 64)
+		if err != nil || end < start {
+			return 0, 0, fmt.Errorf("invalid range")
+		}
+		if end >= size {
+			end = size - 1
+		}
+	}
+	return start, end, nil
+}
+
 func (a *App) downloadHandler(c *gin.Context) {
 	objectName := c.Param("objectName")
 	storageKey := objectStorageKey(a.cfg.ObjectStoragePrefix, objectName)
-	obj, err := a.storage.GetObject(c.Request.Context(), a.cfg.StorageBucket, storageKey, minio.GetObjectOptions{})
+
+	stat, err := a.storage.StatObject(c.Request.Context(), a.cfg.StorageBucket, storageKey, minio.StatObjectOptions{})
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	opts := minio.GetObjectOptions{}
+	status := http.StatusOK
+	contentLength := stat.Size
+	if rangeHeader := c.GetHeader("Range"); rangeHeader != "" {
+		start, end, err := parseSingleRange(rangeHeader, stat.Size)
+		if err != nil {
+			c.Header("Content-Range", fmt.Sprintf("bytes */%d", stat.Size))
+			c.Status(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if err := opts.SetRange(start, end); err != nil {
+			c.Status(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		status = http.StatusPartialContent
+		contentLength = end - start + 1
+		c.Header("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, stat.Size))
+	}
+
+	obj, err := a.storage.GetObject(c.Request.Context(), a.cfg.StorageBucket, storageKey, opts)
 	if err != nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
 	defer obj.Close()
 
-	stat, err := obj.Stat()
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
 	contentType := stat.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+	c.Header("Accept-Ranges", "bytes")
 	c.Header("Content-Type", contentType)
+	c.Header("Content-Length", strconv.FormatInt(contentLength, 10))
 	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, objectName))
+	c.Status(status)
 	if _, err := io.Copy(c.Writer, obj); err != nil {
-		c.Status(http.StatusNotFound)
 		return
 	}
 }

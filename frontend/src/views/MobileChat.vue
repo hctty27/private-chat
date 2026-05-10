@@ -45,7 +45,13 @@
                 <template v-if="m.msgType === 1">{{ m.content }}</template>
                 <template v-else-if="m.msgType === 4"><span class="emoji-big">{{ m.content }}</span></template>
                 <template v-else-if="m.msgType === 2 && m.fileUrl">
-                  <img :src="m.fileUrl" class="pic" @click="preview(m.fileUrl!)" />
+                  <img :src="m.fileUrl" class="pic" @click="openPreview(m.fileUrl!, 'image')" />
+                </template>
+                <template v-else-if="m.msgType === 5 && m.fileUrl">
+                  <div class="video-wrap" @click="openPreview(m.fileUrl!, 'video')">
+                    <video :src="m.fileUrl" class="video-thumb" preload="metadata" playsinline webkit-playsinline muted />
+                    <div class="video-play">&#9654;</div>
+                  </div>
                 </template>
                 <template v-else-if="m.msgType === 3 && m.fileUrl">
                   <a :href="m.fileUrl" target="_blank" download class="file-link">
@@ -63,6 +69,14 @@
           <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
         </div>
       </div>
+
+      <!-- 媒体预览弹窗 -->
+      <MediaPreview
+        :visible="previewVisible"
+        :url="previewUrl"
+        :type="previewType"
+        @close="previewVisible = false"
+      />
 
       <!-- 表情面板 -->
       <div v-if="emojiOpen" class="emoji-box">
@@ -111,6 +125,7 @@ import type { Message } from '../types'
 import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { useRouter } from 'vue-router'
 import ContactList from '../components/ContactList.vue'
+import MediaPreview from '../components/MediaPreview.vue'
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
@@ -124,6 +139,9 @@ const fileEl = ref<HTMLInputElement | null>(null)
 const text = ref('')
 const emojiOpen = ref(false)
 const progress = ref(0)
+const previewVisible = ref(false)
+const previewUrl = ref('')
+const previewType = ref<'image' | 'video'>('image')
 
 const scroll = useChatScroll(listEl, uid)
 
@@ -230,7 +248,11 @@ function bubbleType(m: Message) {
   if (m.msgType === 4) return 'emoji'
   return m.senderId === uid.value ? 'mine' : 'his'
 }
-function preview(url: string) { window.open(url, '_blank') }
+function openPreview(url: string, type: 'image' | 'video') {
+  previewUrl.value = url
+  previewType.value = type
+  previewVisible.value = true
+}
 function logout() {
   chatStore.disconnectWs()
   userStore.logout()
@@ -349,6 +371,14 @@ html, body, #app {
 .emoji-big { font-size: 52px; line-height: 1.2; }
 
 .pic { max-width: 200px; max-height: 260px; border-radius: 8px; display: block; cursor: pointer; }
+.video-wrap { position: relative; display: inline-block; cursor: pointer; border-radius: 8px; overflow: hidden; }
+.video-thumb { max-width: 200px; max-height: 260px; display: block; }
+.video-play {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.3); color: #fff; font-size: 36px;
+  pointer-events: none;
+}
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
 

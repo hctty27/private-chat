@@ -115,6 +115,8 @@ func messagePreview(msg model.Message) string {
 		if msg.Content != nil {
 			return *msg.Content
 		}
+	case 5:
+		return "[视频]"
 	}
 	return "[消息]"
 }
