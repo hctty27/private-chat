@@ -14,6 +14,7 @@ type Config struct {
 	PostgresUser     string
 	PostgresPassword string
 	PostgresDatabase string
+	PostgresSSLMode  string
 	RedisAddr        string
 	RedisPassword    string
 	MinIOEndpoint    string
@@ -34,6 +35,7 @@ func Load() Config {
 		PostgresUser:     envOrDefault("POSTGRES_USER", "admin"),
 		PostgresPassword: envOrDefault("POSTGRES_PASSWORD", "postgres"),
 		PostgresDatabase: envOrDefault("POSTGRES_DB", "private_chat"),
+		PostgresSSLMode:  envOrDefault("POSTGRES_SSLMODE", "disable"),
 		RedisAddr:        envOrDefault("REDIS_ADDR", "redis:6379"),
 		RedisPassword:    envOrDefault("REDIS_PASSWORD", "ycy2026redis"),
 		MinIOEndpoint:    envOrDefault("MINIO_ENDPOINT", "http://minio:9000"),
