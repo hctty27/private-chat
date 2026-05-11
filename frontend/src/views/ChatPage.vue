@@ -46,7 +46,6 @@
             <div
               v-for="vi in scroll.virtualizer.value.getVirtualItems()"
               :key="String(vi.key)"
-              :ref="(el: any) => scroll.virtualizer.value.measureElement(el)"
               class="virtual-item"
               :data-index="vi.index"
               :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)` }"
