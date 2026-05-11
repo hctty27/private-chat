@@ -2,15 +2,12 @@
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="visible" class="media-overlay" @click.self="close">
-        <button class="close-btn" @click="close">&times;</button>
-
         <!-- Image -->
         <img
           v-if="type === 'image'"
           :src="url"
           class="media-content media-img"
-          :class="{ zoomed }"
-          @click="zoomed = !zoomed"
+          @click="close"
           @load="loaded = true"
         />
 
@@ -44,7 +41,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const zoomed = ref(false)
 const loaded = ref(false)
 const videoEl = ref<HTMLVideoElement | null>(null)
 
@@ -57,7 +53,6 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 watch(() => props.visible, (v) => {
-  zoomed.value = false
   loaded.value = false
   if (v) {
     document.addEventListener('keydown', onKeydown)
@@ -92,24 +87,6 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.close-btn {
-  position: absolute;
-  top: 16px;
-  right: 20px;
-  z-index: 10000;
-  background: none;
-  border: none;
-  color: #fff;
-  font-size: 36px;
-  cursor: pointer;
-  line-height: 1;
-  opacity: 0.8;
-  transition: opacity 0.2s;
-}
-.close-btn:hover {
-  opacity: 1;
-}
-
 .media-content {
   max-width: 90vw;
   max-height: 90vh;
@@ -117,17 +94,7 @@ onUnmounted(() => {
 }
 
 .media-img {
-  cursor: zoom-in;
   border-radius: 4px;
-  transition: transform 0.3s ease;
-}
-.media-img.zoomed {
-  cursor: zoom-out;
-  max-width: none;
-  max-height: none;
-  transform: scale(1);
-  width: auto;
-  height: auto;
 }
 
 .media-video {

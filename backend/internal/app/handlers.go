@@ -120,15 +120,16 @@ func (a *App) contactsHandler(c *gin.Context) {
 	}
 
 	lastMessages := make(map[string]model.Message, len(conversationIDs))
-	var messages []model.Message
-	if err := a.db.Where("conversation_id IN ?", conversationIDs).Order("created_at desc").Find(&messages).Error; err != nil {
+	var lastMsgs []model.Message
+	if err := a.db.Raw(
+		"SELECT DISTINCT ON (conversation_id) * FROM t_message WHERE conversation_id IN ? ORDER BY conversation_id, created_at DESC",
+		conversationIDs,
+	).Scan(&lastMsgs).Error; err != nil {
 		respondError(c, http.StatusOK, 500, err.Error())
 		return
 	}
-	for _, msg := range messages {
-		if _, ok := lastMessages[msg.ConversationID]; !ok {
-			lastMessages[msg.ConversationID] = msg
-		}
+	for _, msg := range lastMsgs {
+		lastMessages[msg.ConversationID] = msg
 	}
 
 	unreadCounts := make(map[string]int)
