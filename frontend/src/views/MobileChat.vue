@@ -40,7 +40,7 @@
         <div
           v-else
           class="virtual-list"
-          :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
+          :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative', ...scroll.loadMoreStyle.value }"
         >
           <div
             v-for="vi in scroll.virtualizer.value.getVirtualItems()"
