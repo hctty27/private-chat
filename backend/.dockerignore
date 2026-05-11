@@ -1,0 +1,7 @@
+privatechat
+.git
+.gitignore
+*.md
+.env*
+.vscode
+.DS_Store
