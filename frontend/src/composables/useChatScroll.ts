@@ -9,13 +9,7 @@ export function useChatScroll(
   const chatStore = useChatStore()
   const loading = ref(false)
 
-  // --- loadMore 补偿偏移 ---
-  const loadMoreOffset = ref(0)
-  const loadMoreStyle = computed(() =>
-    loadMoreOffset.value ? { transform: `translateY(${loadMoreOffset.value}px)` } : {}
-  )
-
-  // --- Virtualizer ---
+  // --- Virtualizer (传 computed 实现响应式) ---
   const virtualizer = useVirtualizer(computed(() => ({
     count: chatStore.messages.length,
     getScrollElement: () => listEl.value,
@@ -81,24 +75,13 @@ export function useChatScroll(
     await nextTick()
 
     if (!listEl.value) { loading.value = false; isLoadingMore = false; return }
-
-    // 等虚拟滚动测量完实际高度后再补偿
-    await nextTick()
-
-    if (!listEl.value) { loading.value = false; isLoadingMore = false; return }
     const delta = listEl.value.scrollHeight - prevScrollHeight
 
     if (delta > 0) {
-      // 先用 transform 瞬间补偿，防止视觉跳动
-      loadMoreOffset.value = delta
       requestAnimationFrame(() => {
         if (listEl.value) listEl.value.scrollTop += delta
-        // 下一帧移除 transform
-        requestAnimationFrame(() => {
-          loadMoreOffset.value = 0
-          isLoadingMore = false
-          loading.value = false
-        })
+        isLoadingMore = false
+        loading.value = false
       })
     } else {
       isLoadingMore = false
@@ -145,7 +128,6 @@ export function useChatScroll(
   // --- Watchers ---
   function onContactChange() {
     prevMsgCount = chatStore.messages.length
-    loadMoreOffset.value = 0
     bindScrollListener()
     scrollToBottom(false)
   }
@@ -178,7 +160,6 @@ export function useChatScroll(
   return {
     loading,
     virtualizer,
-    loadMoreStyle,
     isNearBottom,
     scrollToBottom,
     bindScrollListener,
