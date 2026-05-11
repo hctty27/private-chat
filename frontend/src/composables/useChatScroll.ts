@@ -1,23 +1,27 @@
-import { ref, computed, nextTick, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onUnmounted, watch, type Ref } from 'vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useChatStore } from '../stores/chat'
 
 export function useChatScroll(
-  listEl: ReturnType<typeof ref<HTMLElement | null>>,
-  uid: import('vue').ComputedRef<number>
+  listEl: Ref<HTMLElement | null>,
+  uid: Ref<number>
 ) {
   const chatStore = useChatStore()
   const loading = ref(false)
 
+  // --- Virtualizer (传 computed 实现响应式) ---
+  const virtualizer = useVirtualizer(computed(() => ({
+    count: chatStore.messages.length,
+    getScrollElement: () => listEl.value,
+    estimateSize: () => 72,
+    overscan: 10,
+  })))
+
   // --- Scroll ---
-  let scrollHandler: (() => void) | null = null
   let isLoadingMore = false
   let prevMsgCount = 0
   let scrollThrottle = false
-
-  const loadMoreOffset = ref(0)
-  const loadMoreStyle = computed(() =>
-    loadMoreOffset.value ? { transform: `translateY(${loadMoreOffset.value}px)` } : {}
-  )
+  let scrollHandler: (() => void) | null = null
 
   function removeScrollListener() {
     if (listEl.value && scrollHandler) {
@@ -44,7 +48,11 @@ export function useChatScroll(
 
   function scrollToBottom(smooth = false) {
     requestAnimationFrame(() => {
-      listEl.value?.scrollTo({ top: listEl.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+      if (!listEl.value) return
+      listEl.value.scrollTo({
+        top: listEl.value.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      })
     })
   }
 
@@ -70,10 +78,8 @@ export function useChatScroll(
     const delta = listEl.value.scrollHeight - prevScrollHeight
 
     if (delta > 0) {
-      loadMoreOffset.value = delta
       requestAnimationFrame(() => {
         if (listEl.value) listEl.value.scrollTop += delta
-        loadMoreOffset.value = 0
         isLoadingMore = false
         loading.value = false
       })
@@ -84,78 +90,49 @@ export function useChatScroll(
   }
 
   // --- Read Observer ---
-  let readObserver: IntersectionObserver | null = null
-  const pendingReadIds = new Set<string>()
+  let readCheckTimer: ReturnType<typeof setTimeout> | null = null
 
-  function setupReadObserver() {
-    teardownReadObserver()
-    nextTick(() => {
-      if (!listEl.value) return
-      readObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (!entry.isIntersecting) continue
-            const el = entry.target as HTMLElement
-            const msgId = el.dataset.msgId
-            if (msgId && pendingReadIds.has(msgId)) {
-              sendReadReceipt()
-              return
-            }
-          }
-        },
-        { root: listEl.value, threshold: 0.1 }
-      )
-      observeLastUnread()
-    })
-  }
+  function checkVisibleUnread() {
+    if (!chatStore.currentContact || !listEl.value) return
+    const v = virtualizer.value
+    const items = v.getVirtualItems()
+    if (!items.length) return
 
-  function observeLastUnread() {
-    if (!readObserver || !listEl.value) return
-    readObserver.disconnect()
-    pendingReadIds.clear()
-
-    for (let i = chatStore.messages.length - 1; i >= 0; i--) {
-      const m = chatStore.messages[i]
-      if (m.senderId !== uid.value && m.isRead !== 1) {
-        const id = String(m.id)
-        pendingReadIds.add(id)
-        const el = listEl.value.querySelector(`.msg[data-msg-id="${id}"]`)
-        if (el) readObserver.observe(el)
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i]
+      const msg = chatStore.messages[item.index]
+      if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
+        sendReadReceipt()
         return
       }
     }
+  }
+
+  function scheduleReadCheck() {
+    if (readCheckTimer) clearTimeout(readCheckTimer)
+    readCheckTimer = setTimeout(checkVisibleUnread, 300)
   }
 
   function sendReadReceipt() {
     if (!chatStore.currentContact) return
     chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
     chatStore.currentContact.unreadCount = 0
-    pendingReadIds.clear()
   }
 
-  function teardownReadObserver() {
-    if (readObserver) { readObserver.disconnect(); readObserver = null }
-    pendingReadIds.clear()
-  }
-
-  function markAsReadIfVisible() {
-    if (!chatStore.currentContact || !pendingReadIds.size) return
-    if (isNearBottom(200)) {
-      sendReadReceipt()
-    }
-  }
+  watch(
+    () => virtualizer.value.getVirtualItems(),
+    () => { scheduleReadCheck() },
+    { flush: 'post' }
+  )
 
   // --- Watchers ---
   function onContactChange() {
     prevMsgCount = chatStore.messages.length
     bindScrollListener()
-    setupReadObserver()
     scrollToBottom(false)
   }
 
   function onMessagesChange() {
-    nextTick(observeLastUnread)
-    markAsReadIfVisible()
     if (isLoadingMore) return
     if (chatStore.messages.length > prevMsgCount && isNearBottom()) {
       scrollToBottom(true)
@@ -167,7 +144,7 @@ export function useChatScroll(
     if (el) bindScrollListener()
   }
 
-  async function onSelectContact() {
+  function onSelectContact() {
     prevMsgCount = chatStore.messages.length
     scrollToBottom()
   }
@@ -175,22 +152,18 @@ export function useChatScroll(
   // --- Cleanup ---
   function cleanup() {
     removeScrollListener()
-    teardownReadObserver()
+    if (readCheckTimer) clearTimeout(readCheckTimer)
   }
 
   onUnmounted(cleanup)
 
   return {
     loading,
-    loadMoreStyle,
+    virtualizer,
     isNearBottom,
     scrollToBottom,
     bindScrollListener,
-    setupReadObserver,
-    observeLastUnread,
     sendReadReceipt,
-    teardownReadObserver,
-    markAsReadIfVisible,
     onContactChange,
     onMessagesChange,
     onListReady,
@@ -198,4 +171,3 @@ export function useChatScroll(
     cleanup,
   }
 }
-

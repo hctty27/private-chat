@@ -164,11 +164,13 @@ export const useChatStore = defineStore('chat', () => {
       case 'read': {
         const readerId = data.data.readerId
         if (currentContact.value && readerId === currentContact.value.userId) {
-          messages.value.forEach((m) => {
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            const m = messages.value[i]
             if (m.senderId === userStore.userId) {
+              if (m.isRead === 1) break
               m.isRead = 1
             }
-          })
+          }
           currentContact.value.unreadCount = 0
         }
         // 同步清联系人列表角标

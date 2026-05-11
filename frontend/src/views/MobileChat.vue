@@ -28,45 +28,56 @@
 
       <!-- 消息列表 -->
       <div ref="listEl" class="msg-scroll">
-        <div class="msg-content" :style="scroll.loadMoreStyle.value">
-          <div class="load-more">
-            <span class="spinner" v-if="scroll.loading.value"></span>
-            <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
-            <span class="load-text" v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
-            <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
-          </div>
+        <div class="load-more">
+          <span class="spinner" v-if="scroll.loading.value"></span>
+          <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
+          <span class="load-text" v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
+          <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
+        </div>
 
-          <div v-for="(m, i) in chatStore.messages" :key="m.id">
-            <div v-if="showTime(m, i)" class="time-bar">
-              <span>{{ fmtChatTime(m.createdAt) }}</span>
+        <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
+
+        <div
+          v-else
+          class="virtual-list"
+          :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
+        >
+          <div
+            v-for="vi in scroll.virtualizer.value.getVirtualItems()"
+            :key="String(vi.key)"
+            class="virtual-item"
+            :data-index="vi.index"
+            :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)` }"
+            :data-msg-id="chatStore.messages[vi.index]?.id"
+          >
+            <div v-if="showTimeByIndex(vi.index)" class="time-bar">
+              <span>{{ fmtChatTime(chatStore.messages[vi.index].createdAt) }}</span>
             </div>
-            <div class="msg" :class="m.senderId === uid ? 'right' : 'left'" :data-msg-id="m.id">
-              <div class="bubble" :class="bubbleType(m)">
-                <template v-if="m.msgType === 1">{{ m.content }}</template>
-                <template v-else-if="m.msgType === 4"><span class="emoji-big">{{ m.content }}</span></template>
-                <template v-else-if="m.msgType === 2 && m.fileUrl">
-                  <img :src="m.fileUrl" class="pic" @click="openPreview(m.fileUrl!, 'image')" />
+            <div class="msg" :class="chatStore.messages[vi.index].senderId === uid ? 'right' : 'left'">
+              <div class="bubble" :class="bubbleType(chatStore.messages[vi.index])">
+                <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
+                <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
+                <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
+                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click="openPreview(chatStore.messages[vi.index].fileUrl!, 'image')" />
                 </template>
-                <template v-else-if="m.msgType === 5 && m.fileUrl">
-                  <a :href="m.fileUrl" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
-                     {{ m.fileName }}
-                    <small v-if="m.fileSize">{{ fmtSize(m.fileSize) }}</small>
+                <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
+                  <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
+                     {{ chatStore.messages[vi.index].fileName }}
+                    <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                   </a>
                 </template>
-                <template v-else-if="m.msgType === 3 && m.fileUrl">
-                  <a :href="m.fileUrl" target="_blank" download class="file-link">
-                    📎 {{ m.fileName }}
-                    <small>{{ fmtSize(m.fileSize) }}</small>
+                <template v-else-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileUrl">
+                  <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" target="_blank" download class="file-link">
+                    📎 {{ chatStore.messages[vi.index].fileName }}
+                    <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                   </a>
                 </template>
               </div>
-              <div v-if="m.senderId === uid" class="read-tag">
-                {{ m.isRead ? '已读' : '未读' }}
+              <div v-if="chatStore.messages[vi.index].senderId === uid" class="read-tag">
+                {{ chatStore.messages[vi.index].isRead ? '已读' : '未读' }}
               </div>
             </div>
           </div>
-
-          <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
         </div>
       </div>
 
@@ -121,7 +132,6 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
-import type { Message } from '../types'
 import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { useRouter } from 'vue-router'
 import ContactList from '../components/ContactList.vue'
@@ -241,11 +251,11 @@ function onBlur() {
 }
 
 // ========== Helpers ==========
-function showTime(m: Message, i: number) {
+function showTimeByIndex(i: number) {
   if (i === 0) return true
-  return shouldShowTimeSeparator(m.createdAt, chatStore.messages[i - 1].createdAt)
+  return shouldShowTimeSeparator(chatStore.messages[i].createdAt, chatStore.messages[i - 1].createdAt)
 }
-function bubbleType(m: Message) {
+function bubbleType(m: { msgType: number; senderId: number }) {
   if (m.msgType === 4) return 'emoji'
   return m.senderId === uid.value ? 'mine' : 'his'
 }
@@ -357,7 +367,7 @@ html, body, #app {
 .time-bar { text-align: center; padding: 8px 0; }
 .time-bar span { font-size: 12px; color: #b0b0b0; background: rgba(0,0,0,0.04); padding: 2px 10px; border-radius: 4px; }
 
-.msg { margin-bottom: 8px; display: flex; flex-direction: column; }
+.msg { display: flex; flex-direction: column; padding-bottom: 8px; }
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
 

@@ -249,6 +249,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 	var unread []model.Message
 	if err := a.db.Where("conversation_id = ? AND receiver_id = ? AND is_read = 0", convID, userID).
 		Order("created_at asc").
+		Limit(size).
 		Find(&unread).Error; err != nil {
 		return model.MessagePageDTO{}, err
 	}
