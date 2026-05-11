@@ -40,13 +40,42 @@ func (a *App) wsHandler(c *gin.Context) {
 	if err != nil {
 		return
 	}
+
+	const (
+		pongWait   = 60 * time.Second
+		pingPeriod = 50 * time.Second
+	)
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	session := &Session{
 		userID: userID,
 		conn:   conn,
 		app:    a,
 	}
 	a.registerSession(session)
+	go session.pingLoop(pingPeriod)
 	session.readLoop()
+}
+
+func (s *Session) pingLoop(period time.Duration) {
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.writeMu.Lock()
+		if s.conn == nil {
+			s.writeMu.Unlock()
+			return
+		}
+		err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
+		s.writeMu.Unlock()
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (s *Session) readLoop() {

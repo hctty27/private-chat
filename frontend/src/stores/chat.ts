@@ -13,6 +13,10 @@ export const useChatStore = defineStore('chat', () => {
   const wsConnected = ref(false)
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let reconnectAttempts = 0
+  const MAX_RECONNECT_ATTEMPTS = 10
+  let intentionalClose = false
+  const pendingMessages: WsClientMessage[] = []
 
   const sortedContacts = computed(() =>
     [...contacts.value].sort((a, b) => {
@@ -71,6 +75,15 @@ export const useChatStore = defineStore('chat', () => {
 
   function sendWsMessage(msg: WsClientMessage) {
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(JSON.stringify(msg))
+    } else if (msg.type === 'chat') {
+      pendingMessages.push(msg)
+    }
+  }
+
+  function flushQueue() {
+    while (pendingMessages.length > 0 && ws.value?.readyState === WebSocket.OPEN) {
+      const msg = pendingMessages.shift()!
       ws.value.send(JSON.stringify(msg))
     }
   }
@@ -176,9 +189,34 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function scheduleReconnect() {
+    if (intentionalClose) return
+    const userStore = useUserStore()
+    if (!userStore.token) {
+      userStore.logout()
+      window.location.href = '/'
+      return
+    }
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.warn('WebSocket: 达到最大重连次数，停止重连')
+      return
+    }
+    const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
+    reconnectAttempts++
+    console.log(`WebSocket: ${delay / 1000}s 后重连 (第 ${reconnectAttempts} 次)`)
+    reconnectTimer = setTimeout(connectWs, delay)
+  }
+
   function connectWs() {
     const userStore = useUserStore()
     if (!userStore.token) return
+
+    // 清理旧连接
+    if (ws.value) {
+      intentionalClose = true
+      ws.value.close()
+      intentionalClose = false
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
@@ -186,16 +224,23 @@ export const useChatStore = defineStore('chat', () => {
 
     ws.value.onopen = () => {
       wsConnected.value = true
+      reconnectAttempts = 0
       heartbeatTimer = setInterval(() => {
         sendWsMessage({ type: 'heartbeat', data: {} })
       }, 30000)
+      // 补拉断连期间的消息
+      if (currentContact.value) {
+        loadMessages('init')
+      }
+      // 补发队列中的消息
+      flushQueue()
     }
 
     ws.value.onmessage = (event) => {
       try {
         const data: WsServerMessage = JSON.parse(event.data)
         if (data.type === 'kicked') {
-          // 被踢下线
+          intentionalClose = true
           userStore.logout()
           disconnectWs()
           window.location.href = '/'
@@ -212,12 +257,8 @@ export const useChatStore = defineStore('chat', () => {
     ws.value.onclose = () => {
       wsConnected.value = false
       if (heartbeatTimer) clearInterval(heartbeatTimer)
-      // 如果 token 过期，跳转到伪装页
-      if (!userStore.token) {
-        userStore.logout()
-        window.location.href = '/'
-      } else {
-        reconnectTimer = setTimeout(connectWs, 3000)
+      if (!intentionalClose) {
+        scheduleReconnect()
       }
     }
 
@@ -227,6 +268,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function disconnectWs() {
+    intentionalClose = true
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     if (reconnectTimer) clearTimeout(reconnectTimer)
     if (ws.value) {
@@ -234,14 +276,39 @@ export const useChatStore = defineStore('chat', () => {
       ws.value = null
     }
     wsConnected.value = false
+    intentionalClose = false
   }
 
   function clearState() {
     disconnectWs()
+    reconnectAttempts = 0
+    pendingMessages.length = 0
     contacts.value = []
     currentContact.value = null
     messages.value = []
     hasMore.value = false
+  }
+
+  // 监听标签页可见性和网络状态
+  if (typeof window !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !wsConnected.value) {
+        const userStore = useUserStore()
+        if (userStore.token) {
+          reconnectAttempts = 0
+          connectWs()
+        }
+      }
+    })
+    window.addEventListener('online', () => {
+      if (!wsConnected.value) {
+        const userStore = useUserStore()
+        if (userStore.token) {
+          reconnectAttempts = 0
+          connectWs()
+        }
+      }
+    })
   }
 
   return {

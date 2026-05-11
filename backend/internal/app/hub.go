@@ -28,8 +28,11 @@ func (s *Session) SendJSON(v any) error {
 
 func (s *Session) Close() {
 	s.closed.Do(func() {
+		s.writeMu.Lock()
+		defer s.writeMu.Unlock()
 		if s.conn != nil {
 			_ = s.conn.Close()
+			s.conn = nil
 		}
 	})
 }
