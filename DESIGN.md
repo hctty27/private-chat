@@ -16,7 +16,7 @@
 ## 三、当前目录
 
 ```
-/home/works/private-chat/
+private-chat/
 ├── backend/
 │   ├── Dockerfile
 │   ├── cmd/privatechat/main.go
@@ -24,15 +24,17 @@
 │   ├── internal/auth/
 │   ├── internal/config/
 │   ├── internal/model/
-│   └── internal/platform/db/
+│   ├── internal/platform/db/
 │   ├── go.mod
-│   ├── go.sum
+│   └── go.sum
 ├── frontend/
 │   ├── Dockerfile
 │   ├── nginx.conf
 │   └── src/
-├── docker-compose.yml
-└── AGENTS.md
+├── compose.yml
+├── AGENTS.md
+├── CLAUDE.md
+└── DESIGN.md
 ```
 
 ## 四、数据库

@@ -56,7 +56,8 @@ private-chat/
 │   ├── package.json
 │   ├── Dockerfile
 │   └── nginx.conf
-├── docker-compose.yml            # 服务编排
+├── compose.yml                   # 服务编排
+├── CLAUDE.md                     # Claude Code 指南
 └── DESIGN.md                     # 设计文档
 ```
 
@@ -135,12 +136,13 @@ docker logs pc-frontend --tail 50
 | bob | 123456 | 鲍勃 |
 | charlie | 123456 | 查理 |
 
-## 环境变量（docker-compose.yml）
+## 环境变量（compose.yml）
 
-- PostgreSQL: admin / ycy2026postgres
-- Redis: ycy2026redis
-- MinIO: admin / ycy2026minio
-- JWT Secret: 见 docker-compose.yml
+参考 `.env.example` 文件配置：
+- PostgreSQL: Neon 托管（需 SSL）
+- Redis: 自定义密码
+- Cloudflare R2: 文件存储
+- JWT Secret: 自定义密钥
 
 ## 注意事项
 
