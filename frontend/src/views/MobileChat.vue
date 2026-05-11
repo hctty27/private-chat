@@ -45,6 +45,7 @@
           <div
             v-for="vi in scroll.virtualizer.value.getVirtualItems()"
             :key="String(vi.key)"
+            :ref="(el: any) => scroll.virtualizer.value.measureElement(el)"
             class="virtual-item"
             :data-index="vi.index"
             :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)` }"
@@ -236,11 +237,11 @@ function grow() {
 
 function onFocus() {
   if (window.visualViewport) {
-    vvHandler = () => scroll.scrollToBottom(false)
+    vvHandler = () => {
+      if (scroll.isNearBottom()) scroll.scrollToBottom(false)
+    }
     window.visualViewport.addEventListener('resize', vvHandler)
   }
-  setTimeout(() => scroll.scrollToBottom(false), 100)
-  setTimeout(() => scroll.scrollToBottom(false), 500)
 }
 
 function onBlur() {
