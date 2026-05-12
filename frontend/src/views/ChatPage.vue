@@ -46,6 +46,7 @@
             <div
               v-for="vi in scroll.virtualizer.value.getVirtualItems()"
               :key="String(vi.key)"
+              :ref="scroll.measureItem"
               class="virtual-item"
               :data-index="vi.index"
               :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)` }"
@@ -319,7 +320,7 @@ html, body, #app {
   background: #ededed;
 }
 .load-more {
-  text-align: center; padding: 12px 8px; min-height: 20px;
+  text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box;
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .load-text { font-size: 12px; color: #999; }

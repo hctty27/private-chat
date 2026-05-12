@@ -1,4 +1,4 @@
-import { ref, computed, nextTick, onUnmounted, watch, type Ref } from 'vue'
+import { ref, computed, nextTick, onUnmounted, watch, type ComponentPublicInstance, type Ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useChatStore } from '../stores/chat'
 
@@ -8,16 +8,23 @@ export function useChatScroll(
 ) {
   const chatStore = useChatStore()
   const loading = ref(false)
+  const estimatedMessageHeight = 72
 
   // --- Virtualizer (传 computed 实现响应式) ---
   const virtualizer = useVirtualizer(computed(() => ({
     count: chatStore.messages.length,
     getScrollElement: () => listEl.value,
-    estimateSize: () => 72,
+    estimateSize: () => estimatedMessageHeight,
+    getItemKey: (index: number) => chatStore.messages[index]?.id ?? index,
     overscan: 10,
   })))
 
   // --- Scroll ---
+  type ScrollAnchor = {
+    messageId: number
+    offset: number
+  }
+
   let isLoadingMore = false
   let prevMsgCount = 0
   let scrollThrottle = false
@@ -56,6 +63,53 @@ export function useChatScroll(
     })
   }
 
+  function nextFrame() {
+    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+
+  function captureScrollAnchor(): ScrollAnchor | null {
+    if (!listEl.value) return null
+    const containerTop = listEl.value.getBoundingClientRect().top
+    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id]')
+
+    for (const item of items) {
+      const messageId = Number(item.dataset.msgId)
+      if (!Number.isFinite(messageId)) continue
+      const rect = item.getBoundingClientRect()
+      if (rect.bottom >= containerTop) {
+        return { messageId, offset: rect.top - containerTop }
+      }
+    }
+
+    return null
+  }
+
+  function restoreScrollAnchor(anchor: ScrollAnchor) {
+    if (!listEl.value) return false
+    const item = listEl.value.querySelector<HTMLElement>(`.virtual-item[data-msg-id="${anchor.messageId}"]`)
+    if (!item) return false
+
+    const delta = item.getBoundingClientRect().top - listEl.value.getBoundingClientRect().top - anchor.offset
+    if (delta !== 0) listEl.value.scrollTop += delta
+    return true
+  }
+
+  async function restoreLoadedAnchor(anchor: ScrollAnchor | null) {
+    if (!anchor) return false
+    if (!chatStore.messages.some((m) => m.id === anchor.messageId)) return false
+
+    await nextFrame()
+    await nextTick()
+    const restored = restoreScrollAnchor(anchor)
+    await nextFrame()
+    restoreScrollAnchor(anchor)
+    return restored
+  }
+
+  function measureItem(el: Element | ComponentPublicInstance | null) {
+    if (el instanceof Element) virtualizer.value.measureElement(el)
+  }
+
   function onScroll() {
     if (!listEl.value || loading.value || !chatStore.hasMore || scrollThrottle) return
     if (listEl.value.scrollTop < 60) {
@@ -69,24 +123,27 @@ export function useChatScroll(
     if (!listEl.value || loading.value || !chatStore.hasMore) return
     loading.value = true
     isLoadingMore = true
+    const anchor = captureScrollAnchor()
     const prevScrollHeight = listEl.value.scrollHeight
+    const prevMsgCount = chatStore.messages.length
 
     await chatStore.loadMessages('loadMore')
     await nextTick()
 
     if (!listEl.value) { loading.value = false; isLoadingMore = false; return }
-    const delta = listEl.value.scrollHeight - prevScrollHeight
 
-    if (delta > 0) {
-      requestAnimationFrame(() => {
-        if (listEl.value) listEl.value.scrollTop += delta
-        isLoadingMore = false
-        loading.value = false
-      })
-    } else {
-      isLoadingMore = false
-      loading.value = false
+    const prependedCount = chatStore.messages.length - prevMsgCount
+    if (anchor && prependedCount > 0) {
+      listEl.value.scrollTop += prependedCount * estimatedMessageHeight
     }
+
+    if (!(await restoreLoadedAnchor(anchor))) {
+      const delta = listEl.value.scrollHeight - prevScrollHeight
+      if (delta > 0) listEl.value.scrollTop += delta
+    }
+
+    isLoadingMore = false
+    loading.value = false
   }
 
   // --- Read Observer ---
@@ -162,6 +219,7 @@ export function useChatScroll(
     virtualizer,
     isNearBottom,
     scrollToBottom,
+    measureItem,
     bindScrollListener,
     sendReadReceipt,
     onContactChange,
