@@ -236,6 +236,9 @@ function grow() {
 }
 
 function onFocus() {
+  const keepAtBottom = scroll.isNearBottom(120)
+  if (!keepAtBottom) return
+
   if (window.visualViewport) {
     vvHandler = () => scroll.scrollToBottom(false)
     window.visualViewport.addEventListener('resize', vvHandler)
