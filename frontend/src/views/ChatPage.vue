@@ -25,7 +25,8 @@
         </div>
 
         <!-- WS 断连提示 -->
-        <div v-if="!chatStore.wsConnected" class="ws-bar">连接已断开，正在重连...</div>
+        <div v-if="chatStore.wsStatus === 'reconnecting'" class="ws-bar">连接已断开，正在重连...</div>
+        <div v-else-if="chatStore.wsStatus === 'disconnected'" class="ws-bar ws-bar-off">连接不可用，请检查网络</div>
 
         <!-- 消息列表 -->
         <div ref="listEl" class="msg-scroll">
@@ -310,6 +311,9 @@ html, body, #app {
   background: #fef3c7; color: #92400e;
   font-size: 13px; text-align: center;
   padding: 6px; flex-shrink: 0;
+}
+.ws-bar-off {
+  background: #fee2e2; color: #991b1b;
 }
 
 /* Messages */

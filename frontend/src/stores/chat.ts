@@ -11,11 +11,13 @@ export const useChatStore = defineStore('chat', () => {
   const hasMore = ref(false)
   const ws = ref<WebSocket | null>(null)
   const wsConnected = ref(false)
+  // connected | disconnected | reconnecting
+  const wsStatus = ref<'connected' | 'disconnected' | 'reconnecting'>('disconnected')
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
-  const MAX_RECONNECT_ATTEMPTS = 10
   let intentionalClose = false
+  let reconnecting = false
   const pendingMessages: WsClientMessage[] = []
 
   const sortedContacts = computed(() =>
@@ -192,21 +194,22 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function scheduleReconnect() {
-    if (intentionalClose) return
+    if (intentionalClose || reconnecting || reconnectTimer) return
     const userStore = useUserStore()
     if (!userStore.token) {
       userStore.logout()
       window.location.href = '/'
       return
     }
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.warn('WebSocket: 达到最大重连次数，停止重连')
-      return
-    }
     const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
     reconnectAttempts++
+    reconnecting = true
+    wsStatus.value = 'reconnecting'
     console.log(`WebSocket: ${delay / 1000}s 后重连 (第 ${reconnectAttempts} 次)`)
-    reconnectTimer = setTimeout(connectWs, delay)
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      connectWs()
+    }, delay)
   }
 
   function connectWs() {
@@ -226,10 +229,12 @@ export const useChatStore = defineStore('chat', () => {
 
     ws.value.onopen = () => {
       wsConnected.value = true
+      wsStatus.value = 'connected'
+      reconnecting = false
       reconnectAttempts = 0
       heartbeatTimer = setInterval(() => {
         sendWsMessage({ type: 'heartbeat', data: {} })
-      }, 30000)
+      }, 25000)
       // 补拉断连期间的消息
       if (currentContact.value) {
         loadMessages('init')
@@ -261,6 +266,9 @@ export const useChatStore = defineStore('chat', () => {
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (!intentionalClose) {
         scheduleReconnect()
+      } else {
+        reconnecting = false
+        wsStatus.value = 'disconnected'
       }
     }
 
@@ -271,13 +279,18 @@ export const useChatStore = defineStore('chat', () => {
 
   function disconnectWs() {
     intentionalClose = true
+    reconnecting = false
     if (heartbeatTimer) clearInterval(heartbeatTimer)
-    if (reconnectTimer) clearTimeout(reconnectTimer)
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     if (ws.value) {
       ws.value.close()
       ws.value = null
     }
     wsConnected.value = false
+    wsStatus.value = 'disconnected'
     intentionalClose = false
   }
 
@@ -291,25 +304,48 @@ export const useChatStore = defineStore('chat', () => {
     hasMore.value = false
   }
 
+  function tryReconnect() {
+    const userStore = useUserStore()
+    if (!userStore.token || reconnecting || reconnectTimer) return
+    // 已连接则不需要重连
+    if (wsConnected.value) return
+    // 先尝试 ping 检测连接是否真正存活（手机后台挂起后 readyState 可能仍为 OPEN）
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      try {
+        ws.value.send(JSON.stringify({ type: 'heartbeat', data: {} }))
+      } catch {
+        // 发送失败说明连接已死
+        reconnectAttempts = 0
+        scheduleReconnect()
+        return
+      }
+      // 2s 内没恢复则认为连接已死，强制重连
+      setTimeout(() => {
+        if (!wsConnected.value && !reconnecting && !reconnectTimer) {
+          reconnectAttempts = 0
+          scheduleReconnect()
+        }
+      }, 2000)
+      return
+    }
+    // 连接不存在或已关闭，直接重连
+    reconnectAttempts = 0
+    scheduleReconnect()
+  }
+
   // 监听标签页可见性和网络状态
   if (typeof window !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && !wsConnected.value) {
-        const userStore = useUserStore()
-        if (userStore.token) {
-          reconnectAttempts = 0
-          connectWs()
-        }
+      if (document.visibilityState === 'visible') {
+        tryReconnect()
       }
     })
+    // pageshow 比 visibilitychange 更可靠，特别是从后台切回时
+    window.addEventListener('pageshow', () => {
+      tryReconnect()
+    })
     window.addEventListener('online', () => {
-      if (!wsConnected.value) {
-        const userStore = useUserStore()
-        if (userStore.token) {
-          reconnectAttempts = 0
-          connectWs()
-        }
-      }
+      tryReconnect()
     })
   }
 
@@ -319,6 +355,7 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     hasMore,
     wsConnected,
+    wsStatus,
     sortedContacts,
     loadContacts,
     selectContact,
