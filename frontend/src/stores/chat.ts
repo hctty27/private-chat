@@ -15,6 +15,7 @@ export const useChatStore = defineStore('chat', () => {
   const wsStatus = ref<'connected' | 'disconnected' | 'reconnecting'>('disconnected')
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let connectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
   let intentionalClose = false
   let reconnecting = false
@@ -205,7 +206,7 @@ export const useChatStore = defineStore('chat', () => {
     reconnectAttempts++
     reconnecting = true
     wsStatus.value = 'reconnecting'
-    console.log(`WebSocket: ${delay / 1000}s 后重连 (第 ${reconnectAttempts} 次)`)
+    console.debug(`WebSocket: ${delay / 1000}s 后重连 (第 ${reconnectAttempts} 次)`)
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       connectWs()
@@ -227,7 +228,19 @@ export const useChatStore = defineStore('chat', () => {
     const host = window.location.host
     ws.value = new WebSocket(`${protocol}//${host}/ws/chat?token=${userStore.token}`)
 
+    connectTimer = setTimeout(() => {
+      if (ws.value && ws.value.readyState !== WebSocket.OPEN) {
+        ws.value.close()
+        reconnectAttempts = 0
+        scheduleReconnect()
+      }
+    }, 10000)
+
     ws.value.onopen = () => {
+      if (connectTimer) {
+        clearTimeout(connectTimer)
+        connectTimer = null
+      }
       wsConnected.value = true
       wsStatus.value = 'connected'
       reconnecting = false
@@ -284,6 +297,10 @@ export const useChatStore = defineStore('chat', () => {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null
+    }
+    if (connectTimer) {
+      clearTimeout(connectTimer)
+      connectTimer = null
     }
     if (ws.value) {
       ws.value.close()

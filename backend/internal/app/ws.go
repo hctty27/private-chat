@@ -42,8 +42,8 @@ func (a *App) wsHandler(c *gin.Context) {
 	}
 
 	const (
-		pongWait   = 90 * time.Second
-		pingPeriod = 30 * time.Second
+		pongWait   = 120 * time.Second
+		pingPeriod = 40 * time.Second
 	)
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
