@@ -9,6 +9,8 @@ import (
 
 type Config struct {
 	ListenAddr          string
+	GinMode             string
+	TrustedProxies      []string
 	PostgresHost        string
 	PostgresPort        string
 	PostgresUser        string
@@ -31,6 +33,8 @@ type Config struct {
 func Load() Config {
 	return Config{
 		ListenAddr:          envOrDefault("LISTEN_ADDR", ":8080"),
+		GinMode:             envOrDefault("GIN_MODE", "release"),
+		TrustedProxies:      envList("TRUSTED_PROXIES"),
 		PostgresHost:        envOrDefault("POSTGRES_HOST", "postgres_db"),
 		PostgresPort:        envOrDefault("POSTGRES_PORT", "5432"),
 		PostgresUser:        envOrDefault("POSTGRES_USER", "admin"),
@@ -65,6 +69,23 @@ func envIntOrDefault(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func envList(key string) []string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return nil
+	}
+
+	parts := strings.Split(v, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func envDurationOrDefault(key string, fallback time.Duration) time.Duration {

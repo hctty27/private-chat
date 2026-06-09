@@ -1,6 +1,38 @@
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestLoadDefaultsGinProductionConfig(t *testing.T) {
+	t.Setenv("GIN_MODE", "")
+	t.Setenv("TRUSTED_PROXIES", "")
+
+	cfg := Load()
+
+	if cfg.GinMode != "release" {
+		t.Fatalf("expected default gin mode release, got %q", cfg.GinMode)
+	}
+	if len(cfg.TrustedProxies) != 0 {
+		t.Fatalf("expected no trusted proxies by default, got %#v", cfg.TrustedProxies)
+	}
+}
+
+func TestLoadReadsGinProductionConfig(t *testing.T) {
+	t.Setenv("GIN_MODE", "debug")
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8, 172.16.0.0/12 ,192.168.0.0/16")
+
+	cfg := Load()
+
+	if cfg.GinMode != "debug" {
+		t.Fatalf("expected gin mode debug, got %q", cfg.GinMode)
+	}
+	expected := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+	if !reflect.DeepEqual(cfg.TrustedProxies, expected) {
+		t.Fatalf("expected trusted proxies %#v, got %#v", expected, cfg.TrustedProxies)
+	}
+}
 
 func TestLoadReadsPostgresSSLMode(t *testing.T) {
 	t.Setenv("POSTGRES_SSLMODE", "require")

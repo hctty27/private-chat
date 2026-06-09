@@ -28,6 +28,10 @@ type App struct {
 
 func NewApp() (*App, error) {
 	cfg := config.Load()
+	if err := configureGinMode(cfg.GinMode); err != nil {
+		return nil, err
+	}
+
 	loc, err := time.LoadLocation(cfg.TimeZone)
 	if err != nil {
 		loc = time.Local
@@ -64,7 +68,11 @@ func NewApp() (*App, error) {
 		hub:     NewHub(),
 		loc:     loc,
 	}
-	app.router = app.routes()
+	router, err := app.routes()
+	if err != nil {
+		return nil, err
+	}
+	app.router = router
 	return app, nil
 }
 
@@ -72,13 +80,77 @@ func (a *App) Run() error {
 	return a.router.Run(a.cfg.ListenAddr)
 }
 
-func (a *App) routes() *gin.Engine {
+type readyCheck struct {
+	name  string
+	check func(context.Context) error
+}
+
+func (a *App) readyChecks() []readyCheck {
+	return []readyCheck{
+		{
+			name: "postgres",
+			check: func(ctx context.Context) error {
+				sqlDB, err := a.db.DB()
+				if err != nil {
+					return err
+				}
+				return sqlDB.PingContext(ctx)
+			},
+		},
+		{
+			name: "redis",
+			check: func(ctx context.Context) error {
+				return a.redis.Ping(ctx).Err()
+			},
+		},
+	}
+}
+
+func newReadyHandler(checks []readyCheck) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+
+		ok := true
+		statuses := gin.H{}
+		for _, item := range checks {
+			if err := item.check(ctx); err != nil {
+				ok = false
+				statuses[item.name] = "unavailable"
+				continue
+			}
+			statuses[item.name] = "ok"
+		}
+
+		if !ok {
+			c.JSON(503, gin.H{"ok": false, "checks": statuses})
+			return
+		}
+		c.JSON(200, gin.H{"ok": true, "checks": statuses})
+	}
+}
+
+func configureGinMode(mode string) error {
+	switch mode {
+	case gin.DebugMode, gin.ReleaseMode, gin.TestMode:
+		gin.SetMode(mode)
+		return nil
+	default:
+		return fmt.Errorf("invalid GIN_MODE %q", mode)
+	}
+}
+
+func (a *App) routes() (*gin.Engine, error) {
 	r := gin.New()
+	if err := r.SetTrustedProxies(a.cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("set trusted proxies: %w", err)
+	}
 	r.Use(gin.Recovery())
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"ok": true})
 	})
+	r.GET("/ready", newReadyHandler(a.readyChecks()))
 
 	api := r.Group("/api")
 	{
@@ -97,5 +169,5 @@ func (a *App) routes() *gin.Engine {
 	}
 
 	r.GET("/ws/chat", a.wsHandler)
-	return r
+	return r, nil
 }
