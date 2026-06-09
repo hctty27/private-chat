@@ -12,7 +12,7 @@
     </div>
 
     <!-- 聊天页面（全屏） -->
-    <div v-else class="chat-page">
+    <div v-else class="chat-page" :style="chatPageStyle">
       <!-- Header -->
       <div class="chat-head">
         <button class="back" @click="closeChat">‹</button>
@@ -23,12 +23,16 @@
         </div>
       </div>
 
-      <!-- WS 断连提示 -->
-      <div v-if="chatStore.wsStatus === 'reconnecting'" class="ws-bar">连接已断开，正在重连...</div>
-      <div v-else-if="chatStore.wsStatus === 'disconnected'" class="ws-bar ws-bar-off">连接不可用，请检查网络</div>
+      <!-- 连接状态提示 -->
+      <ConnectionNotice
+        :status="chatStore.wsStatus"
+        :recovered-notice="chatStore.recoveredNotice"
+        :pending-count="chatStore.pendingChatCount"
+        @reconnect="chatStore.reconnectNow"
+      />
 
       <!-- 消息列表 -->
-      <div ref="listEl" class="msg-scroll">
+      <div ref="listEl" class="msg-scroll" @click="collapseInput">
         <div class="load-more">
           <span class="spinner" v-if="scroll.loading.value"></span>
           <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
@@ -74,14 +78,33 @@
                     <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                   </a>
                 </template>
+                <template v-else-if="isPendingMediaMessage(chatStore.messages[vi.index])">
+                  <div class="media-fallback">
+                    <span>{{ pendingMediaText(chatStore.messages[vi.index]) }}</span>
+                    <small v-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
+                  </div>
+                </template>
               </div>
-              <div v-if="chatStore.messages[vi.index].senderId === uid" class="read-tag">
-                {{ chatStore.messages[vi.index].isRead ? '已读' : '未读' }}
+              <div v-if="isLastSelfMessage(vi.index)" class="read-tag">
+                <MessageStatusIndicator
+                  :status="chatStore.messages[vi.index].localStatus"
+                  :is-read="chatStore.messages[vi.index].isRead === 1"
+                  :progress="chatStore.messages[vi.index].uploadProgress"
+                  :error="chatStore.messages[vi.index].localError"
+                  @retry="retryMessageByClientId(chatStore.messages[vi.index]?.clientMsgId)"
+                />
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      <NewMessageButton
+        class="new-message-entry"
+        :visible="scroll.showBottomButton.value"
+        :count="scroll.newMessageCount.value"
+        @click="scroll.scrollToBottomAndClear(true)"
+      />
 
       <!-- 媒体预览弹窗 -->
       <MediaPreview
@@ -108,7 +131,7 @@
           <div class="prog-fill" :style="{ width: progress + '%' }"></div>
         </div>
         <div class="input-row">
-          <button class="ibtn" :class="{ on: emojiOpen }" @click="emojiOpen = !emojiOpen">😊</button>
+          <button class="ibtn" :class="{ on: emojiOpen }" @click="toggleEmoji">😊</button>
           <button class="ibtn" @click="fileEl?.click()">＋</button>
           <input ref="fileEl" type="file" hidden @change="onFile" />
           <textarea
@@ -122,7 +145,7 @@
             @focus="onFocus"
             @blur="onBlur"
           />
-          <button class="sbtn" :disabled="!text.trim()" @click="send">发送</button>
+          <button class="sbtn" :class="{ ready: text.trim() }" :disabled="!text.trim()" @click="send">发送</button>
         </div>
       </div>
     </div>
@@ -130,7 +153,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
@@ -138,6 +162,10 @@ import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize 
 import { useRouter } from 'vue-router'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
+import ConnectionNotice from '../components/ConnectionNotice.vue'
+import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
+import NewMessageButton from '../components/NewMessageButton.vue'
+import type { Message } from '../types'
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
@@ -151,26 +179,48 @@ const fileEl = ref<HTMLInputElement | null>(null)
 const text = ref('')
 const emojiOpen = ref(false)
 const progress = ref(0)
+const inputFocused = ref(false)
+const viewportHeight = ref(0)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
 
 const scroll = useChatScroll(listEl, uid)
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+const chatPageStyle = computed(() => viewportHeight.value ? { height: `${viewportHeight.value}px` } : undefined)
 
 let vvHandler: (() => void) | null = null
+let shouldStickToBottomOnViewportChange = false
 
 // ========== Lifecycle ==========
 onMounted(async () => {
+  installViewportHandler()
   await chatStore.loadContacts()
   chatStore.connectWs()
 })
 onUnmounted(() => {
   if (vvHandler && window.visualViewport) {
     window.visualViewport.removeEventListener('resize', vvHandler)
+    window.visualViewport.removeEventListener('scroll', vvHandler)
   }
   chatStore.clearState()
 })
+
+// ========== Viewport ==========
+function updateViewport() {
+  viewportHeight.value = window.visualViewport?.height || window.innerHeight
+  if (shouldStickToBottomOnViewportChange) {
+    requestAnimationFrame(() => scroll.scrollToBottom(false))
+  }
+}
+
+function installViewportHandler() {
+  updateViewport()
+  if (!window.visualViewport || vvHandler) return
+  vvHandler = updateViewport
+  window.visualViewport.addEventListener('resize', vvHandler)
+  window.visualViewport.addEventListener('scroll', vvHandler)
+}
 
 // ========== Navigation ==========
 async function openChat(id: number) {
@@ -195,7 +245,7 @@ watch(() => chatStore.messages.length, () => {
 })
 
 // ========== Send / Upload ==========
-function send() {
+async function send() {
   const t = text.value.trim()
   if (!t) return
   emojiOpen.value = false
@@ -203,14 +253,15 @@ function send() {
   if (inputEl.value) inputEl.value.style.height = 'auto'
   const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(t)
   chatStore.sendMessage(t, isEmoji ? 4 : 1)
-  scroll.scrollToBottom(true)
+  await nextTick()
+  scroll.scrollToBottomAndClear(true)
 }
 
 function onFile(e: Event) {
   const inp = e.target as HTMLInputElement
   if (inp.files?.[0]) {
-    if (inp.files[0].size > 50 * 1024 * 1024) { alert('最大50MB'); inp.value = ''; return }
-    doUpload(inp.files[0])
+    if (inp.files[0].size > 50 * 1024 * 1024) { ElMessage.warning('文件最大支持 50MB'); inp.value = ''; return }
+    void doUpload(inp.files[0])
   }
   inp.value = ''
 }
@@ -219,15 +270,32 @@ async function doUpload(f: File) {
   progress.value = 0
   try {
     await chatStore.sendFile(f, p => { progress.value = p })
-    scroll.scrollToBottom(true)
-  } catch { alert('上传失败') }
-  progress.value = 0
+    await nextTick()
+    scroll.scrollToBottomAndClear(true)
+  } finally {
+    progress.value = 0
+  }
 }
 
 // ========== Input UX ==========
 function addEmoji(e: string) {
   text.value += e
   inputEl.value?.focus()
+  nextTick(grow)
+}
+
+function toggleEmoji() {
+  const opening = !emojiOpen.value
+  emojiOpen.value = opening
+  shouldStickToBottomOnViewportChange = scroll.isNearBottom(160)
+  if (opening) {
+    inputEl.value?.blur()
+    inputFocused.value = false
+  }
+  nextTick(() => {
+    grow()
+    if (shouldStickToBottomOnViewportChange) scroll.scrollToBottom(false)
+  })
 }
 
 function grow() {
@@ -237,28 +305,51 @@ function grow() {
 }
 
 function onFocus() {
-  const keepAtBottom = scroll.isNearBottom(120)
-  if (!keepAtBottom) return
-
-  if (window.visualViewport) {
-    vvHandler = () => scroll.scrollToBottom(false)
-    window.visualViewport.addEventListener('resize', vvHandler)
+  inputFocused.value = true
+  emojiOpen.value = false
+  shouldStickToBottomOnViewportChange = scroll.isNearBottom(120)
+  updateViewport()
+  if (shouldStickToBottomOnViewportChange) {
+    setTimeout(() => scroll.scrollToBottom(false), 100)
+    setTimeout(() => scroll.scrollToBottom(false), 350)
   }
-  setTimeout(() => scroll.scrollToBottom(false), 100)
-  setTimeout(() => scroll.scrollToBottom(false), 500)
 }
 
 function onBlur() {
-  if (window.visualViewport && vvHandler) {
-    window.visualViewport.removeEventListener('resize', vvHandler)
-    vvHandler = null
-  }
+  inputFocused.value = false
+  shouldStickToBottomOnViewportChange = false
+  setTimeout(updateViewport, 80)
+}
+
+function collapseInput() {
+  emojiOpen.value = false
+  inputEl.value?.blur()
+  inputFocused.value = false
+  shouldStickToBottomOnViewportChange = false
 }
 
 // ========== Helpers ==========
 function showTimeByIndex(i: number) {
   if (i === 0) return true
   return shouldShowTimeSeparator(chatStore.messages[i].createdAt, chatStore.messages[i - 1].createdAt)
+}
+function isLastSelfMessage(index: number) {
+  const message = chatStore.messages[index]
+  if (!message || message.senderId !== uid.value) return false
+  return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
+}
+function isPendingMediaMessage(m: Message) {
+  return (m.msgType === 2 || m.msgType === 3 || m.msgType === 5) && !m.fileUrl
+}
+function pendingMediaText(m: Message) {
+  if (m.msgType === 2) return '📷 图片准备中'
+  if (m.msgType === 5) return '🎬 视频准备中'
+  return `📎 ${m.fileName || '文件准备中'}`
+}
+function retryMessageByClientId(clientMsgId?: string) {
+  if (!clientMsgId) return
+  chatStore.retryMessage(clientMsgId)
+  scroll.scrollToBottomAndClear(true)
 }
 function bubbleType(m: { msgType: number; senderId: number }) {
   if (m.msgType === 4) return 'emoji'
@@ -308,9 +399,11 @@ html, body, #app {
 
 /* ===== Chat Page ===== */
 .chat-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: #ededed;
 }
@@ -342,19 +435,16 @@ html, body, #app {
 .ch-name { font-size: 16px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
 
-.ws-bar {
-  background: #fef3c7; color: #92400e;
-  font-size: 13px; text-align: center;
-  padding: 6px; flex-shrink: 0;
-}
-.ws-bar-off {
-  background: #fee2e2; color: #991b1b;
+:deep(.connection-notice) {
+  margin: 8px 12px 0;
+  flex-shrink: 0;
 }
 
 /* ===== Messages ===== */
 .msg-scroll {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
   -webkit-overflow-scrolling: touch;
   padding: 12px;
   background: #ededed;
@@ -394,8 +484,19 @@ html, body, #app {
 .video-link small { display: block; color: #999; font-size: 12px; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
+.media-fallback {
+  min-width: 120px; padding: 10px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px;
+}
+.media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
 
-.read-tag { font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px; }
+.read-tag { margin-top: 2px; padding-right: 2px; }
+.new-message-entry {
+  position: absolute;
+  right: 16px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  z-index: 20;
+}
 .empty-tip { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
 
 /* ===== Emoji ===== */
@@ -426,6 +527,7 @@ html, body, #app {
 .input-bar {
   background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0;
   padding-bottom: env(safe-area-inset-bottom);
+  transition: transform 0.16s ease;
 }
 .prog { padding: 0 16px; height: 3px; }
 .prog-fill { height: 100%; background: #07c160; transition: width 0.2s; }
@@ -448,10 +550,11 @@ html, body, #app {
 .txt:focus { border-color: #07c160; }
 .sbtn {
   width: 60px; height: 40px; flex-shrink: 0;
-  background: #07c160; color: #fff; border: none;
+  background: #b8e8c8; color: #fff; border: none;
   border-radius: 8px; font-size: 15px; font-weight: 500;
   cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
 }
+.sbtn.ready { background: #07c160; }
 .sbtn:disabled { background: #ccc; }
-.sbtn:not(:disabled):active { background: #06ad56; }
+.sbtn.ready:active { background: #06ad56; }
 </style>

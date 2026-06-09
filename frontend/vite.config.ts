@@ -16,4 +16,26 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('/node_modules/element-plus/') || id.includes('/node_modules/@element-plus/')) {
+            return 'element-plus'
+          }
+          if (id.includes('/node_modules/@vue/') || id.includes('/node_modules/vue/') || id.includes('/node_modules/vue-router/') || id.includes('/node_modules/pinia/')) {
+            return 'vue-vendor'
+          }
+          if (id.includes('/node_modules/axios/')) {
+            return 'http-vendor'
+          }
+          if (id.includes('/node_modules/@tanstack/')) {
+            return 'tanstack-vendor'
+          }
+          return 'vendor'
+        },
+      },
+    },
+  },
 })

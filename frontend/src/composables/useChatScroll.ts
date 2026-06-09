@@ -8,6 +8,8 @@ export function useChatScroll(
 ) {
   const chatStore = useChatStore()
   const loading = ref(false)
+  const newMessageCount = ref(0)
+  const showBottomButton = ref(false)
   const estimatedMessageHeight = 72
 
   // --- Virtualizer (传 computed 实现响应式) ---
@@ -51,6 +53,16 @@ export function useChatScroll(
     if (!listEl.value) return true
     const { scrollTop, scrollHeight, clientHeight } = listEl.value
     return scrollHeight - scrollTop - clientHeight < threshold
+  }
+
+  function updateBottomButton() {
+    showBottomButton.value = newMessageCount.value > 0 || (!!listEl.value && !isNearBottom(160))
+  }
+
+  function scrollToBottomAndClear(smooth = true) {
+    newMessageCount.value = 0
+    showBottomButton.value = false
+    scrollToBottom(smooth)
   }
 
   function scrollToBottom(smooth = false) {
@@ -111,7 +123,12 @@ export function useChatScroll(
   }
 
   function onScroll() {
-    if (!listEl.value || loading.value || !chatStore.hasMore || scrollThrottle) return
+    if (!listEl.value) return
+
+    if (isNearBottom(160)) newMessageCount.value = 0
+    updateBottomButton()
+
+    if (loading.value || !chatStore.hasMore || scrollThrottle) return
     if (listEl.value.scrollTop < 60) {
       scrollThrottle = true
       loadMore()
@@ -186,15 +203,24 @@ export function useChatScroll(
   function onContactChange() {
     prevMsgCount = chatStore.messages.length
     bindScrollListener()
-    scrollToBottom(false)
+    scrollToBottomAndClear(false)
   }
 
   function onMessagesChange() {
-    if (isLoadingMore) return
-    if (chatStore.messages.length > prevMsgCount && isNearBottom()) {
-      scrollToBottom(true)
+    const currentMsgCount = chatStore.messages.length
+    const addedCount = currentMsgCount - prevMsgCount
+
+    if (!isLoadingMore && addedCount > 0) {
+      if (isNearBottom()) {
+        newMessageCount.value = 0
+        scrollToBottom(true)
+      } else {
+        newMessageCount.value += addedCount
+      }
     }
-    prevMsgCount = chatStore.messages.length
+
+    prevMsgCount = currentMsgCount
+    updateBottomButton()
   }
 
   function onListReady(el: HTMLElement | null) {
@@ -203,7 +229,7 @@ export function useChatScroll(
 
   function onSelectContact() {
     prevMsgCount = chatStore.messages.length
-    scrollToBottom()
+    scrollToBottomAndClear(false)
   }
 
   // --- Cleanup ---
@@ -216,9 +242,12 @@ export function useChatScroll(
 
   return {
     loading,
+    newMessageCount,
+    showBottomButton,
     virtualizer,
     isNearBottom,
     scrollToBottom,
+    scrollToBottomAndClear,
     measureItem,
     bindScrollListener,
     sendReadReceipt,

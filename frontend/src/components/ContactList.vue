@@ -5,7 +5,7 @@
       <h2>消息</h2>
       <div class="cl-header-right">
         <span class="ws-dot" :class="{ on: wsConnected }"></span>
-        <button class="logout-btn" @click="$emit('logout')">退出</button>
+        <button class="logout-btn" @click="handleLogout">退出</button>
       </div>
     </div>
 
@@ -36,7 +36,17 @@
         </div>
         <div class="c-info">
           <div class="c-top">
-            <span class="c-name">{{ c.nickname }}</span>
+            <div class="c-name-row">
+              <span class="c-name">
+                <template v-if="c.nicknameMatch">
+                  <span>{{ c.nicknameMatch.before }}</span>
+                  <mark class="c-name-mark">{{ c.nicknameMatch.match }}</mark>
+                  <span>{{ c.nicknameMatch.after }}</span>
+                </template>
+                <template v-else>{{ c.nickname }}</template>
+              </span>
+              <span class="c-status" :class="{ on: c.online }">{{ c.online ? '在线' : '离线' }}</span>
+            </div>
             <span class="c-time" v-if="c.lastMessageTime">{{ fmtTime(c.lastMessageTime) }}</span>
           </div>
           <div class="c-bottom">
@@ -45,8 +55,8 @@
           </div>
         </div>
       </div>
-      <div v-if="filteredContacts.length === 0 && keyword" class="cl-empty">无匹配联系人</div>
-      <div v-else-if="contacts.length === 0" class="cl-empty">暂无联系人</div>
+      <div v-if="filteredContacts.length === 0 && keyword" class="cl-empty">没有找到联系人</div>
+      <div v-else-if="contacts.length === 0" class="cl-empty">暂无联系人，等待添加好友</div>
     </div>
   </div>
 </template>
@@ -62,7 +72,7 @@ const props = defineProps<{
   wsConnected: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   select: [id: number]
   logout: []
 }>()
@@ -70,11 +80,57 @@ defineEmits<{
 const keyword = ref('')
 const searching = ref(false)
 
-const filteredContacts = computed(() => {
+type NicknameMatch = {
+  before: string
+  match: string
+  after: string
+}
+
+type ContactListItem = Contact & {
+  nicknameMatch: NicknameMatch | null
+}
+
+const filteredContacts = computed<ContactListItem[]>(() => {
   const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return props.contacts
-  return props.contacts.filter(c => c.nickname.toLowerCase().includes(kw))
+
+  return props.contacts
+    .filter(c => !kw || c.nickname.toLowerCase().includes(kw))
+    .slice()
+    .sort(compareContacts)
+    .map(c => ({
+      ...c,
+      nicknameMatch: kw ? getNicknameMatch(c.nickname, kw) : null,
+    }))
 })
+
+function compareContacts(a: Contact, b: Contact): number {
+  const aUnread = a.unreadCount > 0 ? 1 : 0
+  const bUnread = b.unreadCount > 0 ? 1 : 0
+  if (aUnread !== bUnread) return bUnread - aUnread
+
+  const aTime = getTimeValue(a.lastMessageTime)
+  const bTime = getTimeValue(b.lastMessageTime)
+  if (aTime !== bTime) return bTime - aTime
+
+  return a.nickname.localeCompare(b.nickname, 'zh-CN')
+}
+
+function getTimeValue(time: string): number {
+  if (!time) return 0
+  const value = new Date(time).getTime()
+  return Number.isNaN(value) ? 0 : value
+}
+
+function getNicknameMatch(nickname: string, kw: string): NicknameMatch | null {
+  const index = nickname.toLowerCase().indexOf(kw)
+  if (index < 0) return null
+
+  return {
+    before: nickname.slice(0, index),
+    match: nickname.slice(index, index + kw.length),
+    after: nickname.slice(index + kw.length),
+  }
+}
 
 function previewText(c: Contact): string {
   if (!c.lastMessage) return '暂无消息'
@@ -87,6 +143,12 @@ function previewText(c: Contact): string {
 
 function onSearchBlur() {
   if (!keyword.value) searching.value = false
+}
+
+function handleLogout() {
+  if (confirm('确定退出登录吗？')) {
+    emit('logout')
+  }
 }
 </script>
 
@@ -213,11 +275,35 @@ function onSearchBlur() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.c-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 .c-name {
   font-size: 15px;
   font-weight: 500;
   color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.c-name-mark {
+  padding: 0;
+  background: #fef3c7;
+  color: inherit;
+  border-radius: 2px;
+}
+.c-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #aaa;
+}
+.c-status.on {
+  color: #22c55e;
 }
 .c-time {
   font-size: 12px;

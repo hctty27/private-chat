@@ -12,6 +12,13 @@
     </header>
 
     <main class="max-w-3xl mx-auto px-4 py-4 space-y-4">
+      <div
+        v-if="coverNotice"
+        class="bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-4 py-3 text-sm shadow-sm"
+      >
+        {{ coverNotice }}
+      </div>
+
       <!-- Hot Topics -->
       <section class="bg-white rounded-lg shadow overflow-hidden">
         <div
@@ -75,27 +82,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const coverNotice = ref('')
 
-const hotTopics = ref([
-  { title: '春季赏花指南全国热门赏花地推荐', heat: '582万' },
-  { title: 'AI技术突破性进展引发行业热议', heat: '423万' },
-  { title: '新能源汽车销量持续攀升', heat: '318万' },
-  { title: '年度最佳电影评选结果出炉', heat: '276万' },
-  { title: '健康饮食新理念受追捧', heat: '195万' },
-  { title: '音乐节巡演季即将开启', heat: '167万' },
-  { title: '国潮品牌崛起引领时尚潮流', heat: '143万' },
-  { title: '科技数码新品发布会汇总', heat: '128万' },
-])
+const hotTopicTitles = [
+  '春季赏花指南全国热门赏花地推荐',
+  'AI技术突破性进展引发行业热议',
+  '新能源汽车销量持续攀升',
+  '年度最佳电影评选结果出炉',
+  '健康饮食新理念受追捧',
+  '音乐节巡演季即将开启',
+  '国潮品牌崛起引领时尚潮流',
+  '科技数码新品发布会汇总',
+]
+
+const hotTopics = ref(createHotTopics())
+
+const postTimeOptions = ['刚刚', '3分钟前', '8分钟前', '16分钟前', '27分钟前', '43分钟前', '1小时前', '2小时前']
 
 const posts = ref([
   {
     id: 1,
     author: '科技日报',
-    time: '5分钟前',
+    time: '',
     content: '人工智能正在重塑我们的生活方式，从智能家居到自动驾驶，科技改变生活的脚步从未停歇。让我们一起期待更美好的未来！#科技改变生活#',
     image: 'https://picsum.photos/seed/tech/600/300',
     reposts: 1234,
@@ -105,7 +117,7 @@ const posts = ref([
   {
     id: 2,
     author: '美食达人小李',
-    time: '18分钟前',
+    time: '',
     content: '今天尝试做了一道新菜，番茄牛腩配手工面条，味道超级棒！秘诀在于小火慢炖3小时，让牛肉充分入味。#家常菜谱# #美食分享#',
     image: 'https://picsum.photos/seed/food/600/300',
     reposts: 234,
@@ -115,7 +127,7 @@ const posts = ref([
   {
     id: 3,
     author: '旅行摄影师阿明',
-    time: '1小时前',
+    time: '',
     content: '清晨的湖面如镜，倒映着远山和云彩。大自然的美总能让人心旷神怡，这大概就是旅行的意义吧。📷 #旅行摄影# #风景如画#',
     image: 'https://picsum.photos/seed/travel/600/300',
     reposts: 567,
@@ -125,7 +137,7 @@ const posts = ref([
   {
     id: 4,
     author: '读书笔记分享',
-    time: '2小时前',
+    time: '',
     content: '最近在读《人类简史》，书中对人类历史的独特视角让人深思。推荐给每一位喜欢思考的朋友们！#好书推荐# #阅读分享#',
     reposts: 89,
     comments: 45,
@@ -135,6 +147,50 @@ const posts = ref([
 
 let clickCount = 0
 let clickTimer: ReturnType<typeof setTimeout> | null = null
+
+function shuffle<T>(items: T[]) {
+  return [...items].sort(() => Math.random() - 0.5)
+}
+
+function randomHeat(index: number) {
+  const max = Math.max(118, 620 - index * 48)
+  const min = Math.max(82, max - 160)
+  return `${Math.floor(Math.random() * (max - min + 1)) + min}万`
+}
+
+function createHotTopics() {
+  return shuffle(hotTopicTitles).map((title, index) => ({
+    title,
+    heat: randomHeat(index),
+  }))
+}
+
+function applyRandomPostTimes() {
+  const times = shuffle(postTimeOptions)
+  posts.value = posts.value.map((post, index) => ({
+    ...post,
+    time: times[index % times.length],
+  }))
+}
+
+function readCoverNotice() {
+  if (typeof window === 'undefined') return
+  try {
+    const notice = window.sessionStorage.getItem('coverNotice')
+    if (notice) {
+      coverNotice.value = notice
+      window.sessionStorage.removeItem('coverNotice')
+    }
+  } catch {
+    // Ignore storage errors; cover page still works as a public disguise page.
+  }
+}
+
+onMounted(() => {
+  readCoverNotice()
+  hotTopics.value = createHotTopics()
+  applyRandomPostTimes()
+})
 
 function onHotClick() {
   clickCount++

@@ -25,3 +25,6 @@ frontend/.vite/
 
 # Temp
 temp/
+
+# Superpowers visual companion artifacts
+.superpowers/

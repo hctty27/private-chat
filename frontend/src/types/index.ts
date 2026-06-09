@@ -19,8 +19,11 @@ export interface Contact {
   unreadCount: number
 }
 
+export type LocalMessageStatus = 'sending' | 'sent' | 'failed' | 'queued' | 'uploading'
+
 export interface Message {
   id: number
+  conversationId?: string
   senderId: number
   receiverId: number
   msgType: 1 | 2 | 3 | 4 | 5
@@ -30,6 +33,11 @@ export interface Message {
   fileSize: number | null
   isRead: 0 | 1
   createdAt: string
+  clientMsgId?: string
+  localStatus?: LocalMessageStatus
+  localError?: string
+  uploadProgress?: number
+  localFile?: File
 }
 
 export interface MessagesResponse {
@@ -85,6 +93,7 @@ export interface WsClientChat {
     fileUrl: string | null
     fileName: string | null
     fileSize: number | null
+    clientMsgId?: string
   }
 }
 

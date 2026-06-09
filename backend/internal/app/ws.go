@@ -134,6 +134,25 @@ func (a *App) kickUser(userID int64, message string) {
 	}
 }
 
+type wsChatResponse struct {
+	model.MessageDTO
+	ClientMsgID *string `json:"clientMsgId,omitempty"`
+}
+
+func chatResponsePayload(saved model.MessageDTO, clientMsgID *string) any {
+	if clientMsgID == nil {
+		return saved
+	}
+	trimmed := strings.TrimSpace(*clientMsgID)
+	if trimmed == "" {
+		return saved
+	}
+	return wsChatResponse{
+		MessageDTO:  saved,
+		ClientMsgID: &trimmed,
+	}
+}
+
 func (a *App) handleWsChat(senderID int64, data map[string]any) {
 	receiverID := toInt64(data["receiverId"])
 	if receiverID <= 0 {
@@ -144,6 +163,7 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) {
 	fileURL := toOptionalString(data["fileUrl"])
 	fileName := toOptionalString(data["fileName"])
 	fileSize := toOptionalInt64(data["fileSize"])
+	clientMsgID := toOptionalString(data["clientMsgId"])
 
 	saved, err := a.saveMessage(senderID, receiverID, msgType, content, fileURL, fileName, fileSize)
 	if err != nil {
@@ -151,11 +171,12 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) {
 		return
 	}
 
+	payload := chatResponsePayload(saved, clientMsgID)
 	if senderSession := a.hub.Get(senderID); senderSession != nil {
-		_ = senderSession.SendJSON(gin.H{"type": "chat", "data": saved})
+		_ = senderSession.SendJSON(gin.H{"type": "chat", "data": payload})
 	}
 	if receiverSession := a.hub.Get(receiverID); receiverSession != nil {
-		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": saved})
+		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": payload})
 	}
 }
 

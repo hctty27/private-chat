@@ -24,9 +24,13 @@
           </div>
         </div>
 
-        <!-- WS 断连提示 -->
-        <div v-if="chatStore.wsStatus === 'reconnecting'" class="ws-bar">连接已断开，正在重连...</div>
-        <div v-else-if="chatStore.wsStatus === 'disconnected'" class="ws-bar ws-bar-off">连接不可用，请检查网络</div>
+        <!-- 连接状态提示 -->
+        <ConnectionNotice
+          :status="chatStore.wsStatus"
+          :recovered-notice="chatStore.recoveredNotice"
+          :pending-count="chatStore.pendingChatCount"
+          @reconnect="chatStore.reconnectNow"
+        />
 
         <!-- 消息列表 -->
         <div ref="listEl" class="msg-scroll">
@@ -75,14 +79,32 @@
                       <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                     </a>
                   </template>
+                  <template v-else-if="isPendingMediaMessage(chatStore.messages[vi.index])">
+                    <div class="media-fallback">
+                      <span>{{ pendingMediaText(chatStore.messages[vi.index]) }}</span>
+                      <small v-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
+                    </div>
+                  </template>
                 </div>
-                <div v-if="chatStore.messages[vi.index].senderId === uid" class="read-tag">
-                  {{ chatStore.messages[vi.index].isRead ? '已读' : '未读' }}
+                <div v-if="isLastSelfMessage(vi.index)" class="read-tag">
+                  <MessageStatusIndicator
+                    :status="chatStore.messages[vi.index].localStatus"
+                    :is-read="chatStore.messages[vi.index].isRead === 1"
+                    :progress="chatStore.messages[vi.index].uploadProgress"
+                    :error="chatStore.messages[vi.index].localError"
+                    @retry="retryMessageByClientId(chatStore.messages[vi.index]?.clientMsgId)"
+                  />
                 </div>
               </div>
             </div>
           </div>
         </div>
+
+        <NewMessageButton
+          :visible="scroll.showBottomButton.value"
+          :count="scroll.newMessageCount.value"
+          @click="scroll.scrollToBottomAndClear(true)"
+        />
 
         <!-- 表情面板 -->
         <div v-if="emojiOpen" class="emoji-box">
@@ -138,13 +160,18 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { ElMessage } from 'element-plus/es/components/message/index'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
 import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { useRouter } from 'vue-router'
 import ContactList from '../components/ContactList.vue'
+import ConnectionNotice from '../components/ConnectionNotice.vue'
 import MediaPreview from '../components/MediaPreview.vue'
+import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
+import NewMessageButton from '../components/NewMessageButton.vue'
+import type { Message } from '../types'
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
@@ -190,6 +217,19 @@ function showTimeByIndex(i: number) {
   if (i === 0) return true
   return shouldShowTimeSeparator(chatStore.messages[i].createdAt, chatStore.messages[i - 1].createdAt)
 }
+function isLastSelfMessage(index: number) {
+  const message = chatStore.messages[index]
+  if (!message || message.senderId !== uid.value) return false
+  return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
+}
+function isPendingMediaMessage(m: Message) {
+  return (m.msgType === 2 || m.msgType === 3 || m.msgType === 5) && !m.fileUrl
+}
+function pendingMediaText(m: Message) {
+  if (m.msgType === 2) return '📷 图片准备中'
+  if (m.msgType === 5) return '🎬 视频准备中'
+  return `📎 ${m.fileName || '文件准备中'}`
+}
 function bubbleType(m: { msgType: number; senderId: number }) {
   if (m.msgType === 4) return 'emoji'
   return m.senderId === uid.value ? 'mine' : 'his'
@@ -218,13 +258,17 @@ async function send() {
   if (inputEl.value) inputEl.value.style.height = 'auto'
   const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(t)
   chatStore.sendMessage(t, isEmoji ? 4 : 1)
-  scroll.scrollToBottom(true)
+  scroll.scrollToBottomAndClear(true)
 }
 
 function onFile(e: Event) {
   const inp = e.target as HTMLInputElement
   if (inp.files?.[0]) {
-    if (inp.files[0].size > 50 * 1024 * 1024) { alert('最大50MB'); inp.value = ''; return }
+    if (inp.files[0].size > 50 * 1024 * 1024) {
+      ElMessage.warning('文件最大支持 50MB')
+      inp.value = ''
+      return
+    }
     doUpload(inp.files[0])
   }
   inp.value = ''
@@ -233,9 +277,16 @@ async function doUpload(f: File) {
   progress.value = 0
   try {
     await chatStore.sendFile(f, p => { progress.value = p })
-    scroll.scrollToBottom(true)
-  } catch { alert('上传失败') }
-  progress.value = 0
+    scroll.scrollToBottomAndClear(true)
+  } finally {
+    progress.value = 0
+  }
+}
+
+function retryMessageByClientId(clientMsgId?: string) {
+  if (!clientMsgId) return
+  chatStore.retryMessage(clientMsgId)
+  scroll.scrollToBottomAndClear(true)
 }
 
 function grow() {
@@ -283,6 +334,7 @@ html, body, #app {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
 }
 
 /* Chat view */
@@ -306,22 +358,18 @@ html, body, #app {
 .ch-name { font-size: 15px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
 
-/* WS bar */
-.ws-bar {
-  background: #fef3c7; color: #92400e;
-  font-size: 13px; text-align: center;
-  padding: 6px; flex-shrink: 0;
-}
-.ws-bar-off {
-  background: #fee2e2; color: #991b1b;
-}
-
 /* Messages */
 .msg-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
   background: #ededed;
+}
+:deep(.new-message-button) {
+  position: absolute;
+  right: 24px;
+  bottom: 74px;
+  z-index: 5;
 }
 .load-more {
   text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box;
@@ -357,6 +405,11 @@ html, body, #app {
 .video-link small { display: block; color: #999; font-size: 12px; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
+.media-fallback {
+  min-width: 120px; padding: 10px 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px;
+}
+.media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
 
 .read-tag { font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px; }
 .empty-tip { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
