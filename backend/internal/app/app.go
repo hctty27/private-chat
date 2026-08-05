@@ -160,14 +160,14 @@ func (a *App) routes() (*gin.Engine, error) {
 	api := r.Group("/api")
 	{
 		authGroup := api.Group("/auth")
-		authGroup.POST("/login", a.loginHandler)
+		authGroup.POST("/login", a.secureLoginHandler)
 
 		protected := api.Group("")
-		protected.Use(a.authMiddleware())
+		protected.Use(a.secureAuthMiddleware())
 		{
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
-			protected.GET("/messages/:targetId", a.messagesHandler)
+			protected.GET("/messages/:targetId", a.requireContactParam("targetId"), a.messagesHandler)
 			protected.POST("/file/presign-upload", a.presignUploadHandler)
 			protected.POST("/file/upload", a.uploadHandler)
 			protected.GET("/file/download/:objectName", a.downloadHandler)
