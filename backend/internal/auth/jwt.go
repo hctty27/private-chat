@@ -38,11 +38,11 @@ func (j *JWTManager) Generate(userID int64, nickname string) (string, error) {
 
 func (j *JWTManager) Parse(tokenString string) (int64, string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &model.JWTClaims{}, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, errors.New("invalid signing method")
 		}
 		return j.secret, nil
-	}, jwt.WithLeeway(5*time.Second))
+	}, jwt.WithLeeway(5*time.Second), jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return 0, "", err
 	}
