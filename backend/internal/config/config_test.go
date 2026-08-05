@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -31,6 +32,17 @@ func TestLoadReadsGinProductionConfig(t *testing.T) {
 	expected := []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
 	if !reflect.DeepEqual(cfg.TrustedProxies, expected) {
 		t.Fatalf("expected trusted proxies %#v, got %#v", expected, cfg.TrustedProxies)
+	}
+}
+
+func TestLoadReadsAllowedWebSocketOrigins(t *testing.T) {
+	t.Setenv("WS_ALLOWED_ORIGINS", "https://chat.example.com, https://admin.example.com ")
+
+	cfg := Load()
+
+	expected := []string{"https://chat.example.com", "https://admin.example.com"}
+	if !reflect.DeepEqual(cfg.AllowedOrigins, expected) {
+		t.Fatalf("expected allowed origins %#v, got %#v", expected, cfg.AllowedOrigins)
 	}
 }
 
@@ -67,5 +79,45 @@ func TestLoadReadsR2StorageConfig(t *testing.T) {
 	}
 	if cfg.ObjectStoragePrefix != "private-chat" {
 		t.Fatalf("expected R2 object prefix, got %q", cfg.ObjectStoragePrefix)
+	}
+}
+
+func TestLoadDoesNotProvideSecretDefaults(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("REDIS_PASSWORD", "")
+
+	cfg := Load()
+
+	if cfg.JWTSecret != "" {
+		t.Fatal("expected JWT secret to have no built-in default")
+	}
+	if cfg.RedisPassword != "" {
+		t.Fatal("expected Redis password to have no built-in default")
+	}
+}
+
+func TestValidateRejectsMissingJWTSecret(t *testing.T) {
+	cfg := Config{}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "JWT_SECRET") {
+		t.Fatalf("expected JWT_SECRET validation error, got %v", err)
+	}
+}
+
+func TestValidateRejectsShortJWTSecret(t *testing.T) {
+	cfg := Config{JWTSecret: "too-short"}
+
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "32") {
+		t.Fatalf("expected minimum length validation error, got %v", err)
+	}
+}
+
+func TestValidateAcceptsStrongJWTSecret(t *testing.T) {
+	cfg := Config{JWTSecret: "0123456789abcdef0123456789abcdef"}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected configuration to be valid, got %v", err)
 	}
 }
