@@ -16,6 +16,16 @@ export const useUserStore = defineStore('user', () => {
   }
 
   function logout() {
+    const currentToken = token.value
+    if (currentToken && typeof window !== 'undefined') {
+      void fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${currentToken}` },
+        credentials: 'same-origin',
+        keepalive: true,
+      }).catch(() => undefined)
+    }
+
     token.value = ''
     userId.value = 0
     nickname.value = ''
