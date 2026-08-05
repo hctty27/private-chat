@@ -26,17 +26,19 @@ func (f fakeRelationAuthorizer) ContactIDs(context.Context, int64) ([]int64, err
 	return append([]int64(nil), f.contactIDs...), f.err
 }
 
-func TestMessagesHandlerRejectsNonContact(t *testing.T) {
+func TestMessagesRouteRejectsNonContact(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	a := &App{
 		cfg:       config.Config{MessagePageSize: 20},
 		relations: fakeRelationAuthorizer{allowed: false},
 	}
 	r := gin.New()
-	r.GET("/api/messages/:targetId", func(c *gin.Context) {
-		c.Set("userID", int64(1))
-		a.messagesHandler(c)
-	})
+	r.GET(
+		"/api/messages/:targetId",
+		func(c *gin.Context) { c.Set("userID", int64(1)) },
+		a.requireContactParam("targetId"),
+		a.messagesHandler,
+	)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/messages/2", nil)
