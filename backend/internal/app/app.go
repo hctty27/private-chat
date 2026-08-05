@@ -16,18 +16,22 @@ import (
 )
 
 type App struct {
-	cfg     config.Config
-	db      *gorm.DB
-	redis   *redis.Client
-	storage *minio.Client
-	jwt     *auth.JWTManager
-	hub     *Hub
-	loc     *time.Location
-	router  *gin.Engine
+	cfg       config.Config
+	db        *gorm.DB
+	redis     *redis.Client
+	storage   *minio.Client
+	jwt       *auth.JWTManager
+	hub       *Hub
+	relations relationAuthorizer
+	loc       *time.Location
+	router    *gin.Engine
 }
 
 func NewApp() (*App, error) {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if err := configureGinMode(cfg.GinMode); err != nil {
 		return nil, err
 	}
@@ -60,13 +64,14 @@ func NewApp() (*App, error) {
 	}
 
 	app := &App{
-		cfg:     cfg,
-		db:      db,
-		redis:   rdb,
-		storage: storageClient,
-		jwt:     auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
-		hub:     NewHub(),
-		loc:     loc,
+		cfg:       cfg,
+		db:        db,
+		redis:     rdb,
+		storage:   storageClient,
+		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
+		hub:       NewHub(),
+		relations: newRelationAuthorizer(db),
+		loc:       loc,
 	}
 	router, err := app.routes()
 	if err != nil {
@@ -160,12 +165,13 @@ func (a *App) routes() (*gin.Engine, error) {
 		protected := api.Group("")
 		protected.Use(a.authMiddleware())
 		{
+			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/messages/:targetId", a.messagesHandler)
 			protected.POST("/file/presign-upload", a.presignUploadHandler)
 			protected.POST("/file/upload", a.uploadHandler)
+			protected.GET("/file/download/:objectName", a.downloadHandler)
 		}
-		api.GET("/file/download/:objectName", a.downloadHandler)
 	}
 
 	r.GET("/ws/chat", a.wsHandler)
