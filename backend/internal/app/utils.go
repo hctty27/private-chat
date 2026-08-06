@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const authCookieName = "private_chat_session"
+
 func bearerToken(header string) string {
 	header = strings.TrimSpace(header)
 	if strings.HasPrefix(header, "Bearer ") {
@@ -19,11 +22,63 @@ func bearerToken(header string) string {
 	return ""
 }
 
+func authTokenFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if token := bearerToken(r.Header.Get("Authorization")); token != "" {
+		return token
+	}
+	cookie, err := r.Cookie(authCookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+func newAuthCookie(token string, expiry time.Duration, secure bool) *http.Cookie {
+	maxAge := int(expiry / time.Second)
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	return &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  time.Now().Add(expiry).UTC(),
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
+func expiredAuthCookie(secure bool) *http.Cookie {
+	return &http.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(1, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
 func unauthorized(c *gin.Context) {
-	c.AbortWithStatusJSON(401, model.APIResponse[any]{
-		Code:    401,
+	c.AbortWithStatusJSON(http.StatusUnauthorized, model.APIResponse[any]{
+		Code:    http.StatusUnauthorized,
 		Data:    nil,
 		Message: "未登录或登录已过期",
+	})
+}
+
+func forbidden(c *gin.Context, message string) {
+	c.AbortWithStatusJSON(http.StatusForbidden, model.APIResponse[any]{
+		Code:    http.StatusForbidden,
+		Data:    nil,
+		Message: message,
 	})
 }
 
@@ -181,8 +236,8 @@ func toInt64(v any) int64 {
 }
 
 func respondSuccess[T any](c *gin.Context, data T) {
-	c.JSON(200, model.APIResponse[T]{
-		Code:    200,
+	c.JSON(http.StatusOK, model.APIResponse[T]{
+		Code:    http.StatusOK,
 		Data:    data,
 		Message: "",
 	})

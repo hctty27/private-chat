@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,12 +16,61 @@ import (
 	"privatechat/internal/model"
 )
 
-var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+const maxWebSocketMessageSize int64 = 64 * 1024
+
+type websocketReadLimiter interface {
+	SetReadLimit(int64)
+}
+
+func configureWebSocketReadLimit(conn websocketReadLimiter) {
+	conn.SetReadLimit(maxWebSocketMessageSize)
+}
+
+func normalizeOrigin(raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", false
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", false
+	}
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Host), true
+}
+
+func websocketOriginAllowed(r *http.Request, allowedOrigins []string) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	normalizedOrigin, ok := normalizeOrigin(origin)
+	if !ok {
+		return false
+	}
+	parsedOrigin, err := url.Parse(normalizedOrigin)
+	if err == nil && strings.EqualFold(parsedOrigin.Host, r.Host) {
+		return true
+	}
+	for _, allowed := range allowedOrigins {
+		normalizedAllowed, ok := normalizeOrigin(allowed)
+		if ok && normalizedAllowed == normalizedOrigin {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) wsHandler(c *gin.Context) {
-	token := strings.TrimSpace(c.Query("token"))
+	token := authTokenFromRequest(c.Request)
+	if token == "" {
+		// Backward compatibility for already deployed clients. New sessions use the HttpOnly cookie.
+		token = strings.TrimSpace(c.Query("token"))
+	}
 	if token == "" {
 		unauthorized(c)
 		return
@@ -36,10 +87,16 @@ func (a *App) wsHandler(c *gin.Context) {
 		return
 	}
 
-	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return websocketOriginAllowed(r, a.cfg.AllowedOrigins)
+		},
+	}
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
+	configureWebSocketReadLimit(conn)
 
 	const (
 		pongWait   = 120 * time.Second
@@ -94,9 +151,13 @@ func (s *Session) readLoop() {
 		data, _ := msg["data"].(map[string]any)
 		switch msgType {
 		case "chat":
-			s.app.handleWsChat(s.userID, data)
+			if err := s.app.handleWsChat(s.userID, data); err != nil {
+				log.Printf("handle chat failed for user %d: %v", s.userID, err)
+			}
 		case "read":
-			s.app.handleWsRead(s.userID, data)
+			if err := s.app.handleWsRead(s.userID, data); err != nil {
+				log.Printf("handle read failed for user %d: %v", s.userID, err)
+			}
 		case "heartbeat":
 			s.app.handleHeartbeat(s.userID, s)
 		}
@@ -153,11 +214,15 @@ func chatResponsePayload(saved model.MessageDTO, clientMsgID *string) any {
 	}
 }
 
-func (a *App) handleWsChat(senderID int64, data map[string]any) {
+func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 	receiverID := toInt64(data["receiverId"])
 	if receiverID <= 0 {
-		return
+		return fmt.Errorf("invalid receiver")
 	}
+	if err := a.requireContact(context.Background(), senderID, receiverID); err != nil {
+		return err
+	}
+
 	msgType := int(toInt64(data["msgType"]))
 	content := toOptionalString(data["content"])
 	fileURL := toOptionalString(data["fileUrl"])
@@ -167,8 +232,7 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) {
 
 	saved, err := a.saveMessage(senderID, receiverID, msgType, content, fileURL, fileName, fileSize)
 	if err != nil {
-		log.Printf("save message failed: %v", err)
-		return
+		return fmt.Errorf("save message: %w", err)
 	}
 
 	payload := chatResponsePayload(saved, clientMsgID)
@@ -178,16 +242,19 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) {
 	if receiverSession := a.hub.Get(receiverID); receiverSession != nil {
 		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": payload})
 	}
+	return nil
 }
 
-func (a *App) handleWsRead(userID int64, data map[string]any) {
+func (a *App) handleWsRead(userID int64, data map[string]any) error {
 	targetID := toInt64(data["targetId"])
 	if targetID <= 0 {
-		return
+		return fmt.Errorf("invalid read target")
+	}
+	if err := a.requireContact(context.Background(), userID, targetID); err != nil {
+		return err
 	}
 	if err := a.markAsRead(userID, targetID); err != nil {
-		log.Printf("mark as read failed: %v", err)
-		return
+		return fmt.Errorf("mark as read: %w", err)
 	}
 
 	if targetSession := a.hub.Get(targetID); targetSession != nil {
@@ -199,6 +266,7 @@ func (a *App) handleWsRead(userID int64, data map[string]any) {
 			},
 		})
 	}
+	return nil
 }
 
 func (a *App) handleHeartbeat(userID int64, session *Session) {
@@ -214,10 +282,12 @@ func (a *App) broadcastOnline(userID int64, online bool) {
 			"online": online,
 		},
 	}
-	for _, session := range a.hub.Snapshot() {
-		if session.userID == userID {
-			continue
-		}
+	sessions, err := a.contactSessions(context.Background(), userID)
+	if err != nil {
+		log.Printf("resolve online recipients for user %d: %v", userID, err)
+		return
+	}
+	for _, session := range sessions {
 		_ = session.SendJSON(payload)
 	}
 }
