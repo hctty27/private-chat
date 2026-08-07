@@ -9,15 +9,37 @@ services:
     networks:
       - my-network
 
+  # 一次性数据库迁移：只连接 PostgreSQL，成功退出后 backend 才启动。
+  migrate:
+    build: ./backend
+    container_name: private-chat-migrate
+    command: ["migrate"]
+    restart: "no"
+    networks:
+      - my-network
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - TIME_ZONE=${TIME_ZONE:-Asia/Shanghai}
+      - POSTGRES_HOST=${POSTGRES_HOST:?missing POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:?missing POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:?missing POSTGRES_DB}
+      - POSTGRES_SSLMODE=${POSTGRES_SSLMODE:-require}
+
   # Go 后端
   backend:
     build: ./backend
     container_name: private-chat-backend
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     networks:
       - my-network
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - TIME_ZONE=${TIME_ZONE:-Asia/Shanghai}
       - LISTEN_ADDR=${LISTEN_ADDR:-:8080}
       - GIN_MODE=${GIN_MODE:-release}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
