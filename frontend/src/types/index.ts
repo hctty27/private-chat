@@ -28,6 +28,7 @@ export interface Message {
   receiverId: number
   msgType: 1 | 2 | 3 | 4 | 5
   content: string | null
+  fileId: number | null
   fileUrl: string | null
   fileName: string | null
   fileSize: number | null
@@ -46,6 +47,7 @@ export interface MessagesResponse {
 }
 
 export interface FileUploadResponse {
+  fileId: number
   url: string
   fileName: string
   fileSize: number
@@ -90,6 +92,7 @@ export interface WsClientChat {
     receiverId: number
     msgType: 1 | 2 | 3 | 4 | 5
     content: string | null
+    fileId: number | null
     fileUrl: string | null
     fileName: string | null
     fileSize: number | null
