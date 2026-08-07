@@ -23,6 +23,7 @@ export function createLocalMessage(options: {
   receiverId: number
   msgType: 1 | 2 | 3 | 4 | 5
   content: string | null
+  fileId?: number | null
   fileUrl: string | null
   fileName: string | null
   fileSize: number | null
@@ -38,6 +39,7 @@ export function createLocalMessage(options: {
     receiverId: options.receiverId,
     msgType: options.msgType,
     content: options.content,
+    fileId: options.fileId ?? null,
     fileUrl: options.fileUrl,
     fileName: options.fileName,
     fileSize: options.fileSize,
@@ -62,6 +64,7 @@ export function chatPayloadFromMessage(message: Message): WsClientChat['data'] {
     receiverId: message.receiverId,
     msgType: message.msgType,
     content: message.content,
+    fileId: message.fileId,
     fileUrl: message.fileUrl,
     fileName: message.fileName,
     fileSize: message.fileSize,
