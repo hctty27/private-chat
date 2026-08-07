@@ -30,6 +30,37 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: private_chat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d private_chat"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply legacy schema fixture
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_legacy_schema.sql
+      - name: Apply file security migration
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/20260807_file_security_up.sql
+      - name: Verify file security migration
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_assertions.sql
+      - name: Roll back file security migration
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/20260807_file_security_down.sql
+      - name: Verify rollback
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_down_assertions.sql
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
