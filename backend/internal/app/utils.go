@@ -115,6 +115,11 @@ func toMessageDTOs(messages []model.Message, loc *time.Location) []model.Message
 }
 
 func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
+	fileURL := msg.FileURL
+	if msg.FileID != nil && *msg.FileID > 0 {
+		stable := stableFileURL(*msg.FileID)
+		fileURL = &stable
+	}
 	return model.MessageDTO{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,
@@ -122,7 +127,8 @@ func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
 		ReceiverID:     msg.ReceiverID,
 		MsgType:        msg.MsgType,
 		Content:        msg.Content,
-		FileURL:        msg.FileURL,
+		FileID:         msg.FileID,
+		FileURL:        fileURL,
 		FileName:       msg.FileName,
 		FileSize:       msg.FileSize,
 		IsRead:         msg.IsRead,
@@ -138,7 +144,7 @@ func formatLocalTime(t time.Time, loc *time.Location) string {
 }
 
 func reverseMessages(messages []model.Message) {
-	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1 {
 		messages[i], messages[j] = messages[j], messages[i]
 	}
 }
