@@ -184,7 +184,7 @@ func (a *App) routes() (*gin.Engine, error) {
 
 			// Compatibility window for older deployed clients and pre-migration URLs.
 			protected.POST("/file/upload", a.uploadHandler)
-			protected.GET("/file/download/:objectName", a.downloadHandler)
+			protected.GET("/file/download/:objectName", a.requireLegacyFileAccess(), a.downloadHandler)
 		}
 	}
 
