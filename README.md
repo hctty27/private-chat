@@ -271,8 +271,7 @@ GitHub Actions 会执行：
 
 ```bash
 cd backend
-go mod tidy
-git diff --exit-code -- go.mod go.sum
+go mod download
 gofmt -l .
 go test ./...
 go vet ./...
