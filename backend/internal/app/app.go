@@ -20,6 +20,7 @@ type App struct {
 	db        *gorm.DB
 	redis     *redis.Client
 	storage   *minio.Client
+	files     *fileManager
 	jwt       *auth.JWTManager
 	hub       *Hub
 	relations relationAuthorizer
@@ -63,11 +64,20 @@ func NewApp() (*App, error) {
 		return nil, err
 	}
 
+	fileManager := newFileManager(
+		gormFileRepository{db: db},
+		minioFileStorage{
+			client: storageClient,
+			bucket: cfg.StorageBucket,
+			prefix: cfg.ObjectStoragePrefix,
+		},
+	)
 	app := &App{
 		cfg:       cfg,
 		db:        db,
 		redis:     rdb,
 		storage:   storageClient,
+		files:     fileManager,
 		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
 		hub:       NewHub(),
 		relations: newRelationAuthorizer(db),
@@ -168,7 +178,11 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/messages/:targetId", a.requireContactParam("targetId"), a.messagesHandler)
-			protected.POST("/file/presign-upload", a.presignUploadHandler)
+			protected.POST("/file/presign-upload", a.filePresignUploadHandler)
+			protected.POST("/files/:fileId/complete", a.fileCompleteHandler)
+			protected.GET("/files/:fileId/content", a.fileContentHandler)
+
+			// Compatibility window for older deployed clients and pre-migration URLs.
 			protected.POST("/file/upload", a.uploadHandler)
 			protected.GET("/file/download/:objectName", a.downloadHandler)
 		}
