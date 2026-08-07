@@ -301,6 +301,17 @@ func (m *fileManager) PresignDownload(ctx context.Context, userID, fileID int64,
 	if !conversationContainsUser(file.ConversationID, userID) {
 		return "", errFileForbidden
 	}
+	// Migrated legacy rows do not have a previously detected MIME type. Sniff the
+	// object itself instead of trusting its filename/extension so historical
+	// images and videos can still render without weakening the new upload path.
+	if file.DetectedContentType == nil || strings.TrimSpace(*file.DetectedContentType) == "" {
+		prefix, err := m.storage.ReadPrefix(ctx, file.ObjectKey, 512)
+		if err != nil {
+			return "", err
+		}
+		detected := http.DetectContentType(prefix)
+		file.DetectedContentType = &detected
+	}
 	contentType, disposition := downloadMetadata(file)
 	return m.storage.PresignGet(ctx, file.ObjectKey, contentType, disposition, expiry)
 }
