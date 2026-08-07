@@ -71,7 +71,7 @@ AUTH_COOKIE_SECURE=false
 psql "$DATABASE_URL" -f migrations/20260807_file_security_up.sql
 ```
 
-迁移会创建 `t_file`、增加 `t_message.file_id`，并把旧的 `/api/file/download/{objectName}` 附件消息映射为文件记录。旧 `file_url/file_name/file_size` 字段暂时保留用于兼容和回滚。
+迁移会创建 `t_file`、增加 `t_message.file_id`，并把旧的 `/api/file/download/{objectName}` 附件消息映射为按会话授权的文件记录。旧 `file_url/file_name/file_size` 字段暂时保留用于兼容和回滚。
 
 全新数据库直接执行 `init.sql` 即可。
 
@@ -161,12 +161,11 @@ private-chat/
 | POST | `/api/file/presign-upload` | 创建 pending 文件记录并获取 1 小时 R2 Presigned PUT；请求必须包含 `receiverId` |
 | POST | `/api/files/:fileId/complete` | 上传后由服务端校验 R2 实际大小并读取前 512 字节识别 MIME，成功后标记 ready |
 | GET | `/api/files/:fileId/content` | 校验当前用户属于文件会话后，302 到 10 分钟 Presigned GET |
-| POST | `/api/file/upload` | 旧后端代理上传接口，兼容窗口保留，不用于新的文件消息 |
-| GET | `/api/file/download/:objectName` | 旧对象名下载接口，兼容窗口保留，不用于新的文件消息 |
+| GET | `/api/file/download/:objectName` | 仅用于迁移前历史链接；仍执行文件会话授权，后续兼容窗口结束后删除 |
 
-新的附件消息只通过 `fileId` 绑定服务端确认过的文件。客户端提供的 `fileUrl`、文件名或文件大小不作为对象归属的可信依据。
+新的附件消息只通过 `fileId` 绑定服务端确认过的文件。客户端提供的 `fileUrl`、文件名或文件大小不作为对象归属的可信依据。旧的后端代理上传接口不再暴露，避免绕开 `fileId` 生命周期制造孤儿对象。
 
-聊天历史中的图片/视频继续使用稳定的同源地址 `/api/files/{fileId}/content`。后端每次访问先进行登录和会话授权，再生成短期 R2 URL，因此数据库不会持久化会过期的签名 URL。
+聊天历史中的图片/视频继续使用稳定的同源地址 `/api/files/{fileId}/content`。后端每次访问先进行登录和会话授权，再生成短期 R2 URL，因此数据库不会持久化会过期的签名 URL。迁移前没有 MIME 检测结果的历史媒体会在首次访问时读取最多 512 字节重新识别，因此旧图片/视频仍能按实际类型展示。
 
 检测为 JPEG、PNG、GIF、WebP、MP4 或 AVI 的媒体可 inline 展示；其他类型按附件下载并使用 `application/octet-stream`，减少浏览器对不可信主动内容的解释风险。
 
@@ -246,6 +245,8 @@ cd ../frontend
 npm ci
 npm run build
 ```
+
+CI 还会启动 PostgreSQL 16，实际执行文件安全迁移、历史附件回填断言、回滚和回滚断言。
 
 ## 许可证
 
