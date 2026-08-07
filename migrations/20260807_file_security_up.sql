@@ -70,7 +70,21 @@ WHERE m.file_id IS NULL
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'fk_message_file'
+        SELECT 1
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+         AND tc.constraint_schema = kcu.constraint_schema
+        JOIN information_schema.constraint_column_usage ccu
+          ON tc.constraint_name = ccu.constraint_name
+         AND tc.constraint_schema = ccu.constraint_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND tc.table_schema = current_schema()
+          AND tc.table_name = 't_message'
+          AND kcu.column_name = 'file_id'
+          AND ccu.table_schema = current_schema()
+          AND ccu.table_name = 't_file'
+          AND ccu.column_name = 'id'
     ) THEN
         ALTER TABLE t_message
             ADD CONSTRAINT fk_message_file FOREIGN KEY (file_id) REFERENCES t_file(id);
