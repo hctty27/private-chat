@@ -18,7 +18,7 @@ Replace client-trusted file URLs with a server-owned `fileId` model so uploaded 
 Create `t_file`:
 
 - `id BIGINT` primary key.
-- `object_key VARCHAR(512)` unique, server-generated relative object key. The configured R2 prefix is applied at runtime.
+- `object_key VARCHAR(512)` server-generated relative object key. The configured R2 prefix is applied at runtime.
 - `owner_id BIGINT` uploader/sender user ID.
 - `conversation_id VARCHAR(64)` conversation that may access the file.
 - `original_name VARCHAR(255)` sanitized display/download filename.
@@ -28,10 +28,11 @@ Create `t_file`:
 - `detected_content_type VARCHAR(128) NULL` populated by sniffing up to the first 512 object bytes with Go `http.DetectContentType`.
 - `status VARCHAR(16)` with `pending` and `ready` values.
 - `created_at TIMESTAMPTZ` and `confirmed_at TIMESTAMPTZ NULL`.
+- Unique `(object_key, conversation_id)`. New objects use UUID names, while the composite key also preserves authorization if the same legacy object URL historically appeared in multiple conversations.
 
 Add nullable `t_message.file_id BIGINT` referencing `t_file(id)`.
 
-Existing file messages are backfilled by extracting their existing `/api/file/download/{objectName}` value, creating ready `t_file` rows using the message sender and conversation, and populating `t_message.file_id`. Legacy `file_url/file_name/file_size` columns remain during this PR for rollback/backward compatibility, but new writes derive these values from `t_file`.
+Existing file messages are backfilled by extracting their existing `/api/file/download/{objectName}` value, creating one ready `t_file` authorization record per object + conversation, and populating `t_message.file_id`. Legacy `file_url/file_name/file_size` columns remain during this PR for rollback/backward compatibility, but new writes derive these values from `t_file`.
 
 ## Upload flow
 
@@ -71,6 +72,8 @@ Server confirmation:
 
 If validation fails, the row stays pending and cannot be attached to a message.
 
+The former backend proxy upload endpoint is not exposed after this migration. Keeping it would allow creating storage objects outside the `fileId` lifecycle and would generate orphan objects that cannot be attached by the new WebSocket protocol.
+
 ## Message attachment flow
 
 For WebSocket `chat` payloads with `msgType` 2/3/5:
@@ -90,12 +93,13 @@ For text/emoji messages, file fields and `file_id` are null.
 1. Require authenticated session.
 2. Load a ready `t_file` row.
 3. Parse its `conversation_id` and require the current user to be one of the two conversation participants.
-4. Generate a short-lived (10 minute) presigned GET URL for the exact object key.
-5. For safely renderable detected media (`image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/avi`) request `Content-Disposition: inline` and the detected MIME type.
-6. For every other type request `Content-Disposition: attachment` with a sanitized filename and `application/octet-stream` when necessary.
-7. Return `302 Found` to the presigned URL and `Cache-Control: private, no-store` on the authorization response.
+4. For migrated legacy rows without a detected MIME, read at most the first 512 R2 bytes and sniff the real content so historical images/videos still render.
+5. Generate a short-lived (10 minute) presigned GET URL for the exact object key.
+6. For safely renderable detected media (`image/jpeg`, `image/png`, `image/gif`, `image/webp`, `video/mp4`, `video/avi`) request inline disposition and the detected MIME type.
+7. For every other type request attachment disposition with a sanitized filename and `application/octet-stream`.
+8. Return `302 Found` to the presigned URL and `Cache-Control: private, no-store` on the authorization response.
 
-The old `/api/file/download/:objectName` route remains temporarily for migrated legacy references only if needed during rollout; the migration and DTO rewrite should move normal history to file IDs. It must not be used by new messages.
+The old `/api/file/download/:objectName` route remains for migrated historical URLs during one compatibility window, but it now performs the same conversation-membership authorization before proxying the object. It is not used by new messages. The old upload route is removed.
 
 ## Browser/R2 requirements
 
@@ -114,12 +118,15 @@ Cloudflare R2 presigned URLs are bearer credentials. Production uses short expir
 
 Backend tests must prove:
 
-- presign creates a pending file tied to the correct owner/conversation and rejects non-contacts/oversized files;
+- presign creates a pending file tied to the correct owner/conversation and rejects oversized files;
+- the HTTP upload entrypoint rejects non-contacts before creating file metadata;
 - completion rejects object-size mismatch and records detected content type when valid;
 - only ready files owned by the sender and scoped to the target conversation can be attached;
 - download authorization rejects users outside the conversation and generates a short-lived GET URL for participants;
 - DTOs derive stable `/api/files/{id}/content` URLs;
-- legacy migration SQL creates/backfills `t_file` and `t_message.file_id` without deleting old metadata.
+- migrated legacy images are MIME-sniffed on access and remain inline-renderable;
+- legacy object-name downloads enforce conversation authorization and reject path traversal;
+- PostgreSQL migration smoke tests backfill two conversations that historically reference the same object and verify rollback.
 
 Frontend build/type-check must prove:
 
@@ -132,4 +139,4 @@ Frontend build/type-check must prove:
 1. Apply the migration before deploying the new backend.
 2. Configure R2 bucket CORS for the production frontend origin.
 3. Deploy backend and frontend together because new attachment messages require `fileId`.
-4. Keep legacy message columns and route for one compatibility window; remove them in a separate cleanup PR after confirming migrated history renders correctly.
+4. Keep legacy message columns and authorized download route for one compatibility window; remove them in a separate cleanup PR after confirming migrated history renders correctly.
