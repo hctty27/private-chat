@@ -362,6 +362,7 @@ export const useChatStore = defineStore('chat', () => {
       receiverId,
       msgType,
       content,
+      fileId: null,
       fileUrl: null,
       fileName: null,
       fileSize: null,
@@ -402,6 +403,7 @@ export const useChatStore = defineStore('chat', () => {
       receiverId,
       msgType: isImage ? 2 : isVideo ? 5 : 3,
       content: null,
+      fileId: null,
       fileUrl: null,
       fileName: file.name,
       fileSize: file.size,
@@ -415,7 +417,7 @@ export const useChatStore = defineStore('chat', () => {
     trackLocalMessage(tracked)
 
     try {
-      const res = await uploadFile(file, p => {
+      const res = await uploadFile(file, receiverId, p => {
         if (!isUploadSessionCurrent({ generation, userId, token, local: tracked })) return
         tracked.uploadProgress = p
         onProgress?.(p)
@@ -427,7 +429,8 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
-      const { url, fileName, fileSize } = res.data.data
+      const { fileId, url, fileName, fileSize } = res.data.data
+      tracked.fileId = fileId
       tracked.fileUrl = url
       tracked.fileName = fileName
       tracked.fileSize = fileSize
@@ -438,6 +441,7 @@ export const useChatStore = defineStore('chat', () => {
         receiverId,
         msgType: tracked.msgType,
         content: null,
+        fileId,
         fileUrl: url,
         fileName,
         fileSize,
@@ -464,7 +468,7 @@ export const useChatStore = defineStore('chat', () => {
     local.uploadProgress = 0
 
     try {
-      const res = await uploadFile(local.localFile, p => {
+      const res = await uploadFile(local.localFile, receiverId, p => {
         if (!isUploadSessionCurrent({ generation, userId, token, local })) return
         local.uploadProgress = p
       })
@@ -475,7 +479,8 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
-      const { url, fileName, fileSize } = res.data.data
+      const { fileId, url, fileName, fileSize } = res.data.data
+      local.fileId = fileId
       local.fileUrl = url
       local.fileName = fileName
       local.fileSize = fileSize
@@ -486,6 +491,7 @@ export const useChatStore = defineStore('chat', () => {
         receiverId,
         msgType: local.msgType,
         content: null,
+        fileId,
         fileUrl: url,
         fileName,
         fileSize,
@@ -509,7 +515,7 @@ export const useChatStore = defineStore('chat', () => {
           removePendingMessage(msg.clientMsgId)
           untrackLocalMessage(msg.clientMsgId)
           sentClientMsgIds.delete(msg.clientMsgId)
-        sentClientMsgTimes.delete(msg.clientMsgId)
+          sentClientMsgTimes.delete(msg.clientMsgId)
         }
         // If message belongs to current conversation, add to list
         if (currentContact.value && belongsToConversation(msg, userStore.userId, currentContact.value.userId)) {
