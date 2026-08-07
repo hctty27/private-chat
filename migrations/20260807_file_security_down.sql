@@ -1,0 +1,8 @@
+BEGIN;
+
+DROP INDEX IF EXISTS idx_message_file_id;
+ALTER TABLE t_message DROP CONSTRAINT IF EXISTS fk_message_file;
+ALTER TABLE t_message DROP COLUMN IF EXISTS file_id;
+DROP TABLE IF EXISTS t_file;
+
+COMMIT;

@@ -214,6 +214,10 @@ func chatResponsePayload(saved model.MessageDTO, clientMsgID *string) any {
 	}
 }
 
+func isFileMessageType(msgType int) bool {
+	return msgType == 2 || msgType == 3 || msgType == 5
+}
+
 func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 	receiverID := toInt64(data["receiverId"])
 	if receiverID <= 0 {
@@ -225,12 +229,26 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 
 	msgType := int(toInt64(data["msgType"]))
 	content := toOptionalString(data["content"])
-	fileURL := toOptionalString(data["fileUrl"])
-	fileName := toOptionalString(data["fileName"])
-	fileSize := toOptionalInt64(data["fileSize"])
 	clientMsgID := toOptionalString(data["clientMsgId"])
 
-	saved, err := a.saveMessage(senderID, receiverID, msgType, content, fileURL, fileName, fileSize)
+	var attachment *model.File
+	if isFileMessageType(msgType) {
+		fileID := toInt64(data["fileId"])
+		if fileID <= 0 {
+			return fmt.Errorf("fileId is required for attachment messages")
+		}
+		if a.files == nil {
+			return fmt.Errorf("file manager unavailable")
+		}
+		file, err := a.files.ResolveAttachment(context.Background(), senderID, receiverID, fileID)
+		if err != nil {
+			return fmt.Errorf("resolve attachment: %w", err)
+		}
+		attachment = &file
+		content = nil
+	}
+
+	saved, err := a.saveMessage(senderID, receiverID, msgType, content, attachment)
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}
@@ -292,17 +310,27 @@ func (a *App) broadcastOnline(userID int64, online bool) {
 	}
 }
 
-func (a *App) saveMessage(senderID, receiverID int64, msgType int, content, fileURL, fileName *string, fileSize *int64) (model.MessageDTO, error) {
+func (a *App) saveMessage(senderID, receiverID int64, msgType int, content *string, attachment *model.File) (model.MessageDTO, error) {
 	msg := model.Message{
 		ConversationID: conversationID(senderID, receiverID),
 		SenderID:       senderID,
 		ReceiverID:     receiverID,
 		MsgType:        msgType,
 		Content:        content,
-		FileURL:        fileURL,
-		FileName:       fileName,
-		FileSize:       fileSize,
 		IsRead:         0,
+	}
+	if attachment != nil {
+		fileID := attachment.ID
+		fileURL := stableFileURL(fileID)
+		fileName := attachment.OriginalName
+		fileSize := attachment.ExpectedSize
+		if attachment.ActualSize != nil {
+			fileSize = *attachment.ActualSize
+		}
+		msg.FileID = &fileID
+		msg.FileURL = &fileURL
+		msg.FileName = &fileName
+		msg.FileSize = &fileSize
 	}
 	if err := a.db.Create(&msg).Error; err != nil {
 		return model.MessageDTO{}, err

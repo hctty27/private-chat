@@ -10,7 +10,8 @@
 
 - **伪装保护** - 外观模拟微博，点击 3 次进入登录页
 - **实时聊天** - WebSocket 双向通信，消息即时送达
-- **文件分享** - 支持图片、视频、文件上传
+- **文件分享** - 支持图片、视频、文件直传 Cloudflare R2
+- **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
 - **已读状态** - 消息已读/未读实时反馈
 - **表情支持** - 内置 Emoji 表情选择器
 - **单点登录** - 新设备登录自动踢掉旧连接
@@ -64,7 +65,33 @@ AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SECURE=false
 ```
 
-3. 启动服务
+3. 已有数据库升级时，先执行迁移：
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260807_file_security_up.sql
+```
+
+迁移会创建 `t_file`、增加 `t_message.file_id`，并把旧的 `/api/file/download/{objectName}` 附件消息映射为按会话授权的文件记录。旧 `file_url/file_name/file_size` 字段暂时保留用于兼容和回滚。
+
+全新数据库直接执行 `init.sql` 即可。
+
+4. 为浏览器直传/直下配置 R2 Bucket CORS。生产环境应把 `https://chat.example.com` 替换为真实前端 Origin，不要使用 `*`：
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://chat.example.com"],
+    "AllowedMethods": ["GET", "HEAD", "PUT"],
+    "AllowedHeaders": ["Content-Type", "Range"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Range"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+R2 Presigned URL 是临时 bearer credential。Bucket 应保持私有，不要把 Presigned URL 写入数据库或聊天消息；应用只保存 `fileId` 和服务端拥有的对象元数据。
+
+5. 启动服务
 
 ```bash
 docker compose up -d
@@ -105,6 +132,7 @@ private-chat/
 │   ├── src/
 │   ├── nginx.conf
 │   └── Dockerfile
+├── migrations/
 ├── compose.yml
 ├── init.sql
 └── .env.example
@@ -130,11 +158,16 @@ private-chat/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/file/presign-upload` | 获取 R2 预签名上传地址 |
-| POST | `/api/file/upload` | 后端代理上传 |
-| GET | `/api/file/download/:objectName` | 已登录用户下载文件，支持 Range |
+| POST | `/api/file/presign-upload` | 创建 pending 文件记录并获取 1 小时 R2 Presigned PUT；请求必须包含 `receiverId` |
+| POST | `/api/files/:fileId/complete` | 上传后由服务端校验 R2 实际大小并读取前 512 字节识别 MIME，成功后标记 ready |
+| GET | `/api/files/:fileId/content` | 校验当前用户属于文件会话后，302 到 10 分钟 Presigned GET |
+| GET | `/api/file/download/:objectName` | 仅用于迁移前历史链接；仍执行文件会话授权，后续兼容窗口结束后删除 |
 
-文件下载使用同源 HttpOnly Cookie 完成浏览器认证。当前版本只验证登录状态，文件级归属授权需要后续文件元数据迁移完成。
+新的附件消息只通过 `fileId` 绑定服务端确认过的文件。客户端提供的 `fileUrl`、文件名或文件大小不作为对象归属的可信依据。旧的后端代理上传接口不再暴露，避免绕开 `fileId` 生命周期制造孤儿对象。
+
+聊天历史中的图片/视频继续使用稳定的同源地址 `/api/files/{fileId}/content`。后端每次访问先进行登录和会话授权，再生成短期 R2 URL，因此数据库不会持久化会过期的签名 URL。迁移前没有 MIME 检测结果的历史媒体会在首次访问时读取最多 512 字节重新识别，因此旧图片/视频仍能按实际类型展示。
+
+检测为 JPEG、PNG、GIF、WebP、MP4 或 AVI 的媒体可 inline 展示；其他类型按附件下载并使用 `application/octet-stream`，减少浏览器对不可信主动内容的解释风险。
 
 ### WebSocket
 
@@ -142,7 +175,7 @@ private-chat/
 
 **客户端消息类型**
 
-- `chat` - 发送消息
+- `chat` - 发送消息；图片/文件/视频消息必须包含已确认的 `fileId`
 - `read` - 标记已读
 - `heartbeat` - 心跳保活
 
@@ -162,7 +195,8 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 
 - `t_user` - 用户表
 - `t_relation` - 联系人关系表
-- `t_message` - 消息表
+- `t_file` - 文件对象、上传者、会话、真实大小/MIME 和状态元数据
+- `t_message` - 消息表，附件消息通过 `file_id` 引用 `t_file`
 
 ### 消息类型
 
@@ -211,6 +245,8 @@ cd ../frontend
 npm ci
 npm run build
 ```
+
+CI 还会启动 PostgreSQL 16，实际执行文件安全迁移、历史附件回填断言、回滚和回滚断言。
 
 ## 许可证
 

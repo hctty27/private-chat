@@ -1,0 +1,40 @@
+CREATE TABLE t_user (
+    id BIGINT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password VARCHAR(128) NOT NULL,
+    nickname VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE t_message (
+    id BIGINT PRIMARY KEY,
+    conversation_id VARCHAR(64) NOT NULL,
+    sender_id BIGINT NOT NULL,
+    receiver_id BIGINT NOT NULL,
+    msg_type SMALLINT NOT NULL,
+    content TEXT,
+    file_url VARCHAR(512),
+    file_name VARCHAR(255),
+    file_size BIGINT,
+    is_read SMALLINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO t_user (id, username, password, nickname) VALUES
+    (1, 'u1', 'x', 'u1'),
+    (2, 'u2', 'x', 'u2'),
+    (3, 'u3', 'x', 'u3'),
+    (4, 'u4', 'x', 'u4');
+
+INSERT INTO t_message (
+    id, conversation_id, sender_id, receiver_id, msg_type,
+    file_url, file_name, file_size, created_at
+) VALUES
+    (1, '1_2', 1, 2, 2, '/api/file/download/shared.jpg', 'one.jpg', 8, NOW() - INTERVAL '2 minutes'),
+    (2, '3_4', 3, 4, 2, '/api/file/download/shared.jpg', 'two.jpg', 8, NOW() - INTERVAL '1 minute');
+
+INSERT INTO t_message (
+    id, conversation_id, sender_id, receiver_id, msg_type,
+    content, created_at
+) VALUES
+    (3, '1_2', 1, 2, 1, 'hello', NOW());
