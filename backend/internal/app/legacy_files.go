@@ -9,7 +9,6 @@ import (
 	"privatechat/internal/model"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type legacyObjectFinder interface {
@@ -67,4 +66,3 @@ func (a *App) requireLegacyFileAccess() gin.HandlerFunc {
 }
 
 var _ legacyObjectFinder = gormFileRepository{}
-var _ = gorm.ErrRecordNotFound
