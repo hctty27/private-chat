@@ -182,8 +182,7 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.POST("/files/:fileId/complete", a.fileCompleteHandler)
 			protected.GET("/files/:fileId/content", a.fileContentHandler)
 
-			// Compatibility window for older deployed clients and pre-migration URLs.
-			protected.POST("/file/upload", a.uploadHandler)
+			// Compatibility window for migrated historical URLs only. New uploads use fileId.
 			protected.GET("/file/download/:objectName", a.requireLegacyFileAccess(), a.downloadHandler)
 		}
 	}
