@@ -137,3 +137,33 @@ func TestFormatPresenceTimeUsesRFC3339UTC(t *testing.T) {
 		t.Fatalf("unexpected formatted time %q", got)
 	}
 }
+
+func TestContactLastSeenFormattingReturnsNilForMissingValue(t *testing.T) {
+	if got := optionalPresenceTime(nil); got != nil {
+		t.Fatalf("expected nil, got %q", *got)
+	}
+}
+
+func TestContactLastSeenFormattingReturnsRFC3339UTC(t *testing.T) {
+	at := time.Date(2026, 8, 10, 14, 32, 15, 0, time.FixedZone("UTC+8", 8*60*60))
+	got := optionalPresenceTime(&at)
+	if got == nil || *got != "2026-08-10T06:32:15Z" {
+		t.Fatalf("unexpected last seen value %#v", got)
+	}
+}
+
+func TestOfflinePresencePayloadCarriesCapturedTimestamp(t *testing.T) {
+	at := time.Date(2026, 8, 10, 14, 32, 15, 0, time.FixedZone("UTC+8", 8*60*60))
+	payload := onlinePresencePayload(7, false, &at)
+
+	if payload["type"] != "online" {
+		t.Fatalf("unexpected event type %#v", payload["type"])
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected payload data %#v", payload["data"])
+	}
+	if data["userId"] != int64(7) || data["online"] != false || data["lastSeenAt"] != "2026-08-10T06:32:15Z" {
+		t.Fatalf("unexpected presence data %#v", data)
+	}
+}
