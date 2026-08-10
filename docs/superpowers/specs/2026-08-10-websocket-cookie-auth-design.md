@@ -168,16 +168,19 @@ No database migration is required.
 
 ## Deployment and Compatibility
 
-This is a coordinated frontend/backend deployment.
+Backend-first deployment is compatible with browser clients that already possess the `private_chat_session` cookie: even if an older frontend still appends `?token=...`, the strict backend ignores the query parameter and authenticates from the cookie that the browser automatically sends.
 
-Recommended order:
+The only legacy clients expected to break are clients that rely on query/header JWT authentication and do not possess the session cookie. Those clients must log in again or be updated before reconnecting.
 
-1. Deploy backend that requires the cookie.
-2. Deploy frontend that opens `/ws/chat` without query JWT in the same release window.
+Recommended rollout:
 
-Because the current production frontend still sends a query token, deploying the strict backend substantially earlier than the frontend could break WebSocket reconnects for clients that have not refreshed. Keep the rollout window short or deploy both artifacts atomically where possible.
+1. Deploy the backend that ignores query/header JWTs and requires the session cookie for WebSocket handshakes.
+2. Confirm normal browser reconnects still succeed for existing cookie-bearing sessions.
+3. Deploy the frontend that removes `?token=` from the WebSocket URL.
 
-Users with a valid HttpOnly session cookie do not need to log in again. Existing open WebSocket connections remain established until they disconnect; new/reconnected handshakes use the new cookie-only path.
+Deploying both artifacts together remains simplest, but atomic deployment is not required for cookie-bearing browser sessions.
+
+Existing open WebSocket connections remain established until they disconnect; new/reconnected handshakes use the cookie-only authentication path.
 
 ## Acceptance Criteria
 
