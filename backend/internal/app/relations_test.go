@@ -75,9 +75,10 @@ func TestHandleWsReadRejectsNonContact(t *testing.T) {
 
 func TestContactSessionsOnlyReturnsContacts(t *testing.T) {
 	hub := NewHub()
-	hub.Replace(2, &Session{userID: 2})
-	hub.Replace(3, &Session{userID: 3})
-	hub.Replace(4, &Session{userID: 4})
+	hub.Add(2, &Session{userID: 2})
+	hub.Add(2, &Session{userID: 2})
+	hub.Add(3, &Session{userID: 3})
+	hub.Add(4, &Session{userID: 4})
 	a := &App{
 		hub:       hub,
 		relations: fakeRelationAuthorizer{contactIDs: []int64{2, 4}},
@@ -87,10 +88,15 @@ func TestContactSessionsOnlyReturnsContacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve contact sessions: %v", err)
 	}
-	if len(sessions) != 2 {
-		t.Fatalf("expected 2 contact sessions, got %d", len(sessions))
+	if len(sessions) != 3 {
+		t.Fatalf("expected 3 contact sessions, got %d", len(sessions))
 	}
-	if sessions[0].userID != 2 || sessions[1].userID != 4 {
-		t.Fatalf("unexpected contact sessions: %d, %d", sessions[0].userID, sessions[1].userID)
+
+	counts := make(map[int64]int)
+	for _, session := range sessions {
+		counts[session.userID]++
+	}
+	if counts[2] != 2 || counts[4] != 1 || counts[3] != 0 {
+		t.Fatalf("unexpected contact session counts: %#v", counts)
 	}
 }
