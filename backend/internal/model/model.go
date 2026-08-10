@@ -44,6 +44,7 @@ type MessageDTO struct {
 	ReceiverID     int64   `json:"receiverId"`
 	MsgType        int     `json:"msgType"`
 	Content        *string `json:"content"`
+	ClientMsgID    *string `json:"clientMsgId,omitempty"`
 	FileID         *int64  `json:"fileId,omitempty"`
 	FileURL        *string `json:"fileUrl"`
 	FileName       *string `json:"fileName"`
@@ -123,6 +124,7 @@ type Message struct {
 	ReceiverID     int64     `gorm:"column:receiver_id"`
 	MsgType        int       `gorm:"column:msg_type"`
 	Content        *string   `gorm:"column:content"`
+	ClientMsgID    *string   `gorm:"column:client_msg_id"`
 	FileID         *int64    `gorm:"column:file_id"`
 	FileURL        *string   `gorm:"column:file_url"`
 	FileName       *string   `gorm:"column:file_name"`
