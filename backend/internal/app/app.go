@@ -21,6 +21,7 @@ type App struct {
 	redis     *redis.Client
 	storage   *minio.Client
 	files     *fileManager
+	presence  *presenceService
 	jwt       *auth.JWTManager
 	hub       *Hub
 	relations relationAuthorizer
@@ -72,12 +73,17 @@ func NewApp() (*App, error) {
 			prefix: cfg.ObjectStoragePrefix,
 		},
 	)
+	presence := newPresenceService(
+		gormLastSeenRepository{db: db},
+		redisLastSeenThrottle{client: rdb},
+	)
 	app := &App{
 		cfg:       cfg,
 		db:        db,
 		redis:     rdb,
 		storage:   storageClient,
 		files:     fileManager,
+		presence:  presence,
 		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
 		hub:       NewHub(),
 		relations: newRelationAuthorizer(db),
