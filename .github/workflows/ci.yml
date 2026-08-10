@@ -77,6 +77,11 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_assertions.sql
           test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608070001:false"
+      - name: Test message idempotency against PostgreSQL
+        working-directory: backend
+        env:
+          RUN_POSTGRES_TESTS: "1"
+        run: go test ./internal/app -run TestSaveMessageIdempotency -count=1
       - name: Re-run managed migrations idempotently
         run: ./private-chat-backend migrate
       - name: Verify current init.sql can be adopted
@@ -84,7 +89,7 @@ jobs:
           createdb -h 127.0.0.1 -U postgres initialized_chat
           psql -h 127.0.0.1 -U postgres -d initialized_chat -v ON_ERROR_STOP=1 -f init.sql
           POSTGRES_DB=initialized_chat ./private-chat-backend migrate
-          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608070001:false"
+          test "$(psql -h 127.0.0.1 -U postgres initialized_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608070001:false"
           test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.constraint_schema = kcu.constraint_schema JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() AND tc.table_name = 't_message' AND kcu.column_name = 'file_id' AND ccu.table_schema = current_schema() AND ccu.table_name = 't_file' AND ccu.column_name = 'id'")" = "1"
       - name: Smoke-test explicit rollback SQL
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f backend/internal/migration/sql/202608070001_file_security.down.sql
