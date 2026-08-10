@@ -218,7 +218,7 @@ func parseWsChatPayload(data map[string]any) (wsChatPayload, error) {
 		return wsChatPayload{}, fmt.Errorf("invalid receiver")
 	}
 
-	clientMsgID, err := normalizeClientMsgID(toOptionalString(data["clientMsgId"]))
+	clientMsgID, err := parseClientMsgID(data["clientMsgId"])
 	if err != nil {
 		return wsChatPayload{}, err
 	}
@@ -230,6 +230,17 @@ func parseWsChatPayload(data map[string]any) (wsChatPayload, error) {
 		fileID:      toInt64(data["fileId"]),
 		clientMsgID: clientMsgID,
 	}, nil
+}
+
+func parseClientMsgID(value any) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("clientMsgId must be a string")
+	}
+	return normalizeClientMsgID(&text)
 }
 
 func normalizeClientMsgID(value *string) (*string, error) {
