@@ -19,7 +19,7 @@
         <div class="ch-avatar">{{ chatStore.currentContact?.nickname?.[0] }}</div>
         <div class="ch-info">
           <div class="ch-name">{{ chatStore.currentContact?.nickname }}</div>
-          <div class="ch-status">{{ chatStore.currentContact?.online ? '在线' : '离线' }}</div>
+          <div class="ch-status">{{ chatStore.currentContact?.online ? '在线' : formatLastSeen(chatStore.currentContact?.lastSeenAt ?? null) }}</div>
         </div>
       </div>
 
@@ -158,7 +158,7 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
-import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
+import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { useRouter } from 'vue-router'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
