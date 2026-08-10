@@ -166,13 +166,8 @@ func (s *Session) readLoop() {
 }
 
 func (a *App) registerSession(session *Session) {
-	old := a.hub.Replace(session.userID, session)
-	if old != nil && old != session {
-		_ = old.SendJSON(gin.H{
-			"type": "kicked",
-			"data": gin.H{"message": "您的账号在其他地方登录"},
-		})
-		old.Close()
+	if !a.hub.Add(session.userID, session) {
+		return
 	}
 
 	ctx := context.Background()
@@ -190,7 +185,7 @@ func (a *App) registerSession(session *Session) {
 }
 
 func (a *App) unregisterSession(session *Session) {
-	if a.hub.RemoveIfCurrent(session.userID, session) {
+	if a.hub.Remove(session.userID, session) {
 		ctx := context.Background()
 		now := time.Now().UTC()
 		_ = a.redis.Del(ctx, onlineKey(session.userID)).Err()
