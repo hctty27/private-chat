@@ -7,6 +7,7 @@ import (
 
 	"privatechat/internal/model"
 
+	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -75,4 +76,23 @@ func (p *presenceService) ArmThrottle(ctx context.Context, userID int64) error {
 
 func formatPresenceTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
+}
+
+func optionalPresenceTime(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	formatted := formatPresenceTime(*t)
+	return &formatted
+}
+
+func onlinePresencePayload(userID int64, online bool, lastSeenAt *time.Time) gin.H {
+	data := map[string]any{
+		"userId": userID,
+		"online": online,
+	}
+	if !online && lastSeenAt != nil {
+		data["lastSeenAt"] = formatPresenceTime(*lastSeenAt)
+	}
+	return gin.H{"type": "online", "data": data}
 }
