@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     defaults:
       run:
         working-directory: backend
@@ -33,7 +33,7 @@ jobs:
         run: go vet ./...
 
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     services:
       postgres:
         image: postgres:16
@@ -112,7 +112,7 @@ jobs:
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_down_assertions.sql
 
   compose:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
       POSTGRES_HOST: postgres.example
       POSTGRES_USER: postgres
@@ -130,7 +130,7 @@ jobs:
         run: docker compose config --quiet
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     defaults:
       run:
         working-directory: frontend
