@@ -170,6 +170,7 @@ func (a *App) contactsHandler(c *gin.Context) {
 			UserID:        targetID,
 			Nickname:      targetUser.Nickname,
 			Online:        onlineMap[targetID],
+			LastSeenAt:    optionalPresenceTime(targetUser.LastSeenAt),
 			LastMessage:   lastMessage,
 			LastMessageAt: lastMessageTime,
 			UnreadCount:   unreadCounts[convID],
