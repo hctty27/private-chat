@@ -59,6 +59,29 @@ func readWebSocketJSON(t *testing.T, conn *websocket.Conn) map[string]any {
 	return payload
 }
 
+func TestRegisterSessionAllowsAdditionalTab(t *testing.T) {
+	a := &App{hub: NewHub()}
+	first := &Session{userID: 7}
+	second := &Session{userID: 7}
+	a.hub.Add(7, first)
+
+	a.registerSession(second)
+
+	sessions := a.hub.GetAll(7)
+	if len(sessions) != 2 {
+		t.Fatalf("expected both tabs to remain registered, got %d sessions", len(sessions))
+	}
+	foundFirst := false
+	foundSecond := false
+	for _, session := range sessions {
+		foundFirst = foundFirst || session == first
+		foundSecond = foundSecond || session == second
+	}
+	if !foundFirst || !foundSecond {
+		t.Fatalf("expected both websocket sessions, got %#v", sessions)
+	}
+}
+
 func TestSendToUserReachesEverySession(t *testing.T) {
 	firstServer, firstClient := newWebSocketPair(t)
 	secondServer, secondClient := newWebSocketPair(t)
