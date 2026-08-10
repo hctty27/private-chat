@@ -9,14 +9,19 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm/clause"
 
 	"privatechat/internal/model"
 )
 
-const maxWebSocketMessageSize int64 = 64 * 1024
+const (
+	maxWebSocketMessageSize int64 = 64 * 1024
+	maxClientMsgIDLength          = 64
+)
 
 type websocketReadLimiter interface {
 	SetReadLimit(int64)
@@ -195,70 +200,106 @@ func (a *App) kickUser(userID int64, message string) {
 	}
 }
 
-type wsChatResponse struct {
-	model.MessageDTO
-	ClientMsgID *string `json:"clientMsgId,omitempty"`
-}
-
-func chatResponsePayload(saved model.MessageDTO, clientMsgID *string) any {
-	if clientMsgID == nil {
-		return saved
-	}
-	trimmed := strings.TrimSpace(*clientMsgID)
-	if trimmed == "" {
-		return saved
-	}
-	return wsChatResponse{
-		MessageDTO:  saved,
-		ClientMsgID: &trimmed,
-	}
-}
-
 func isFileMessageType(msgType int) bool {
 	return msgType == 2 || msgType == 3 || msgType == 5
 }
 
-func (a *App) handleWsChat(senderID int64, data map[string]any) error {
+type wsChatPayload struct {
+	receiverID  int64
+	msgType     int
+	content     *string
+	fileID      int64
+	clientMsgID *string
+}
+
+func parseWsChatPayload(data map[string]any) (wsChatPayload, error) {
 	receiverID := toInt64(data["receiverId"])
 	if receiverID <= 0 {
-		return fmt.Errorf("invalid receiver")
+		return wsChatPayload{}, fmt.Errorf("invalid receiver")
 	}
-	if err := a.requireContact(context.Background(), senderID, receiverID); err != nil {
+
+	clientMsgID, err := parseClientMsgID(data["clientMsgId"])
+	if err != nil {
+		return wsChatPayload{}, err
+	}
+
+	return wsChatPayload{
+		receiverID:  receiverID,
+		msgType:     int(toInt64(data["msgType"])),
+		content:     toOptionalString(data["content"]),
+		fileID:      toInt64(data["fileId"]),
+		clientMsgID: clientMsgID,
+	}, nil
+}
+
+func parseClientMsgID(value any) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("clientMsgId must be a string")
+	}
+	return normalizeClientMsgID(&text)
+}
+
+func normalizeClientMsgID(value *string) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if utf8.RuneCountInString(trimmed) > maxClientMsgIDLength {
+		return nil, fmt.Errorf("clientMsgId exceeds %d characters", maxClientMsgIDLength)
+	}
+	return &trimmed, nil
+}
+
+func (a *App) handleWsChat(senderID int64, data map[string]any) error {
+	payload, err := parseWsChatPayload(data)
+	if err != nil {
+		return err
+	}
+	if err := a.requireContact(context.Background(), senderID, payload.receiverID); err != nil {
 		return err
 	}
 
-	msgType := int(toInt64(data["msgType"]))
-	content := toOptionalString(data["content"])
-	clientMsgID := toOptionalString(data["clientMsgId"])
-
 	var attachment *model.File
-	if isFileMessageType(msgType) {
-		fileID := toInt64(data["fileId"])
-		if fileID <= 0 {
+	if isFileMessageType(payload.msgType) {
+		if payload.fileID <= 0 {
 			return fmt.Errorf("fileId is required for attachment messages")
 		}
 		if a.files == nil {
 			return fmt.Errorf("file manager unavailable")
 		}
-		file, err := a.files.ResolveAttachment(context.Background(), senderID, receiverID, fileID)
+		file, err := a.files.ResolveAttachment(context.Background(), senderID, payload.receiverID, payload.fileID)
 		if err != nil {
 			return fmt.Errorf("resolve attachment: %w", err)
 		}
 		attachment = &file
-		content = nil
+		payload.content = nil
 	}
 
-	saved, err := a.saveMessage(senderID, receiverID, msgType, content, attachment)
+	saved, err := a.saveMessage(
+		context.Background(),
+		senderID,
+		payload.receiverID,
+		payload.msgType,
+		payload.content,
+		attachment,
+		payload.clientMsgID,
+	)
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}
 
-	payload := chatResponsePayload(saved, clientMsgID)
 	if senderSession := a.hub.Get(senderID); senderSession != nil {
-		_ = senderSession.SendJSON(gin.H{"type": "chat", "data": payload})
+		_ = senderSession.SendJSON(gin.H{"type": "chat", "data": saved})
 	}
-	if receiverSession := a.hub.Get(receiverID); receiverSession != nil {
-		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": payload})
+	if receiverSession := a.hub.Get(saved.ReceiverID); receiverSession != nil {
+		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": saved})
 	}
 	return nil
 }
@@ -310,13 +351,21 @@ func (a *App) broadcastOnline(userID int64, online bool) {
 	}
 }
 
-func (a *App) saveMessage(senderID, receiverID int64, msgType int, content *string, attachment *model.File) (model.MessageDTO, error) {
+func (a *App) saveMessage(
+	ctx context.Context,
+	senderID, receiverID int64,
+	msgType int,
+	content *string,
+	attachment *model.File,
+	clientMsgID *string,
+) (model.MessageDTO, error) {
 	msg := model.Message{
 		ConversationID: conversationID(senderID, receiverID),
 		SenderID:       senderID,
 		ReceiverID:     receiverID,
 		MsgType:        msgType,
 		Content:        content,
+		ClientMsgID:    clientMsgID,
 		IsRead:         0,
 	}
 	if attachment != nil {
@@ -332,10 +381,30 @@ func (a *App) saveMessage(senderID, receiverID int64, msgType int, content *stri
 		msg.FileName = &fileName
 		msg.FileSize = &fileSize
 	}
-	if err := a.db.Create(&msg).Error; err != nil {
+
+	db := a.db.WithContext(ctx)
+	if clientMsgID == nil {
+		if err := db.Create(&msg).Error; err != nil {
+			return model.MessageDTO{}, err
+		}
+		return toMessageDTO(msg, a.loc), nil
+	}
+
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&msg)
+	if result.Error != nil {
+		return model.MessageDTO{}, result.Error
+	}
+	if result.RowsAffected == 1 {
+		return toMessageDTO(msg, a.loc), nil
+	}
+
+	var existing model.Message
+	if err := db.
+		Where("sender_id = ? AND client_msg_id = ?", senderID, *clientMsgID).
+		First(&existing).Error; err != nil {
 		return model.MessageDTO{}, err
 	}
-	return toMessageDTO(msg, a.loc), nil
+	return toMessageDTO(existing, a.loc), nil
 }
 
 func (a *App) markAsRead(userID, targetID int64) error {

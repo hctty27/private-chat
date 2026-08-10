@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS t_message (
     receiver_id     BIGINT NOT NULL,
     msg_type        SMALLINT NOT NULL,
     content         TEXT,
+    client_msg_id   VARCHAR(64),
     file_id         BIGINT REFERENCES t_file(id),
     file_url        VARCHAR(512),
     file_name       VARCHAR(255),
@@ -82,6 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_message_conv_sender_receiver_read
 
 CREATE INDEX IF NOT EXISTS idx_message_file_id
     ON t_message (file_id) WHERE file_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_message_sender_client_msg_id
+    ON t_message (sender_id, client_msg_id)
+    WHERE client_msg_id IS NOT NULL;
 
 -- 测试用户（仅用于开发环境；密码都是 123456 的 BCrypt 加密）
 -- BCrypt("123456") = $2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi

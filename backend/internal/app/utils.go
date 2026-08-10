@@ -127,6 +127,7 @@ func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
 		ReceiverID:     msg.ReceiverID,
 		MsgType:        msg.MsgType,
 		Content:        msg.Content,
+		ClientMsgID:    msg.ClientMsgID,
 		FileID:         msg.FileID,
 		FileURL:        fileURL,
 		FileName:       msg.FileName,
