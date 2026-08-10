@@ -174,14 +174,32 @@ func (a *App) registerSession(session *Session) {
 		})
 		old.Close()
 	}
-	_ = a.redis.Set(context.Background(), onlineKey(session.userID), "1", 2*time.Minute).Err()
-	a.broadcastOnline(session.userID, true)
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_ = a.redis.Set(ctx, onlineKey(session.userID), "1", 2*time.Minute).Err()
+	if a.presence != nil {
+		if err := a.presence.PersistImmediate(ctx, session.userID, now); err != nil {
+			log.Printf("persist last seen on connect for user %d: %v", session.userID, err)
+		}
+		if err := a.presence.ArmThrottle(ctx, session.userID); err != nil {
+			log.Printf("arm last seen throttle for user %d: %v", session.userID, err)
+		}
+	}
+	a.broadcastOnline(session.userID, true, nil)
 }
 
 func (a *App) unregisterSession(session *Session) {
 	if a.hub.RemoveIfCurrent(session.userID, session) {
-		_ = a.redis.Del(context.Background(), onlineKey(session.userID)).Err()
-		a.broadcastOnline(session.userID, false)
+		ctx := context.Background()
+		now := time.Now().UTC()
+		_ = a.redis.Del(ctx, onlineKey(session.userID)).Err()
+		if a.presence != nil {
+			if err := a.presence.PersistImmediate(ctx, session.userID, now); err != nil {
+				log.Printf("persist last seen on disconnect for user %d: %v", session.userID, err)
+			}
+		}
+		a.broadcastOnline(session.userID, false, &now)
 	}
 	session.Close()
 }
@@ -325,18 +343,19 @@ func (a *App) handleWsRead(userID int64, data map[string]any) error {
 }
 
 func (a *App) handleHeartbeat(userID int64, session *Session) {
-	_ = a.redis.Set(context.Background(), onlineKey(userID), "1", 2*time.Minute).Err()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_ = a.redis.Set(ctx, onlineKey(userID), "1", 2*time.Minute).Err()
+	if a.presence != nil {
+		if err := a.presence.PersistThrottled(ctx, userID, now); err != nil {
+			log.Printf("persist last seen heartbeat for user %d: %v", userID, err)
+		}
+	}
 	_ = session.SendJSON(gin.H{"type": "heartbeat_ack", "data": gin.H{}})
 }
 
-func (a *App) broadcastOnline(userID int64, online bool) {
-	payload := gin.H{
-		"type": "online",
-		"data": gin.H{
-			"userId": userID,
-			"online": online,
-		},
-	}
+func (a *App) broadcastOnline(userID int64, online bool, lastSeenAt *time.Time) {
+	payload := onlinePresencePayload(userID, online, lastSeenAt)
 	sessions, err := a.contactSessions(context.Background(), userID)
 	if err != nil {
 		log.Printf("resolve online recipients for user %d: %v", userID, err)

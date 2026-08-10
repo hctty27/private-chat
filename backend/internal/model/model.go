@@ -32,6 +32,7 @@ type ContactDTO struct {
 	UserID        int64   `json:"userId"`
 	Nickname      string  `json:"nickname"`
 	Online        bool    `json:"online"`
+	LastSeenAt    *string `json:"lastSeenAt"`
 	LastMessage   *string `json:"lastMessage"`
 	LastMessageAt *string `json:"lastMessageTime"`
 	UnreadCount   int     `json:"unreadCount"`
@@ -82,11 +83,12 @@ type FilePresignUploadDTO struct {
 }
 
 type User struct {
-	ID        int64     `gorm:"column:id;primaryKey;autoIncrement"`
-	Username  string    `gorm:"column:username"`
-	Password  string    `gorm:"column:password"`
-	Nickname  string    `gorm:"column:nickname"`
-	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	ID         int64      `gorm:"column:id;primaryKey;autoIncrement"`
+	Username   string     `gorm:"column:username"`
+	Password   string     `gorm:"column:password"`
+	Nickname   string     `gorm:"column:nickname"`
+	LastSeenAt *time.Time `gorm:"column:last_seen_at"`
+	CreatedAt  time.Time  `gorm:"column:created_at;autoCreateTime"`
 }
 
 func (User) TableName() string { return "t_user" }

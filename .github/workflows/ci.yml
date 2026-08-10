@@ -76,9 +76,10 @@ jobs:
       - name: Verify managed migrations
         run: |
           psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_assertions.sql
-          test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608100001:false"
+          test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608100002:false"
           test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_message' AND column_name = 'client_msg_id' AND character_maximum_length = 64")" = "1"
           test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 't_message' AND indexname = 'uk_message_sender_client_msg_id'")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_user' AND column_name = 'last_seen_at' AND data_type = 'timestamp with time zone'")" = "1"
       - name: Test message idempotency against PostgreSQL
         working-directory: backend
         env:
@@ -91,10 +92,15 @@ jobs:
           createdb -h 127.0.0.1 -U postgres initialized_chat
           psql -h 127.0.0.1 -U postgres -d initialized_chat -v ON_ERROR_STOP=1 -f init.sql
           POSTGRES_DB=initialized_chat ./private-chat-backend migrate
-          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608100001:false"
+          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608100002:false"
           test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.constraint_schema = kcu.constraint_schema JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() AND tc.table_name = 't_message' AND kcu.column_name = 'file_id' AND ccu.table_schema = current_schema() AND ccu.table_name = 't_file' AND ccu.column_name = 'id'")" = "1"
           test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_message' AND column_name = 'client_msg_id' AND character_maximum_length = 64")" = "1"
           test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 't_message' AND indexname = 'uk_message_sender_client_msg_id'")" = "1"
+          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_user' AND column_name = 'last_seen_at' AND data_type = 'timestamp with time zone'")" = "1"
+      - name: Smoke-test last seen rollback SQL
+        run: |
+          psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f backend/internal/migration/sql/202608100002_last_seen.down.sql
+          test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_user' AND column_name = 'last_seen_at'")" = "0"
       - name: Smoke-test client message id rollback SQL
         run: |
           psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f backend/internal/migration/sql/202608100001_client_msg_id.down.sql
@@ -137,5 +143,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Test last seen formatter
+        run: |
+          rm -rf /tmp/private-chat-time-test
+          ./node_modules/.bin/tsc src/utils/time.ts --target ES2022 --module commonjs --moduleResolution node --outDir /tmp/private-chat-time-test
+          TZ=Asia/Shanghai node <<'NODE'
+          const assert = require('node:assert/strict')
+          const { formatLastSeen } = require('/tmp/private-chat-time-test/time.js')
+          const now = new Date('2026-08-10T07:00:00Z')
+          assert.equal(formatLastSeen(null, now), '离线')
+          assert.equal(formatLastSeen('not-a-date', now), '离线')
+          assert.equal(formatLastSeen('2026-08-10T06:32:00Z', now), '最后上线 今天 14:32')
+          assert.equal(formatLastSeen('2026-08-09T14:18:00Z', now), '最后上线 昨天 22:18')
+          assert.equal(formatLastSeen('2026-08-08T11:30:00Z', now), '最后上线 08-08 19:30')
+          assert.equal(formatLastSeen('2025-12-31T01:15:00Z', now), '最后上线 2025-12-31 09:15')
+          NODE
       - name: Type-check and build
         run: npm run build

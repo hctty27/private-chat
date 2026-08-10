@@ -557,9 +557,11 @@ export const useChatStore = defineStore('chat', () => {
         const contact = contacts.value.find((c) => c.userId === data.data.userId)
         if (contact) {
           contact.online = data.data.online
+          if (!data.data.online && data.data.lastSeenAt) contact.lastSeenAt = data.data.lastSeenAt
         }
         if (currentContact.value && currentContact.value.userId === data.data.userId) {
           currentContact.value.online = data.data.online
+          if (!data.data.online && data.data.lastSeenAt) currentContact.value.lastSeenAt = data.data.lastSeenAt
         }
         break
       }
