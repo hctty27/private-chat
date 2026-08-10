@@ -79,3 +79,15 @@ func TestNormalizeClientMsgIDRejects65Characters(t *testing.T) {
 		t.Fatal("expected 65-character clientMsgId to be rejected")
 	}
 }
+
+func TestParseWsChatPayloadRejectsNonStringClientMsgID(t *testing.T) {
+	_, err := parseWsChatPayload(map[string]any{
+		"receiverId":  2,
+		"msgType":     1,
+		"content":     "hello",
+		"clientMsgId": float64(123),
+	})
+	if err == nil {
+		t.Fatal("expected non-string clientMsgId to be rejected")
+	}
+}
