@@ -43,6 +43,32 @@ export function formatChatTime(dateStr: string): string {
   return `${date.getFullYear()}-${month}-${day} ${timeStr}`
 }
 
+function localDaySerial(date: Date): number {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+export function formatLastSeen(dateStr: string | null, now = new Date()): string {
+  if (!dateStr) return '离线'
+
+  const date = new Date(dateStr)
+  if (Number.isNaN(date.getTime())) return '离线'
+
+  const h = String(date.getHours()).padStart(2, '0')
+  const m = String(date.getMinutes()).padStart(2, '0')
+  const timeStr = `${h}:${m}`
+  const diffDays = Math.round((localDaySerial(now) - localDaySerial(date)) / 86400000)
+
+  if (diffDays === 0) return `最后上线 今天 ${timeStr}`
+  if (diffDays === 1) return `最后上线 昨天 ${timeStr}`
+
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  if (date.getFullYear() === now.getFullYear()) {
+    return `最后上线 ${month}-${day} ${timeStr}`
+  }
+  return `最后上线 ${date.getFullYear()}-${month}-${day} ${timeStr}`
+}
+
 export function shouldShowTimeSeparator(currentDate: string, prevDate: string | null): boolean {
   if (!prevDate) return true
   return new Date(currentDate).getTime() - new Date(prevDate).getTime() > 300000 // 5 minutes
