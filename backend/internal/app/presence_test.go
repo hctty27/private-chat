@@ -167,3 +167,33 @@ func TestOfflinePresencePayloadCarriesCapturedTimestamp(t *testing.T) {
 		t.Fatalf("unexpected presence data %#v", data)
 	}
 }
+
+func TestOnlinePresencePayloadOmitsLastSeenAt(t *testing.T) {
+	at := time.Date(2026, 8, 10, 6, 32, 15, 0, time.UTC)
+	payload := onlinePresencePayload(7, true, &at)
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected payload data %#v", payload["data"])
+	}
+	if _, exists := data["lastSeenAt"]; exists {
+		t.Fatalf("online payload must not expose historical lastSeenAt: %#v", data)
+	}
+}
+
+func TestHubRemoveIfCurrentRejectsStaleSession(t *testing.T) {
+	hub := NewHub()
+	oldSession := &Session{userID: 7}
+	currentSession := &Session{userID: 7}
+	hub.Replace(7, oldSession)
+	hub.Replace(7, currentSession)
+
+	if hub.RemoveIfCurrent(7, oldSession) {
+		t.Fatal("stale session must not remove the current session")
+	}
+	if got := hub.Get(7); got != currentSession {
+		t.Fatalf("expected current session to remain, got %#v", got)
+	}
+	if !hub.RemoveIfCurrent(7, currentSession) {
+		t.Fatal("current session should be removable")
+	}
+}
