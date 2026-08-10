@@ -1,0 +1,68 @@
+name: Apply last seen UI patch
+
+on:
+  push:
+    branches:
+      - feat/last-seen
+    paths:
+      - .github/workflows/apply-last-seen-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/last-seen
+      - name: Apply exact replacements
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "frontend/src/stores/chat.ts",
+              """      case 'online': {\n        const contact = contacts.value.find((c) => c.userId === data.data.userId)\n        if (contact) {\n          contact.online = data.data.online\n        }\n        if (currentContact.value && currentContact.value.userId === data.data.userId) {\n          currentContact.value.online = data.data.online\n        }\n        break\n      }\n""",
+              """      case 'online': {\n        const contact = contacts.value.find((c) => c.userId === data.data.userId)\n        if (contact) {\n          contact.online = data.data.online\n          if (!data.data.online && data.data.lastSeenAt) contact.lastSeenAt = data.data.lastSeenAt\n        }\n        if (currentContact.value && currentContact.value.userId === data.data.userId) {\n          currentContact.value.online = data.data.online\n          if (!data.data.online && data.data.lastSeenAt) currentContact.value.lastSeenAt = data.data.lastSeenAt\n        }\n        break\n      }\n""",
+          )
+
+          replace_once(
+              "frontend/src/views/ChatPage.vue",
+              "<div class=\"ch-status\">{{ chatStore.currentContact.online ? '在线' : '离线' }}</div>",
+              "<div class=\"ch-status\">{{ chatStore.currentContact.online ? '在线' : formatLastSeen(chatStore.currentContact.lastSeenAt) }}</div>",
+          )
+          replace_once(
+              "frontend/src/views/ChatPage.vue",
+              "import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'",
+              "import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'",
+          )
+
+          replace_once(
+              "frontend/src/views/MobileChat.vue",
+              "<div class=\"ch-status\">{{ chatStore.currentContact?.online ? '在线' : '离线' }}</div>",
+              "<div class=\"ch-status\">{{ chatStore.currentContact?.online ? '在线' : formatLastSeen(chatStore.currentContact?.lastSeenAt ?? null) }}</div>",
+          )
+          replace_once(
+              "frontend/src/views/MobileChat.vue",
+              "import { formatChatTime as fmtChatTime, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'",
+              "import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'",
+          )
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/stores/chat.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
+          git diff --cached --check
+          git commit -m "feat: show last seen in chat headers"
+          git push origin HEAD:feat/last-seen
