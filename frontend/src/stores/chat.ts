@@ -662,7 +662,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
-    const socket = new WebSocket(`${protocol}//${host}/ws/chat?token=${userStore.token}`)
+    const socket = new WebSocket(`${protocol}//${host}/ws/chat`)
     ws.value = socket
 
     connectTimer = setTimeout(() => {
