@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"strings"
@@ -19,7 +20,7 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-func OpenPostgres(cfg config.Config) (*gorm.DB, error) {
+func OpenPostgresSQL(cfg config.Config) (*sql.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		cfg.PostgresHost,
@@ -38,20 +39,28 @@ func OpenPostgres(cfg config.Config) (*gorm.DB, error) {
 	pgxConfig.Config.DialFunc = postgresDialFunc
 
 	sqlDB := stdlib.OpenDB(*pgxConfig)
+	sqlDB.SetMaxOpenConns(20)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
+	if err := sqlDB.Ping(); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("postgres ping failed: %w", err)
+	}
+	return sqlDB, nil
+}
+
+func OpenPostgres(cfg config.Config) (*gorm.DB, error) {
+	sqlDB, err := OpenPostgresSQL(cfg)
+	if err != nil {
+		return nil, err
+	}
 	gormDB, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{SingularTable: true},
 		Logger:         logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
-		sqlDB.Close()
+		_ = sqlDB.Close()
 		return nil, err
-	}
-	sqlDB.SetMaxOpenConns(20)
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetConnMaxLifetime(30 * time.Minute)
-	if err := sqlDB.Ping(); err != nil {
-		sqlDB.Close()
-		return nil, fmt.Errorf("postgres ping failed: %w", err)
 	}
 	return gormDB, nil
 }

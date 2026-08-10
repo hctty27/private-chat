@@ -23,6 +23,8 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
+      - name: Download dependencies
+        run: go mod download
       - name: Check formatting
         run: test -z "$(gofmt -l .)"
       - name: Test
@@ -48,18 +50,64 @@ jobs:
           --health-retries 10
     env:
       PGPASSWORD: postgres
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: private_chat
+      POSTGRES_SSLMODE: disable
+      TIME_ZONE: UTC
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Download dependencies
+        working-directory: backend
+        run: go mod download
+      - name: Build backend migration command
+        working-directory: backend
+        run: go build -o ../private-chat-backend ./cmd/privatechat
       - name: Apply legacy schema fixture
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_legacy_schema.sql
-      - name: Apply file security migration
-        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/20260807_file_security_up.sql
-      - name: Verify file security migration
-        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_assertions.sql
-      - name: Roll back file security migration
-        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/20260807_file_security_down.sql
+      - name: Apply managed migrations
+        run: ./private-chat-backend migrate
+      - name: Verify managed migration and backfill
+        run: |
+          psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_assertions.sql
+          test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608070001:false"
+      - name: Re-run managed migrations idempotently
+        run: ./private-chat-backend migrate
+      - name: Verify current init.sql can be adopted
+        run: |
+          createdb -h 127.0.0.1 -U postgres initialized_chat
+          psql -h 127.0.0.1 -U postgres -d initialized_chat -v ON_ERROR_STOP=1 -f init.sql
+          POSTGRES_DB=initialized_chat ./private-chat-backend migrate
+          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT version || ':' || dirty FROM schema_migrations")" = "202608070001:false"
+          test "$(psql -h 127.0.0.1 -U postgres -d initialized_chat -Atc "SELECT COUNT(*) FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.constraint_schema = kcu.constraint_schema JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = current_schema() AND tc.table_name = 't_message' AND kcu.column_name = 'file_id' AND ccu.table_schema = current_schema() AND ccu.table_name = 't_file' AND ccu.column_name = 'id'")" = "1"
+      - name: Smoke-test explicit rollback SQL
+        run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f backend/internal/migration/sql/202608070001_file_security.down.sql
       - name: Verify rollback
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_down_assertions.sql
+
+  compose:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_HOST: postgres.example
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: private_chat
+      REDIS_PASSWORD: redis-password
+      R2_ENDPOINT: https://example.r2.cloudflarestorage.com
+      R2_ACCESS_KEY: access-key
+      R2_SECRET_KEY: secret-key
+      R2_BUCKET: bucket
+      JWT_SECRET: this-is-a-ci-only-secret-with-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
 
   frontend:
     runs-on: ubuntu-latest

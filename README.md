@@ -12,6 +12,7 @@
 - **实时聊天** - WebSocket 双向通信，消息即时送达
 - **文件分享** - 支持图片、视频、文件直传 Cloudflare R2
 - **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
+- **自动数据库迁移** - Docker Compose 部署时先执行未应用的版本化 PostgreSQL migration，成功后才启动后端
 - **已读状态** - 消息已读/未读实时反馈
 - **表情支持** - 内置 Emoji 表情选择器
 - **单点登录** - 新设备登录自动踢掉旧连接
@@ -22,9 +23,10 @@
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Go 1.22+ + Gin + GORM + JWT + WebSocket |
+| 后端 | Go 1.23+ + Gin + GORM + JWT + WebSocket |
 | 前端 | Vue 3 + TypeScript + Pinia + Element Plus + Tailwind CSS 4 |
 | 数据库 | PostgreSQL + Redis |
+| 数据库迁移 | golang-migrate（内嵌版本化 SQL） |
 | 文件存储 | Cloudflare R2（S3 兼容） |
 | 部署 | Docker Compose + Nginx |
 
@@ -65,15 +67,15 @@ AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SECURE=false
 ```
 
-3. 已有数据库升级时，先执行迁移：
+`TIME_ZONE` 控制 Go 应用和 PostgreSQL 连接使用的时区，`TZ` 控制容器系统时区；通常保持两者一致。
+
+3. 如果目标 PostgreSQL 是**完全空的新数据库**，首次部署先执行一次基线初始化：
 
 ```bash
-psql "$DATABASE_URL" -f migrations/20260807_file_security_up.sql
+psql "$DATABASE_URL" -f init.sql
 ```
 
-迁移会创建 `t_file`、增加 `t_message.file_id`，并把旧的 `/api/file/download/{objectName}` 附件消息映射为按会话授权的文件记录。旧 `file_url/file_name/file_size` 字段暂时保留用于兼容和回滚。
-
-全新数据库直接执行 `init.sql` 即可。
+`init.sql` 包含开发测试账号，因此生产环境首次初始化前应删除或替换测试数据。已有数据库不需要重复执行 `init.sql`。
 
 4. 为浏览器直传/直下配置 R2 Bucket CORS。生产环境应把 `https://chat.example.com` 替换为真实前端 Origin，不要使用 `*`：
 
@@ -91,11 +93,31 @@ psql "$DATABASE_URL" -f migrations/20260807_file_security_up.sql
 
 R2 Presigned URL 是临时 bearer credential。Bucket 应保持私有，不要把 Presigned URL 写入数据库或聊天消息；应用只保存 `fileId` 和服务端拥有的对象元数据。
 
-5. 启动服务
+5. 构建并启动：
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
+
+Compose 会先运行一次性的 `migrate` 服务。它只连接 PostgreSQL，并使用 `schema_migrations` 记录已经应用的版本：
+
+```text
+migrate
+  └─ 成功退出
+       └─ backend 启动
+```
+
+如果没有新 migration，`migrate` 会正常退出；如果 migration SQL、数据库连接或 migration 状态发生错误，`migrate` 会非零退出，`backend` 不会在不兼容的数据库结构上启动。
+
+已经手工执行过 `migrations/20260807_file_security_up.sql` 的数据库也可以直接切换到自动迁移。首个受管版本会以幂等方式核对现有结构、完成缺失回填并记录 migration version，不需要再次手工执行该 SQL。
+
+需要单独执行/检查迁移时可以运行：
+
+```bash
+docker compose run --rm migrate
+```
+
+如果 `schema_migrations` 处于 dirty 状态，应用不会自动 `force` 版本。应先确认失败 SQL 和实际数据库结构，再由维护者显式修复 migration 状态；部署流程也不会自动执行 destructive rollback。
 
 ### 本地开发
 
@@ -105,6 +127,12 @@ docker compose up -d
 cd backend
 go mod download
 go run ./cmd/privatechat
+```
+
+单独应用本地数据库 migration：
+
+```bash
+go run ./cmd/privatechat migrate
 ```
 
 **前端**
@@ -125,6 +153,8 @@ private-chat/
 │   │   ├── app/
 │   │   ├── auth/
 │   │   ├── config/
+│   │   ├── migration/
+│   │   │   └── sql/
 │   │   ├── model/
 │   │   └── platform/db/
 │   └── Dockerfile
@@ -132,7 +162,7 @@ private-chat/
 │   ├── src/
 │   ├── nginx.conf
 │   └── Dockerfile
-├── migrations/
+├── migrations/                 # 旧版显式 migration / smoke-test 兼容文件
 ├── compose.yml
 ├── init.sql
 └── .env.example
@@ -197,6 +227,9 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `t_relation` - 联系人关系表
 - `t_file` - 文件对象、上传者、会话、真实大小/MIME 和状态元数据
 - `t_message` - 消息表，附件消息通过 `file_id` 引用 `t_file`
+- `schema_migrations` - golang-migrate 自动维护的 migration version / dirty 状态
+
+版本化 migration 位于 `backend/internal/migration/sql/`，编译时嵌入后端二进制。新增 schema 变更时应添加新的 `*.up.sql` / `*.down.sql` 版本，而不是修改已经在线上应用过的 migration 内容。
 
 ### 消息类型
 
@@ -222,12 +255,13 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 
 参考 `.env.example`：
 
+- `TIME_ZONE` - Go 应用及 PostgreSQL 连接使用的时区
 - `JWT_SECRET` - JWT 签名密钥，必填且至少 32 字符
 - `JWT_EXPIRATION` - 登录有效期
 - `AUTH_COOKIE_SECURE` - HTTPS 环境必须为 `true`
 - `WS_ALLOWED_ORIGINS` - 可选的跨域 WebSocket Origin 白名单
 - `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR
-- `POSTGRES_*` - PostgreSQL 连接配置
+- `POSTGRES_*` - PostgreSQL 连接配置；`migrate` 和 backend 共用
 - `REDIS_*` - Redis 连接配置
 - `R2_*` - Cloudflare R2 文件存储配置
 
@@ -237,6 +271,7 @@ GitHub Actions 会执行：
 
 ```bash
 cd backend
+go mod download
 gofmt -l .
 go test ./...
 go vet ./...
@@ -246,7 +281,15 @@ npm ci
 npm run build
 ```
 
-CI 还会启动 PostgreSQL 16，实际执行文件安全迁移、历史附件回填断言、回滚和回滚断言。
+CI 还会：
+
+- 启动 PostgreSQL 16；
+- 在旧版 schema 上执行真实的 `private-chat-backend migrate`；
+- 校验 `schema_migrations` 版本和 dirty 状态；
+- 第二次执行 migration 验证幂等性；
+- 用当前 `init.sql` 创建另一套数据库并验证可安全接管；
+- smoke-test down migration；
+- 执行 `docker compose config --quiet` 校验部署配置。
 
 ## 许可证
 
