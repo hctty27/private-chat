@@ -88,6 +88,51 @@ func TestAuthTokenFallsBackToHttpOnlyCookie(t *testing.T) {
 	}
 }
 
+func TestAuthTokenFromRequestStillAcceptsBearerForHTTP(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/api/contacts", nil)
+	request.Header.Set("Authorization", "Bearer http-token")
+
+	if token := authTokenFromRequest(request); token != "http-token" {
+		t.Fatalf("expected bearer token, got %q", token)
+	}
+}
+
+func TestWebSocketAuthTokenUsesSessionCookie(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/ws/chat", nil)
+	request.AddCookie(&http.Cookie{Name: authCookieName, Value: "  cookie-token  "})
+
+	if token := websocketAuthTokenFromRequest(request); token != "cookie-token" {
+		t.Fatalf("expected cookie token, got %q", token)
+	}
+}
+
+func TestWebSocketAuthTokenIgnoresQueryToken(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/ws/chat?token=query-token", nil)
+
+	if token := websocketAuthTokenFromRequest(request); token != "" {
+		t.Fatalf("expected query token to be ignored, got %q", token)
+	}
+}
+
+func TestWebSocketAuthTokenIgnoresAuthorizationHeader(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/ws/chat", nil)
+	request.Header.Set("Authorization", "Bearer header-token")
+
+	if token := websocketAuthTokenFromRequest(request); token != "" {
+		t.Fatalf("expected Authorization header to be ignored, got %q", token)
+	}
+}
+
+func TestWebSocketAuthTokenPrefersCookieOverOtherCredentials(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/ws/chat?token=query-token", nil)
+	request.Header.Set("Authorization", "Bearer header-token")
+	request.AddCookie(&http.Cookie{Name: authCookieName, Value: "cookie-token"})
+
+	if token := websocketAuthTokenFromRequest(request); token != "cookie-token" {
+		t.Fatalf("expected cookie token, got %q", token)
+	}
+}
+
 func TestAuthCookieUsesSecureBrowserDefaults(t *testing.T) {
 	cookie := newAuthCookie("token", time.Hour, true)
 

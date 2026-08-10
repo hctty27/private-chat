@@ -36,6 +36,17 @@ func authTokenFromRequest(r *http.Request) string {
 	return strings.TrimSpace(cookie.Value)
 }
 
+func websocketAuthTokenFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	cookie, err := r.Cookie(authCookieName)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
 func newAuthCookie(token string, expiry time.Duration, secure bool) *http.Cookie {
 	maxAge := int(expiry / time.Second)
 	if maxAge < 1 {
