@@ -71,11 +71,7 @@ func websocketOriginAllowed(r *http.Request, allowedOrigins []string) bool {
 }
 
 func (a *App) wsHandler(c *gin.Context) {
-	token := authTokenFromRequest(c.Request)
-	if token == "" {
-		// Backward compatibility for already deployed clients. New sessions use the HttpOnly cookie.
-		token = strings.TrimSpace(c.Query("token"))
-	}
+	token := websocketAuthTokenFromRequest(c.Request)
 	if token == "" {
 		unauthorized(c)
 		return
