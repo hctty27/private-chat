@@ -143,5 +143,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Test last seen formatter
+        run: |
+          rm -rf /tmp/private-chat-time-test
+          ./node_modules/.bin/tsc src/utils/time.ts --target ES2022 --module commonjs --moduleResolution node --outDir /tmp/private-chat-time-test
+          TZ=Asia/Shanghai node <<'NODE'
+          const assert = require('node:assert/strict')
+          const { formatLastSeen } = require('/tmp/private-chat-time-test/time.js')
+          const now = new Date('2026-08-10T07:00:00Z')
+          assert.equal(formatLastSeen(null, now), '离线')
+          assert.equal(formatLastSeen('not-a-date', now), '离线')
+          assert.equal(formatLastSeen('2026-08-10T06:32:00Z', now), '最后上线 今天 14:32')
+          assert.equal(formatLastSeen('2026-08-09T14:18:00Z', now), '最后上线 昨天 22:18')
+          assert.equal(formatLastSeen('2026-08-08T11:30:00Z', now), '最后上线 08-08 19:30')
+          assert.equal(formatLastSeen('2025-12-31T01:15:00Z', now), '最后上线 2025-12-31 09:15')
+          NODE
       - name: Type-check and build
         run: npm run build
