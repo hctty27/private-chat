@@ -14,6 +14,7 @@ export interface Contact {
   userId: number
   nickname: string
   online: boolean
+  lastSeenAt: string | null
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
@@ -71,7 +72,7 @@ export interface WsReadMessage {
 
 export interface WsOnlineMessage {
   type: 'online'
-  data: { userId: number; online: boolean }
+  data: { userId: number; online: boolean; lastSeenAt?: string }
 }
 
 export interface WsHeartbeatAck {
