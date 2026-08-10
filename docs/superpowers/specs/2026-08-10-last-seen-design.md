@@ -63,7 +63,7 @@ Formatting rules:
 - different year: `最后上线 YYYY-MM-DD HH:mm`
 - no historical value: `离线`
 
-The frontend performs this presentation formatting. The backend returns a timestamp value, not localized words such as `今天` or `昨天`.
+The frontend performs this presentation formatting. The backend returns an absolute timestamp, not localized words such as `今天` or `昨天`.
 
 ## Data model
 
@@ -129,7 +129,7 @@ heartbeat
 
 This limits normal heartbeat persistence to approximately one write per online user per minute while retaining a recent durable value if the client disappears abnormally.
 
-A Redis error during throttle acquisition must not disconnect the user or break heartbeat acknowledgement. Presence availability is more important than perfect persistence. The server should log the persistence/throttle failure and continue the existing heartbeat path.
+A Redis error during throttle acquisition must not disconnect the user or break heartbeat acknowledgement. Presence availability is more important than perfect persistence. The server logs the persistence/throttle failure and continues the existing heartbeat path.
 
 A PostgreSQL update failure must likewise not terminate a healthy WebSocket session. It is logged and retried naturally on a later eligible heartbeat or disconnect.
 
@@ -159,7 +159,7 @@ For the current session disconnect path:
 4. broadcast `online=false` with the same timestamp as `lastSeenAt`
 5. close the session as today
 
-If persistence fails, the broadcast may still carry the captured server timestamp so connected contacts immediately display a sensible offline time. The next contact-list fetch will reflect the most recently persisted value.
+If persistence fails, the broadcast may still carry the captured server timestamp so connected contacts immediately display a sensible offline time. The next contact-list fetch reflects the most recently persisted value.
 
 A stale/replaced session must not overwrite the newer session's presence or broadcast an offline event.
 
@@ -174,6 +174,14 @@ LastSeenAt *string `json:"lastSeenAt"`
 The existing contacts handler already loads all target `t_user` rows in one query. It can populate `lastSeenAt` from `targetUser.LastSeenAt` without introducing per-contact SQL queries.
 
 If `LastSeenAt == nil`, return JSON `null`.
+
+When present, `lastSeenAt` is serialized as RFC3339 UTC, for example:
+
+```json
+"lastSeenAt": "2026-08-10T06:32:15Z"
+```
+
+This field intentionally uses an explicit zone even though some existing chat timestamps use the application's local display format. `lastSeenAt` must represent an unambiguous instant because the browser converts it into the viewer's local calendar day before deciding whether to render `今天` or `昨天`.
 
 `online` remains authoritative for current presence. Consumers must prefer `online=true` over any historical timestamp.
 
@@ -199,7 +207,7 @@ to support:
   "data": {
     "userId": 2,
     "online": false,
-    "lastSeenAt": "2026-08-10T14:32:15"
+    "lastSeenAt": "2026-08-10T06:32:15Z"
   }
 }
 ```
@@ -243,9 +251,9 @@ currentContact.online ? '在线' : formatLastSeen(currentContact.lastSeenAt)
 
 ## Time handling
 
-Persist absolute instants using PostgreSQL `TIMESTAMPTZ`. API output continues to use the application's existing time serialization conventions unless implementation review finds that they cannot represent an unambiguous instant. Frontend day-boundary calculations use the browser's local time so `今天` and `昨天` match the user's displayed calendar day.
+Persist absolute instants using PostgreSQL `TIMESTAMPTZ`. Serialize `lastSeenAt` over HTTP and WebSocket as RFC3339 UTC (`time.UTC().Format(time.RFC3339)`). Frontend day-boundary calculations parse that absolute instant into a JavaScript `Date` and compare browser-local calendar components so `今天` and `昨天` match the viewer's displayed day.
 
-The implementation must avoid comparing raw timestamp strings to decide today/yesterday; parse into `Date` values and compare local calendar components.
+The implementation must avoid comparing raw timestamp strings to decide today/yesterday.
 
 ## Failure handling
 
@@ -268,7 +276,7 @@ The implementation must avoid comparing raw timestamp strings to decide today/ye
 ### Backend
 
 - user model maps `last_seen_at`
-- contact DTO returns formatted/non-null last-seen value when present
+- contact DTO returns RFC3339 UTC last-seen value when present
 - contact DTO returns null when absent
 - successful WebSocket registration persists presence immediately
 - heartbeat refreshes online TTL
@@ -277,7 +285,7 @@ The implementation must avoid comparing raw timestamp strings to decide today/ye
 - heartbeat after throttle expiry can persist again
 - Redis throttle failure does not break heartbeat handling
 - DB persistence failure does not close a healthy session
-- current-session disconnect persists immediately and broadcasts `online=false` with the captured `lastSeenAt`
+- current-session disconnect persists immediately and broadcasts `online=false` with the captured RFC3339 UTC `lastSeenAt`
 - stale/replaced session disconnect cannot mark the user offline or overwrite last seen
 
 ### Frontend
@@ -309,4 +317,5 @@ Backend and frontend may therefore be deployed together through the existing pip
 - Current-session disconnect persists and broadcasts the offline timestamp immediately.
 - Contact-list UI remains unchanged and never displays last-seen text.
 - Desktop and mobile active chat headers display the agreed last-seen format when the contact is offline.
+- `lastSeenAt` is an unambiguous RFC3339 UTC timestamp on both HTTP and WebSocket contracts.
 - Existing authentication, authorization, message reliability, file security, reconnect, heartbeat acknowledgement, and kick-out behavior continue to pass regression tests.
