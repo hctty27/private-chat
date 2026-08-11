@@ -58,9 +58,10 @@ describe('AttachmentSendDialog', () => {
 
   it('disables confirm while busy', () => {
     const wrapper = mountDialog({ busy: true })
-    const confirm = wrapper.findAll('button').find((button) => button.text() === '发送')
+    const confirm = wrapper.get('button.primary')
 
-    expect(confirm!.attributes('disabled')).toBeDefined()
+    expect(confirm.text()).toBe('发送中…')
+    expect(confirm.attributes('disabled')).toBeDefined()
   })
 
   it('emits cancel on Escape', async () => {
