@@ -81,9 +81,7 @@ func (a *App) contactSessions(ctx context.Context, userID int64) ([]*Session, er
 
 	sessions := make([]*Session, 0, len(contactIDs))
 	for _, contactID := range contactIDs {
-		if session := a.hub.Get(contactID); session != nil {
-			sessions = append(sessions, session)
-		}
+		sessions = append(sessions, a.hub.GetAll(contactID)...)
 	}
 	return sessions, nil
 }

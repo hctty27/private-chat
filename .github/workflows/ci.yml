@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     defaults:
       run:
         working-directory: backend
@@ -33,7 +33,7 @@ jobs:
         run: go vet ./...
 
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     services:
       postgres:
         image: postgres:16
@@ -59,6 +59,27 @@ jobs:
       TIME_ZONE: UTC
     steps:
       - uses: actions/checkout@v4
+      - name: Configure PostgreSQL client wrappers
+        run: |
+          mkdir -p "$RUNNER_TEMP/postgres-client"
+          cat > "$RUNNER_TEMP/postgres-client/psql" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --network host \
+            -e PGPASSWORD \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
+            -w "$PWD" \
+            postgres:16 psql "$@"
+          SCRIPT
+          cat > "$RUNNER_TEMP/postgres-client/createdb" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --network host \
+            -e PGPASSWORD \
+            postgres:16 createdb "$@"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/postgres-client/psql" "$RUNNER_TEMP/postgres-client/createdb"
+          echo "$RUNNER_TEMP/postgres-client" >> "$GITHUB_PATH"
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -112,7 +133,7 @@ jobs:
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_down_assertions.sql
 
   compose:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
       POSTGRES_HOST: postgres.example
       POSTGRES_USER: postgres
@@ -130,7 +151,7 @@ jobs:
         run: docker compose config --quiet
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     defaults:
       run:
         working-directory: frontend

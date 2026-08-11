@@ -166,13 +166,8 @@ func (s *Session) readLoop() {
 }
 
 func (a *App) registerSession(session *Session) {
-	old := a.hub.Replace(session.userID, session)
-	if old != nil && old != session {
-		_ = old.SendJSON(gin.H{
-			"type": "kicked",
-			"data": gin.H{"message": "您的账号在其他地方登录"},
-		})
-		old.Close()
+	if !a.hub.Add(session.userID, session) {
+		return
 	}
 
 	ctx := context.Background()
@@ -190,7 +185,7 @@ func (a *App) registerSession(session *Session) {
 }
 
 func (a *App) unregisterSession(session *Session) {
-	if a.hub.RemoveIfCurrent(session.userID, session) {
+	if a.hub.Remove(session.userID, session) {
 		ctx := context.Background()
 		now := time.Now().UTC()
 		_ = a.redis.Del(ctx, onlineKey(session.userID)).Err()
@@ -204,12 +199,19 @@ func (a *App) unregisterSession(session *Session) {
 	session.Close()
 }
 
+func (a *App) sendToUser(userID int64, payload any) {
+	for _, session := range a.hub.GetAll(userID) {
+		_ = session.SendJSON(payload)
+	}
+}
+
 func (a *App) kickUser(userID int64, message string) {
-	if session := a.hub.Get(userID); session != nil {
-		_ = session.SendJSON(gin.H{
-			"type": "kicked",
-			"data": gin.H{"message": message},
-		})
+	payload := gin.H{
+		"type": "kicked",
+		"data": gin.H{"message": message},
+	}
+	for _, session := range a.hub.GetAll(userID) {
+		_ = session.SendJSON(payload)
 		session.Close()
 	}
 }
@@ -309,12 +311,8 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 		return fmt.Errorf("save message: %w", err)
 	}
 
-	if senderSession := a.hub.Get(senderID); senderSession != nil {
-		_ = senderSession.SendJSON(gin.H{"type": "chat", "data": saved})
-	}
-	if receiverSession := a.hub.Get(saved.ReceiverID); receiverSession != nil {
-		_ = receiverSession.SendJSON(gin.H{"type": "chat", "data": saved})
-	}
+	a.sendToUser(senderID, gin.H{"type": "chat", "data": saved})
+	a.sendToUser(saved.ReceiverID, gin.H{"type": "chat", "data": saved})
 	return nil
 }
 
@@ -330,15 +328,13 @@ func (a *App) handleWsRead(userID int64, data map[string]any) error {
 		return fmt.Errorf("mark as read: %w", err)
 	}
 
-	if targetSession := a.hub.Get(targetID); targetSession != nil {
-		_ = targetSession.SendJSON(gin.H{
-			"type": "read",
-			"data": gin.H{
-				"readerId":       userID,
-				"conversationId": conversationID(userID, targetID),
-			},
-		})
-	}
+	a.sendToUser(targetID, gin.H{
+		"type": "read",
+		"data": gin.H{
+			"readerId":       userID,
+			"conversationId": conversationID(userID, targetID),
+		},
+	})
 	return nil
 }
 

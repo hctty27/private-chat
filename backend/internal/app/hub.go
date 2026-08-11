@@ -39,43 +39,71 @@ func (s *Session) Close() {
 
 type Hub struct {
 	mu       sync.RWMutex
-	sessions map[int64]*Session
+	sessions map[int64]map[*Session]struct{}
 }
 
 func NewHub() *Hub {
-	return &Hub{sessions: make(map[int64]*Session)}
+	return &Hub{sessions: make(map[int64]map[*Session]struct{})}
 }
 
-func (h *Hub) Get(userID int64) *Session {
+func (h *Hub) Add(userID int64, session *Session) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	userSessions := h.sessions[userID]
+	first := len(userSessions) == 0
+	if userSessions == nil {
+		userSessions = make(map[*Session]struct{})
+		h.sessions[userID] = userSessions
+	}
+	userSessions[session] = struct{}{}
+	return first
+}
+
+func (h *Hub) Remove(userID int64, session *Session) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	userSessions := h.sessions[userID]
+	if userSessions == nil {
+		return false
+	}
+	if _, ok := userSessions[session]; !ok {
+		return false
+	}
+	delete(userSessions, session)
+	if len(userSessions) != 0 {
+		return false
+	}
+	delete(h.sessions, userID)
+	return true
+}
+
+func (h *Hub) GetAll(userID int64) []*Session {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.sessions[userID]
+
+	userSessions := h.sessions[userID]
+	result := make([]*Session, 0, len(userSessions))
+	for session := range userSessions {
+		result = append(result, session)
+	}
+	return result
 }
 
 func (h *Hub) Snapshot() []*Session {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	result := make([]*Session, 0, len(h.sessions))
-	for _, s := range h.sessions {
-		result = append(result, s)
+
+	count := 0
+	for _, userSessions := range h.sessions {
+		count += len(userSessions)
+	}
+	result := make([]*Session, 0, count)
+	for _, userSessions := range h.sessions {
+		for session := range userSessions {
+			result = append(result, session)
+		}
 	}
 	return result
-}
-
-func (h *Hub) Replace(userID int64, session *Session) (old *Session) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	old = h.sessions[userID]
-	h.sessions[userID] = session
-	return old
-}
-
-func (h *Hub) RemoveIfCurrent(userID int64, session *Session) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.sessions[userID] == session {
-		delete(h.sessions, userID)
-		return true
-	}
-	return false
 }

@@ -180,20 +180,29 @@ func TestOnlinePresencePayloadOmitsLastSeenAt(t *testing.T) {
 	}
 }
 
-func TestHubRemoveIfCurrentRejectsStaleSession(t *testing.T) {
+func TestHubRemoveKeepsOtherSessionOnline(t *testing.T) {
 	hub := NewHub()
-	oldSession := &Session{userID: 7}
-	currentSession := &Session{userID: 7}
-	hub.Replace(7, oldSession)
-	hub.Replace(7, currentSession)
+	firstSession := &Session{userID: 7}
+	secondSession := &Session{userID: 7}
 
-	if hub.RemoveIfCurrent(7, oldSession) {
-		t.Fatal("stale session must not remove the current session")
+	if !hub.Add(7, firstSession) {
+		t.Fatal("first session should transition user online")
 	}
-	if got := hub.Get(7); got != currentSession {
-		t.Fatalf("expected current session to remain, got %#v", got)
+	if hub.Add(7, secondSession) {
+		t.Fatal("additional session must not trigger another online transition")
 	}
-	if !hub.RemoveIfCurrent(7, currentSession) {
-		t.Fatal("current session should be removable")
+	if hub.Remove(7, firstSession) {
+		t.Fatal("removing one of multiple sessions must not transition user offline")
+	}
+
+	sessions := hub.GetAll(7)
+	if len(sessions) != 1 || sessions[0] != secondSession {
+		t.Fatalf("expected second session to remain, got %#v", sessions)
+	}
+	if !hub.Remove(7, secondSession) {
+		t.Fatal("removing the final session should transition user offline")
+	}
+	if sessions := hub.GetAll(7); len(sessions) != 0 {
+		t.Fatalf("expected no sessions after final removal, got %#v", sessions)
 	}
 }
