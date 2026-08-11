@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - master
-      - fix/**
-      - feat/**
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   backend:
