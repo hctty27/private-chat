@@ -1,0 +1,42 @@
+name: Bootstrap frontend tests
+
+on:
+  push:
+    branches:
+      - feat/chat-interaction-polish
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: ${{ !contains(github.event.head_commit.message, 'chore: lock frontend test dependencies') }}
+    runs-on: [self-hosted, linux, x64]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/chat-interaction-polish
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install and lock test dependencies
+        run: |
+          npm install -D vitest @vue/test-utils jsdom
+          npm pkg set scripts.test="vitest run"
+          npm pkg set scripts.test:watch="vitest"
+      - name: Commit generated lockfile
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package.json frontend/package-lock.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: lock frontend test dependencies"
+          git push origin HEAD:feat/chat-interaction-polish
