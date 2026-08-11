@@ -12,13 +12,6 @@
     </header>
 
     <main class="max-w-3xl mx-auto px-4 py-4 space-y-4">
-      <div
-        v-if="coverNotice"
-        class="bg-orange-50 border border-orange-200 text-orange-700 rounded-lg px-4 py-3 text-sm shadow-sm"
-      >
-        {{ coverNotice }}
-      </div>
-
       <!-- Hot Topics -->
       <section class="bg-white rounded-lg shadow overflow-hidden">
         <div
@@ -86,7 +79,6 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const coverNotice = ref('')
 
 const hotTopicTitles = [
   '春季赏花指南全国热门赏花地推荐',
@@ -173,21 +165,7 @@ function applyRandomPostTimes() {
   }))
 }
 
-function readCoverNotice() {
-  if (typeof window === 'undefined') return
-  try {
-    const notice = window.sessionStorage.getItem('coverNotice')
-    if (notice) {
-      coverNotice.value = notice
-      window.sessionStorage.removeItem('coverNotice')
-    }
-  } catch {
-    // Ignore storage errors; cover page still works as a public disguise page.
-  }
-}
-
 onMounted(() => {
-  readCoverNotice()
   hotTopics.value = createHotTopics()
   applyRandomPostTimes()
 })
