@@ -59,6 +59,27 @@ jobs:
       TIME_ZONE: UTC
     steps:
       - uses: actions/checkout@v4
+      - name: Configure PostgreSQL client wrappers
+        run: |
+          mkdir -p "$RUNNER_TEMP/postgres-client"
+          cat > "$RUNNER_TEMP/postgres-client/psql" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --network host \
+            -e PGPASSWORD \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
+            -w "$PWD" \
+            postgres:16 psql "$@"
+          SCRIPT
+          cat > "$RUNNER_TEMP/postgres-client/createdb" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --network host \
+            -e PGPASSWORD \
+            postgres:16 createdb "$@"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/postgres-client/psql" "$RUNNER_TEMP/postgres-client/createdb"
+          echo "$RUNNER_TEMP/postgres-client" >> "$GITHUB_PATH"
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
