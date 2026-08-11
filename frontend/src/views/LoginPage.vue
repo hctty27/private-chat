@@ -6,6 +6,14 @@
         <p class="mt-2 text-sm text-gray-500">欢迎回来，请登录您的账号</p>
       </div>
 
+      <div
+        v-if="loginNotice"
+        role="status"
+        class="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700"
+      >
+        {{ loginNotice }}
+      </div>
+
       <el-form @submit.prevent="handleLogin" class="space-y-5">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
@@ -43,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { login as loginApi } from '../api'
@@ -55,6 +63,22 @@ const userStore = useUserStore()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const loginNotice = ref('')
+
+function readLoginNotice() {
+  if (typeof window === 'undefined') return
+  try {
+    loginNotice.value = window.sessionStorage.getItem('loginNotice')
+      || window.sessionStorage.getItem('coverNotice')
+      || ''
+    window.sessionStorage.removeItem('loginNotice')
+    window.sessionStorage.removeItem('coverNotice')
+  } catch {
+    // Ignore storage errors; login remains usable without a notice.
+  }
+}
+
+onMounted(readLoginNotice)
 
 async function handleLogin() {
   if (!username.value.trim() || !password.value.trim()) {
