@@ -31,6 +31,27 @@ describe('MessageActionMenu', () => {
     expect(wrapper.text()).not.toContain('保存')
   })
 
+  it('focuses the first action when opened', async () => {
+    const wrapper = mountMenu()
+    await wrapper.vm.$nextTick()
+
+    expect(document.activeElement?.textContent).toContain('复制')
+  })
+
+  it('moves focus through actions with arrow keys', async () => {
+    const wrapper = mountMenu()
+    await wrapper.vm.$nextTick()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(document.activeElement?.textContent).toContain('重试')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+    expect(document.activeElement?.textContent).toContain('复制')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))
+    expect(document.activeElement?.textContent).toContain('重试')
+  })
+
   it('emits one action and closes after selection', async () => {
     const wrapper = mountMenu()
     const copy = wrapper.findAll('button').find((button) => button.text() === '复制')
