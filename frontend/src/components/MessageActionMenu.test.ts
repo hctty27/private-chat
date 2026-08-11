@@ -10,6 +10,7 @@ afterEach(() => {
 
 function mountMenu(options: { x?: number; y?: number } = {}) {
   const wrapper = mount(MessageActionMenu, {
+    attachTo: document.body,
     props: {
       visible: true,
       actions: ['copy', 'retry'],
