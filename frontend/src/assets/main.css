@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+:root {
+  --pointer-target-min: 24px;
+  --touch-target-comfortable: 44px;
+}
+
 html, body, #app {
   margin: 0;
   padding: 0;
@@ -10,6 +15,29 @@ html, body, #app {
 
 * {
   box-sizing: border-box;
+}
+
+.tap-target {
+  min-width: var(--pointer-target-min);
+  min-height: var(--pointer-target-min);
+}
+
+.tap-target:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.tap-target:disabled,
+.tap-target[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (pointer: coarse), (max-width: 767px) {
+  .tap-target {
+    min-width: var(--touch-target-comfortable);
+    min-height: var(--touch-target-comfortable);
+  }
 }
 
 ::-webkit-scrollbar {

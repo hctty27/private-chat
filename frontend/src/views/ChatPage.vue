@@ -1,6 +1,5 @@
 <template>
   <div class="chat-page">
-    <!-- 侧边栏 -->
     <aside class="sidebar">
       <ContactList
         :contacts="chatStore.sortedContacts"
@@ -11,11 +10,8 @@
       />
     </aside>
 
-    <!-- 主区域 -->
     <main class="chat-main">
-      <!-- 有联系人时 -->
       <template v-if="chatStore.currentContact">
-        <!-- Header -->
         <div class="chat-head">
           <div class="ch-avatar">{{ chatStore.currentContact.nickname[0] }}</div>
           <div class="ch-info">
@@ -24,7 +20,6 @@
           </div>
         </div>
 
-        <!-- 连接状态提示 -->
         <ConnectionNotice
           :status="chatStore.wsStatus"
           :recovered-notice="chatStore.recoveredNotice"
@@ -32,7 +27,6 @@
           @reconnect="chatStore.reconnectNow"
         />
 
-        <!-- 消息列表 -->
         <div ref="listEl" class="msg-scroll">
           <div class="load-more">
             <span class="spinner" v-if="scroll.loading.value"></span>
@@ -60,7 +54,13 @@
               <div v-if="showTimeByIndex(vi.index)" class="time-bar">
                 <span>{{ fmtChatTime(chatStore.messages[vi.index].createdAt) }}</span>
               </div>
-              <div class="msg" :class="chatStore.messages[vi.index].senderId === uid ? 'right' : 'left'">
+              <div
+                class="msg"
+                :class="chatStore.messages[vi.index].senderId === uid ? 'right' : 'left'"
+                tabindex="0"
+                @contextmenu.prevent="openMessageMenu($event, chatStore.messages[vi.index])"
+                @keydown.shift.f10.prevent="openMessageMenuFromElement($event, chatStore.messages[vi.index])"
+              >
                 <div class="bubble" :class="bubbleType(chatStore.messages[vi.index])">
                   <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
@@ -69,7 +69,7 @@
                   </template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
                     <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
-                       {{ chatStore.messages[vi.index].fileName }}
+                      {{ chatStore.messages[vi.index].fileName }}
                       <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                     </a>
                   </template>
@@ -106,25 +106,23 @@
           @click="scroll.scrollToBottomAndClear(true)"
         />
 
-        <!-- 表情面板 -->
         <div v-if="emojiOpen" class="emoji-box">
           <div class="emoji-head">
             <span>表情</span>
-            <button @click="emojiOpen = false">✕</button>
+            <button class="tap-target" type="button" @click="emojiOpen = false">✕</button>
           </div>
           <div class="emoji-list">
-            <button v-for="e in emojiList" :key="e" @click="addEmoji(e)">{{ e }}</button>
+            <button v-for="e in emojiList" :key="e" type="button" @click="addEmoji(e)">{{ e }}</button>
           </div>
         </div>
 
-        <!-- 输入栏 -->
         <div class="input-bar">
           <div v-if="progress > 0 && progress < 100" class="prog">
             <div class="prog-fill" :style="{ width: progress + '%' }"></div>
           </div>
           <div class="input-row">
-            <button class="ibtn" :class="{ on: emojiOpen }" @click="emojiOpen = !emojiOpen">😊</button>
-            <button class="ibtn" @click="fileEl?.click()">＋</button>
+            <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" @click="emojiOpen = !emojiOpen">😊</button>
+            <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
             <input ref="fileEl" type="file" hidden @change="onFile" />
             <textarea
               ref="inputEl"
@@ -135,12 +133,11 @@
               @keydown.enter.exact.prevent="send"
               @input="grow"
             />
-            <button class="sbtn" :disabled="!text.trim()" @click="send">发送</button>
+            <button class="sbtn tap-target" type="button" :disabled="!text.trim()" @click="send">发送</button>
           </div>
         </div>
       </template>
 
-      <!-- 未选择联系人 -->
       <div v-else class="empty-state">
         <div class="empty-icon">💬</div>
         <div class="empty-title">私聊</div>
@@ -148,66 +145,111 @@
       </div>
     </main>
 
-    <!-- 媒体预览弹窗 -->
     <MediaPreview
       :visible="previewVisible"
       :url="previewUrl"
       :type="previewType"
       @close="previewVisible = false"
     />
+
+    <AttachmentSendDialog
+      :visible="!!attachmentComposer.staged.value"
+      :file="attachmentComposer.staged.value?.file ?? null"
+      :recipient-name="attachmentComposer.staged.value?.recipient.nickname ?? ''"
+      :busy="uploadBusy"
+      @cancel="attachmentComposer.cancel"
+      @confirm="confirmAttachment"
+    />
+
+    <MessageActionMenu
+      :visible="actionMenuVisible"
+      :actions="actionMenuActions"
+      :x="actionMenuX"
+      :y="actionMenuY"
+      @action="handleMessageAction"
+      @close="closeMessageMenu"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
+import { useChatDrafts } from '../composables/useChatDrafts'
+import { useAttachmentComposer } from '../composables/useAttachmentComposer'
 import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
-import { useRouter } from 'vue-router'
+import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
+import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
+import MessageActionMenu from '../components/MessageActionMenu.vue'
 import type { Message } from '../types'
 
 const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
+const drafts = useChatDrafts()
 
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
-const text = ref('')
 const emojiOpen = ref(false)
 const progress = ref(0)
-
+const uploadBusy = ref(false)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
+const actionMenuVisible = ref(false)
+const actionMenuActions = ref<MessageAction[]>([])
+const actionMenuX = ref(0)
+const actionMenuY = ref(0)
+const actionMessage = ref<Message | null>(null)
+
+const text = computed({
+  get() {
+    const contactId = chatStore.currentContact?.userId
+    return contactId ? drafts.get(contactId) : ''
+  },
+  set(value: string) {
+    const contactId = chatStore.currentContact?.userId
+    if (contactId) drafts.set(contactId, value)
+  },
+})
+
+const attachmentComposer = useAttachmentComposer({
+  getCurrentRecipient: () => {
+    const contact = chatStore.currentContact
+    return contact ? { id: contact.userId, nickname: contact.nickname } : null
+  },
+  onRecipientMismatch: () => ElMessage.warning('联系人已切换，请重新选择文件'),
+})
+
 const scroll = useChatScroll(listEl, uid)
 
-// ========== Lifecycle ==========
 onMounted(async () => {
   await chatStore.loadContacts()
   chatStore.connectWs()
 })
 
-// ========== Watchers ==========
 watch(() => chatStore.currentContact?.userId, () => {
+  closeMessageMenu()
   scroll.onContactChange()
+  nextTick(grow)
 })
 watch(listEl, (el) => { scroll.onListReady(el) })
-watch(() => chatStore.messages.length, () => {
-  scroll.onMessagesChange()
-})
+watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
+watch(() => chatStore.messages, closeMessageMenu)
 
-// ========== Actions ==========
 async function pickContact(id: number) {
   await chatStore.selectContact(id)
   scroll.onSelectContact()
@@ -217,66 +259,93 @@ function showTimeByIndex(i: number) {
   if (i === 0) return true
   return shouldShowTimeSeparator(chatStore.messages[i].createdAt, chatStore.messages[i - 1].createdAt)
 }
+
 function isLastSelfMessage(index: number) {
   const message = chatStore.messages[index]
   if (!message || message.senderId !== uid.value) return false
   return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
 }
-function isPendingMediaMessage(m: Message) {
-  return (m.msgType === 2 || m.msgType === 3 || m.msgType === 5) && !m.fileUrl
+
+function isPendingMediaMessage(message: Message) {
+  return (message.msgType === 2 || message.msgType === 3 || message.msgType === 5) && !message.fileUrl
 }
-function pendingMediaText(m: Message) {
-  if (m.msgType === 2) return '📷 图片准备中'
-  if (m.msgType === 5) return '🎬 视频准备中'
-  return `📎 ${m.fileName || '文件准备中'}`
+
+function pendingMediaText(message: Message) {
+  if (message.msgType === 2) return '📷 图片准备中'
+  if (message.msgType === 5) return '🎬 视频准备中'
+  return `📎 ${message.fileName || '文件准备中'}`
 }
-function bubbleType(m: { msgType: number; senderId: number }) {
-  if (m.msgType === 4) return 'emoji'
-  return m.senderId === uid.value ? 'mine' : 'his'
+
+function bubbleType(message: { msgType: number; senderId: number }) {
+  if (message.msgType === 4) return 'emoji'
+  return message.senderId === uid.value ? 'mine' : 'his'
 }
+
 function openPreview(url: string, type: 'image' | 'video') {
   previewUrl.value = url
   previewType.value = type
   previewVisible.value = true
 }
+
 function logout() {
+  drafts.clearAll()
+  attachmentComposer.cancel()
+  closeMessageMenu()
   chatStore.disconnectWs()
   userStore.logout()
   chatStore.clearState()
   router.replace('/')
 }
 
-function addEmoji(e: string) {
-  text.value += e
+function addEmoji(emoji: string) {
+  text.value += emoji
   inputEl.value?.focus()
+  nextTick(grow)
 }
+
 async function send() {
-  const t = text.value.trim()
-  if (!t) return
+  const contactId = chatStore.currentContact?.userId
+  const value = text.value.trim()
+  if (!contactId || !value) return
+
   emojiOpen.value = false
-  text.value = ''
+  const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(value)
+  chatStore.sendMessage(value, isEmoji ? 4 : 1)
+  drafts.clear(contactId)
+  await nextTick()
   if (inputEl.value) inputEl.value.style.height = 'auto'
-  const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(t)
-  chatStore.sendMessage(t, isEmoji ? 4 : 1)
   scroll.scrollToBottomAndClear(true)
 }
 
-function onFile(e: Event) {
-  const inp = e.target as HTMLInputElement
-  if (inp.files?.[0]) {
-    if (inp.files[0].size > 50 * 1024 * 1024) {
-      ElMessage.warning('文件最大支持 50MB')
-      inp.value = ''
-      return
-    }
-    doUpload(inp.files[0])
+function onFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 50 * 1024 * 1024) {
+    ElMessage.warning('文件最大支持 50MB')
+    return
   }
-  inp.value = ''
+  const contact = chatStore.currentContact
+  if (!contact) return
+  attachmentComposer.stage(file, { id: contact.userId, nickname: contact.nickname })
 }
-async function doUpload(f: File) {
+
+async function confirmAttachment() {
+  const file = attachmentComposer.takeConfirmed()
+  if (!file || uploadBusy.value) return
+  uploadBusy.value = true
+  try {
+    await doUpload(file)
+  } finally {
+    uploadBusy.value = false
+  }
+}
+
+async function doUpload(file: File) {
   progress.value = 0
   try {
-    await chatStore.sendFile(f, p => { progress.value = p })
+    await chatStore.sendFile(file, p => { progress.value = p })
     scroll.scrollToBottomAndClear(true)
   } finally {
     progress.value = 0
@@ -295,6 +364,67 @@ function grow() {
   inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 100) + 'px'
 }
 
+function openMessageMenu(event: MouseEvent, message: Message) {
+  openMessageMenuAt(event.clientX, event.clientY, message)
+}
+
+function openMessageMenuFromElement(event: KeyboardEvent, message: Message) {
+  const element = event.currentTarget as HTMLElement | null
+  const rect = element?.getBoundingClientRect()
+  openMessageMenuAt(rect?.left ?? 8, rect?.bottom ?? 8, message)
+}
+
+function openMessageMenuAt(x: number, y: number, message: Message) {
+  const actions = getMessageActions(message)
+  if (actions.length === 0) return
+  actionMessage.value = message
+  actionMenuActions.value = actions
+  actionMenuX.value = x
+  actionMenuY.value = y
+  actionMenuVisible.value = true
+}
+
+function closeMessageMenu() {
+  actionMenuVisible.value = false
+  actionMenuActions.value = []
+  actionMessage.value = null
+}
+
+async function handleMessageAction(action: MessageAction) {
+  const message = actionMessage.value
+  if (!message) return
+
+  if (action === 'copy') {
+    try {
+      await navigator.clipboard.writeText(message.content ?? '')
+    } catch {
+      ElMessage.error('复制失败')
+    }
+    return
+  }
+  if (action === 'retry') {
+    retryMessageByClientId(message.clientMsgId)
+    return
+  }
+  if (action === 'view' && message.fileUrl) {
+    openPreview(message.fileUrl, message.msgType === 2 ? 'image' : 'video')
+    return
+  }
+  if (action === 'open' && message.fileUrl) {
+    window.open(message.fileUrl, '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (action === 'save' && message.fileUrl) {
+    const anchor = document.createElement('a')
+    anchor.href = message.fileUrl
+    anchor.download = message.fileName || 'download'
+    anchor.rel = 'noopener'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+}
+
 const emojiList = [
   '😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','😍','🥰','😘','😗',
   '😙','😚','🙂','🤗','🤩','🤔','🤨','😐','😑','😶','🙄','😏','😣','😥','😮','🤐',
@@ -305,178 +435,62 @@ const emojiList = [
 </script>
 
 <style>
-html, body, #app {
-  margin: 0; padding: 0;
-  width: 100%; height: 100%;
-  overflow: hidden;
-  position: fixed;
-}
+html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; position: fixed; }
 </style>
 
 <style scoped>
-.chat-page {
-  display: flex;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #ededed;
-}
-
-/* Sidebar */
-.sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  border-right: 1px solid #e5e5e5;
-}
-
-.chat-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  position: relative;
-}
-
-/* Chat view */
-.chat-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: #fff;
-  border-bottom: 1px solid #e5e5e5;
-  flex-shrink: 0;
-  min-height: 52px;
-}
-.ch-avatar {
-  width: 34px; height: 34px; border-radius: 50%;
-  background: linear-gradient(135deg, #60a5fa, #a78bfa);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-weight: 600; font-size: 14px; flex-shrink: 0;
-}
+.chat-page { display: flex; width: 100%; height: 100%; overflow: hidden; background: #ededed; }
+.sidebar { width: 280px; flex-shrink: 0; border-right: 1px solid #e5e5e5; }
+.chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
+.chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5e5e5; flex-shrink: 0; min-height: 52px; }
+.ch-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; flex-shrink: 0; }
 .ch-info { display: flex; flex-direction: column; }
 .ch-name { font-size: 15px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
-
-/* Messages */
-.msg-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  background: #ededed;
-}
-:deep(.new-message-button) {
-  position: absolute;
-  right: 24px;
-  bottom: 74px;
-  z-index: 5;
-}
-.load-more {
-  text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-}
+.msg-scroll { flex: 1; overflow-y: auto; padding: 12px; background: #ededed; }
+:deep(.new-message-button) { position: absolute; right: 24px; bottom: 74px; z-index: 5; }
+.load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .load-text { font-size: 12px; color: #999; }
-.spinner {
-  display: inline-block; width: 16px; height: 16px;
-  border: 2px solid #ddd; border-top-color: #07c160;
-  border-radius: 50%; animation: spin 0.6s linear infinite;
-}
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #07c160; border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
 .time-bar { text-align: center; padding: 8px 0; }
 .time-bar span { font-size: 12px; color: #b0b0b0; background: rgba(0,0,0,0.04); padding: 2px 10px; border-radius: 4px; }
-
-.msg { display: flex; flex-direction: column; padding-bottom: 8px; }
+.msg { display: flex; flex-direction: column; padding-bottom: 8px; outline: none; }
+.msg:focus-visible { border-radius: 8px; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.65); }
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
-
-.bubble {
-  max-width: 65%; padding: 9px 13px;
-  border-radius: 12px; font-size: 15px; line-height: 1.5;
-  word-break: break-word;
-}
+.bubble { max-width: 65%; padding: 9px 13px; border-radius: 12px; font-size: 15px; line-height: 1.5; word-break: break-word; }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 3px; }
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 3px; }
 .bubble.emoji { background: transparent; padding: 2px 4px; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
-
 .pic { max-width: 200px; max-height: 260px; border-radius: 8px; display: block; cursor: pointer; }
-.video-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
-.video-link small { display: block; color: #999; font-size: 12px; }
-.file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
-.file-link small { display: block; color: #999; font-size: 12px; }
-.media-fallback {
-  min-width: 120px; padding: 10px 12px; border-radius: 8px;
-  background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px;
-}
+.video-link, .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
+.video-link small, .file-link small { display: block; color: #999; font-size: 12px; }
+.media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
 .media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
-
 .read-tag { font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px; }
 .empty-tip { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
-
-/* Empty state */
-.empty-state {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  color: #999;
-}
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #999; }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 4px; }
 .empty-desc { font-size: 14px; }
-
-/* Emoji */
-.emoji-box {
-  background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0;
-  max-height: 220px; animation: slideUp .2s ease;
-}
+.emoji-box { background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0; max-height: 220px; animation: slideUp .2s ease; }
 @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-.emoji-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 16px; font-size: 13px; color: #666; border-bottom: 1px solid #f0f0f0;
-}
+.emoji-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; font-size: 13px; color: #666; border-bottom: 1px solid #f0f0f0; }
 .emoji-head button { background: none; border: none; color: #999; font-size: 16px; cursor: pointer; }
-.emoji-list {
-  display: grid; grid-template-columns: repeat(8, 1fr);
-  gap: 0; padding: 8px;
-  max-height: 170px; overflow-y: auto;
-}
-.emoji-list button {
-  width: 100%; aspect-ratio: 1; font-size: 24px;
-  background: none; border: none; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 6px;
-}
+.emoji-list { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0; padding: 8px; max-height: 170px; overflow-y: auto; }
+.emoji-list button { width: 100%; aspect-ratio: 1; font-size: 24px; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
 .emoji-list button:hover { background: #f0f0f0; }
-
-/* Input */
-.input-bar {
-  background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0;
-}
+.input-bar { background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0; }
 .prog { padding: 0 16px; height: 3px; }
 .prog-fill { height: 100%; background: #07c160; transition: width 0.2s; }
-.input-row {
-  display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px;
-}
-.ibtn {
-  width: 36px; height: 36px; flex-shrink: 0;
-  background: none; border: none; font-size: 20px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  border-radius: 6px;
-}
-.ibtn:hover { background: #f0f0f0; }
-.ibtn.on { background: #f0f0f0; }
-.txt {
-  flex: 1; border: 1px solid #ddd; border-radius: 8px;
-  padding: 8px 12px; font-size: 15px; resize: none;
-  outline: none; line-height: 1.4; max-height: 100px;
-}
+.input-row { display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px; }
+.ibtn { width: 36px; height: 36px; flex-shrink: 0; background: none; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+.ibtn:hover, .ibtn.on { background: #f0f0f0; }
+.txt { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 15px; resize: none; outline: none; line-height: 1.4; max-height: 100px; }
 .txt:focus { border-color: #07c160; }
-.sbtn {
-  width: 56px; height: 36px; flex-shrink: 0;
-  background: #07c160; color: #fff; border: none;
-  border-radius: 8px; font-size: 14px; font-weight: 500;
-  cursor: pointer;
-}
+.sbtn { width: 56px; height: 36px; flex-shrink: 0; background: #07c160; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }
 .sbtn:disabled { background: #ccc; }
 .sbtn:not(:disabled):hover { background: #06ad56; }
 </style>
