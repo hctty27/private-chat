@@ -7,10 +7,10 @@ const api = axios.create({
   timeout: 30000,
 })
 
-function setCoverNotice(message: string) {
+function setLoginNotice(message: string) {
   if (typeof window === 'undefined') return
   try {
-    window.sessionStorage.setItem('coverNotice', message)
+    window.sessionStorage.setItem('loginNotice', message)
   } catch {
     // Ignore storage errors, redirect should still proceed.
   }
@@ -27,12 +27,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url === '/api/auth/login'
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('token')
       localStorage.removeItem('userId')
       localStorage.removeItem('nickname')
-      setCoverNotice('登录已过期，请重新进入')
-      router.push('/')
+      setLoginNotice('登录已过期，请重新进入')
+      void router.replace('/')
     }
     return Promise.reject(error)
   }
