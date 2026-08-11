@@ -2,7 +2,7 @@
   <Transition name="new-message-fade">
     <button
       v-if="props.visible"
-      class="new-message-button"
+      class="new-message-button tap-target"
       type="button"
       @click="emit('click')"
     >
@@ -41,12 +41,7 @@ const label = computed(() => (props.count > 0 ? `${props.count} 条新消息` : 
 }
 .new-message-button:active { transform: scale(0.96); }
 .new-message-fade-enter-active,
-.new-message-fade-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
+.new-message-fade-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
 .new-message-fade-enter-from,
-.new-message-fade-leave-to {
-  opacity: 0;
-  transform: translateY(6px);
-}
+.new-message-fade-leave-to { opacity: 0; transform: translateY(6px); }
 </style>

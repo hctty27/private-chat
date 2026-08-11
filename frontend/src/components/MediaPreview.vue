@@ -2,9 +2,8 @@
   <Teleport to="body">
     <Transition name="fade">
       <div v-if="visible" class="media-overlay" @click.self="close">
-        <button class="media-close" type="button" aria-label="关闭预览" @click.stop="close">×</button>
+        <button class="media-close tap-target" type="button" aria-label="关闭预览" @click.stop="close">×</button>
 
-        <!-- Image -->
         <img
           v-if="type === 'image' && !imageError"
           :src="url"
@@ -14,7 +13,6 @@
           @error="onImageError"
         />
 
-        <!-- Video -->
         <video
           v-else-if="type === 'video'"
           ref="videoEl"
@@ -86,9 +84,7 @@ watch(() => props.visible, (v) => {
   } else {
     document.removeEventListener('keydown', onKeydown)
     document.body.style.overflow = ''
-    if (videoEl.value) {
-      videoEl.value.pause()
-    }
+    if (videoEl.value) videoEl.value.pause()
   }
 })
 
@@ -115,53 +111,25 @@ onUnmounted(() => {
   top: 16px;
   right: 18px;
   z-index: 1;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.18);
   color: #fff;
   font-size: 30px;
-  line-height: 36px;
+  line-height: 40px;
   cursor: pointer;
 }
-
-.media-close:hover {
-  background: rgba(255, 255, 255, 0.28);
-}
-
-.media-content {
-  max-width: 90vw;
-  max-height: 90vh;
-  object-fit: contain;
-}
-
-.media-img {
-  border-radius: 4px;
-}
-
-.media-video {
-  border-radius: 8px;
-  background: #000;
-  cursor: default;
-}
-
-.loading {
-  position: absolute;
-  color: #aaa;
-  font-size: 14px;
-}
-
-.error {
-  color: #f5f5f5;
-}
-
+.media-close:hover { background: rgba(255, 255, 255, 0.28); }
+.media-close:active { transform: scale(0.96); }
+.media-content { max-width: 90vw; max-height: 90vh; object-fit: contain; }
+.media-img { border-radius: 4px; }
+.media-video { border-radius: 8px; background: #000; cursor: default; }
+.loading { position: absolute; color: #aaa; font-size: 14px; }
+.error { color: #f5f5f5; }
 .fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
+.fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+.fade-leave-to { opacity: 0; }
 </style>

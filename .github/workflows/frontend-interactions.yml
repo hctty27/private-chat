@@ -1,0 +1,36 @@
+name: Frontend interactions
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-interactions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted, linux, x64]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install application dependencies
+        run: npm ci
+      - name: Install interaction test dependencies
+        run: npm install --no-save vitest@4.1.10 @vue/test-utils@2.4.11 jsdom@27.4.0
+      - name: Run interaction tests
+        run: npm exec vitest run
+      - name: Type-check and build
+        run: npm run build
