@@ -77,7 +77,11 @@ function revokePreview() {
 function refreshPreview() {
   revokePreview()
   if (!props.visible || !props.file || presentation.value === 'file') return
-  previewUrl.value = URL.createObjectURL(props.file)
+  try {
+    previewUrl.value = URL.createObjectURL(props.file)
+  } catch {
+    previewUrl.value = ''
+  }
 }
 
 function focusableControls() {

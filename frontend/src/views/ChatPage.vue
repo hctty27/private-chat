@@ -58,7 +58,7 @@
                 class="msg"
                 :class="chatStore.messages[vi.index].senderId === uid ? 'right' : 'left'"
                 tabindex="0"
-                @contextmenu.prevent="openMessageMenu($event, chatStore.messages[vi.index])"
+                @contextmenu="openMessageMenu($event, chatStore.messages[vi.index])"
                 @keydown.shift.f10.prevent="openMessageMenuFromElement($event, chatStore.messages[vi.index])"
               >
                 <div class="bubble" :class="bubbleType(chatStore.messages[vi.index])">
@@ -365,6 +365,8 @@ function grow() {
 }
 
 function openMessageMenu(event: MouseEvent, message: Message) {
+  if (getMessageActions(message).length === 0) return
+  event.preventDefault()
   openMessageMenuAt(event.clientX, event.clientY, message)
 }
 

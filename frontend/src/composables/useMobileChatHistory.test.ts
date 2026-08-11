@@ -52,6 +52,22 @@ describe('useMobileChatHistory', () => {
     await history.pushOverlay(7, 'emoji')
 
     expect(r.push).not.toHaveBeenCalled()
+    expect(r.replace).not.toHaveBeenCalled()
+  })
+
+  it('replaces the current overlay when switching overlay kinds', async () => {
+    const r = router()
+    window.history.replaceState({ privateChatUi: { kind: 'overlay', contactId: 7, overlay: 'emoji' } }, '')
+    const history = useMobileChatHistory(r)
+
+    await history.pushOverlay(7, 'attachment')
+
+    expect(r.push).not.toHaveBeenCalled()
+    expect(r.replace).toHaveBeenCalledWith({
+      name: 'mobile-chat',
+      force: true,
+      state: { privateChatUi: { kind: 'overlay', contactId: 7, overlay: 'attachment' } },
+    })
   })
 
   it('falls back to list for missing or malformed state', () => {

@@ -38,37 +38,34 @@ function parseState(value: unknown): MobileChatUiState | null {
   return null
 }
 
+function routeState(state: MobileChatUiState) {
+  return {
+    name: 'mobile-chat' as const,
+    force: true,
+    state: { [STATE_KEY]: state },
+  }
+}
+
 export function useMobileChatHistory(router: MobileChatRouter) {
   function read(): MobileChatUiState {
     return parseState(window.history.state?.[STATE_KEY]) ?? { kind: 'list' }
   }
 
   async function replaceList() {
-    await router.replace({
-      name: 'mobile-chat',
-      force: true,
-      state: { [STATE_KEY]: { kind: 'list' } },
-    })
+    await router.replace(routeState({ kind: 'list' }))
   }
 
   async function replaceChat(contactId: number) {
-    await router.replace({
-      name: 'mobile-chat',
-      force: true,
-      state: { [STATE_KEY]: { kind: 'chat', contactId } },
-    })
+    await router.replace(routeState({ kind: 'chat', contactId }))
   }
 
   async function pushChat(contactId: number) {
-    await router.push({
-      name: 'mobile-chat',
-      force: true,
-      state: { [STATE_KEY]: { kind: 'chat', contactId } },
-    })
+    await router.push(routeState({ kind: 'chat', contactId }))
   }
 
   async function pushOverlay(contactId: number, overlay: MobileOverlayKind) {
     const current = read()
+    const next: MobileChatUiState = { kind: 'overlay', contactId, overlay }
     if (
       current.kind === 'overlay' &&
       current.contactId === contactId &&
@@ -76,11 +73,11 @@ export function useMobileChatHistory(router: MobileChatRouter) {
     ) {
       return
     }
-    await router.push({
-      name: 'mobile-chat',
-      force: true,
-      state: { [STATE_KEY]: { kind: 'overlay', contactId, overlay } },
-    })
+    if (current.kind === 'overlay') {
+      await router.replace(routeState(next))
+      return
+    }
+    await router.push(routeState(next))
   }
 
   function back() {

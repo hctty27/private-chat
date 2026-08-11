@@ -67,7 +67,7 @@
                 <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
-                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')" />
+                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click.stop="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')" />
                 </template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
                   <a
@@ -75,7 +75,7 @@
                     :target="isIOS ? '_self' : '_blank'"
                     rel="noopener"
                     class="video-link"
-                    @click="guardNativeMessageClick"
+                    @click.stop="guardNativeMessageClick"
                   >
                     {{ chatStore.messages[vi.index].fileName }}
                     <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
@@ -87,7 +87,7 @@
                     :target="isIOS ? '_self' : '_blank'"
                     :download="isIOS ? undefined : ''"
                     class="file-link"
-                    @click="guardNativeMessageClick"
+                    @click.stop="guardNativeMessageClick"
                   >
                     📎 {{ chatStore.messages[vi.index].fileName }}
                     <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
@@ -412,6 +412,7 @@ async function onFile(event: Event) {
   }
   const contact = chatStore.currentContact
   if (!contact) return
+  emojiOpen.value = false
   attachmentComposer.stage(file, { id: contact.userId, nickname: contact.nickname })
   await mobileHistory.pushOverlay(contact.userId, 'attachment')
 }
@@ -557,6 +558,7 @@ function openPreviewFromBubble(event: MouseEvent, url: string, type: 'image' | '
 async function openPreview(url: string, type: 'image' | 'video') {
   const contactId = chatStore.currentContact?.userId
   if (!contactId) return
+  emojiOpen.value = false
   previewUrl.value = url
   previewType.value = type
   previewVisible.value = true
