@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onUnmounted, watch } from 'vue'
+import { computed, nextTick, onUnmounted, watch } from 'vue'
 import type { MessageAction } from '../utils/messageActions'
 
 const props = withDefaults(defineProps<{
@@ -46,6 +46,8 @@ const labels: Record<MessageAction, string> = {
   retry: '重试',
 }
 
+let previousFocus: HTMLElement | null = null
+
 const menuStyle = computed(() => {
   const width = 220
   const estimatedHeight = Math.max(52, props.actions.length * 46 + 12)
@@ -57,21 +59,69 @@ const menuStyle = computed(() => {
   }
 })
 
+function menuItems() {
+  return Array.from(document.querySelectorAll<HTMLElement>('.message-action-menu [role="menuitem"]'))
+}
+
 function select(action: MessageAction) {
   emit('action', action)
   emit('close')
 }
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && props.visible) emit('close')
+function moveFocus(delta: number) {
+  const items = menuItems()
+  if (items.length === 0) return
+  const current = items.indexOf(document.activeElement as HTMLElement)
+  const start = current >= 0 ? current : 0
+  items[(start + delta + items.length) % items.length].focus()
 }
 
-watch(() => props.visible, (visible) => {
-  if (visible) document.addEventListener('keydown', onKeydown)
-  else document.removeEventListener('keydown', onKeydown)
+function onKeydown(event: KeyboardEvent) {
+  if (!props.visible) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveFocus(1)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveFocus(-1)
+    return
+  }
+  if (event.key === 'Home') {
+    event.preventDefault()
+    menuItems()[0]?.focus()
+    return
+  }
+  if (event.key === 'End') {
+    event.preventDefault()
+    menuItems().at(-1)?.focus()
+  }
+}
+
+watch(() => props.visible, async (visible, wasVisible) => {
+  if (visible) {
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    document.addEventListener('keydown', onKeydown)
+    await nextTick()
+    menuItems()[0]?.focus()
+    return
+  }
+
+  document.removeEventListener('keydown', onKeydown)
+  if (wasVisible) previousFocus?.focus()
+  previousFocus = null
 }, { immediate: true })
 
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  previousFocus?.focus()
+})
 </script>
 
 <style scoped>
