@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - master
-      - fix/**
-      - feat/**
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: frontend-interactions-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -27,7 +29,7 @@ jobs:
       - name: Install application dependencies
         run: npm ci
       - name: Install interaction test dependencies
-        run: npm install --no-save vitest @vue/test-utils jsdom
+        run: npm install --no-save vitest@4.1.10 @vue/test-utils@2.4.11 jsdom@30.0.1
       - name: Run interaction tests
         run: npm exec vitest run
       - name: Type-check and build

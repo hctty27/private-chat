@@ -12,7 +12,7 @@
 
     <div v-else class="chat-page" :style="chatPageStyle">
       <div class="chat-head">
-        <button class="back tap-target" type="button" aria-label="返回消息列表" @click="mobileHistory.back()">‹</button>
+        <button class="back tap-target" type="button" aria-label="返回消息列表" @click="requestBack">‹</button>
         <div class="ch-avatar">{{ chatStore.currentContact?.nickname?.[0] }}</div>
         <div class="ch-info">
           <div class="ch-name">{{ chatStore.currentContact?.nickname }}</div>
@@ -67,16 +67,28 @@
                 <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
-                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click="openPreviewFromBubble(chatStore.messages[vi.index].fileUrl!, 'image')" />
+                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')" />
                 </template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
-                  <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
+                  <a
+                    :href="chatStore.messages[vi.index].fileUrl ?? undefined"
+                    :target="isIOS ? '_self' : '_blank'"
+                    rel="noopener"
+                    class="video-link"
+                    @click="guardNativeMessageClick"
+                  >
                     {{ chatStore.messages[vi.index].fileName }}
                     <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                   </a>
                 </template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileUrl">
-                  <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" :download="isIOS ? undefined : ''" class="file-link">
+                  <a
+                    :href="chatStore.messages[vi.index].fileUrl ?? undefined"
+                    :target="isIOS ? '_self' : '_blank'"
+                    :download="isIOS ? undefined : ''"
+                    class="file-link"
+                    @click="guardNativeMessageClick"
+                  >
                     📎 {{ chatStore.messages[vi.index].fileName }}
                     <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
                   </a>
@@ -132,7 +144,7 @@
         </div>
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" @click="toggleEmoji">😊</button>
-          <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
+          <button class="ibtn tap-target" type="button" :disabled="uploadBusy" @click="fileEl?.click()">＋</button>
           <input ref="fileEl" type="file" hidden @change="onFile" />
           <textarea
             ref="inputEl"
@@ -245,10 +257,11 @@ let vvHandler: (() => void) | null = null
 let unsubscribeHistory: (() => void) | null = null
 let shouldStickToBottomOnViewportChange = false
 let historySyncSeq = 0
-let suppressPreviewClickUntil = 0
+let historyBackPending = false
+let suppressNativeClickUntil = 0
 
 const longPress = useLongPress<Message>((message, event) => {
-  suppressPreviewClickUntil = Date.now() + 600
+  suppressNativeClickUntil = Date.now() + 600
   openMessageMenuAt(event.clientX, event.clientY, message)
 })
 
@@ -257,7 +270,10 @@ onMounted(async () => {
   await chatStore.loadContacts()
   chatStore.connectWs()
   await mobileHistory.replaceList()
-  unsubscribeHistory = mobileHistory.subscribe((state) => { void applyHistoryState(state) })
+  unsubscribeHistory = mobileHistory.subscribe((state) => {
+    historyBackPending = false
+    void applyHistoryState(state)
+  })
 })
 
 onUnmounted(() => {
@@ -283,6 +299,12 @@ function installViewportHandler() {
   vvHandler = updateViewport
   window.visualViewport.addEventListener('resize', vvHandler)
   window.visualViewport.addEventListener('scroll', vvHandler)
+}
+
+function requestBack() {
+  if (historyBackPending) return
+  historyBackPending = true
+  mobileHistory.back()
 }
 
 async function openChat(id: number) {
@@ -383,7 +405,7 @@ async function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (!file || uploadBusy.value) return
   if (file.size > 50 * 1024 * 1024) {
     ElMessage.warning('文件最大支持 50MB')
     return
@@ -398,7 +420,7 @@ async function confirmAttachment() {
   const file = attachmentComposer.takeConfirmed()
   if (!file || uploadBusy.value) return
   const state = mobileHistory.read()
-  if (state.kind === 'overlay' && state.overlay === 'attachment') mobileHistory.back()
+  if (state.kind === 'overlay' && state.overlay === 'attachment') requestBack()
   uploadBusy.value = true
   try {
     await doUpload(file)
@@ -445,7 +467,7 @@ async function toggleEmoji() {
 function closeOverlay(kind: MobileOverlayKind) {
   const state = mobileHistory.read()
   if (state.kind === 'overlay' && state.overlay === kind) {
-    mobileHistory.back()
+    requestBack()
     return
   }
   if (kind === 'media') previewVisible.value = false
@@ -515,9 +537,18 @@ function bubbleType(message: { msgType: number; senderId: number }) {
   return message.senderId === uid.value ? 'mine' : 'his'
 }
 
-function openPreviewFromBubble(url: string, type: 'image' | 'video') {
-  if (Date.now() < suppressPreviewClickUntil) {
-    suppressPreviewClickUntil = 0
+function guardNativeMessageClick(event: MouseEvent) {
+  if (Date.now() >= suppressNativeClickUntil) return
+  suppressNativeClickUntil = 0
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+function openPreviewFromBubble(event: MouseEvent, url: string, type: 'image' | 'video') {
+  if (Date.now() < suppressNativeClickUntil) {
+    suppressNativeClickUntil = 0
+    event.preventDefault()
+    event.stopPropagation()
     return
   }
   void openPreview(url, type)
@@ -536,6 +567,7 @@ function onMobileContextMenu(event: MouseEvent, message: Message) {
   const actions = getMessageActions(message)
   if (actions.length === 0) return
   event.preventDefault()
+  suppressNativeClickUntil = Date.now() + 600
   openMessageMenuAt(event.clientX, event.clientY, message)
 }
 
@@ -667,6 +699,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .input-row { display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px; }
 .ibtn { width: 44px; height: 44px; flex-shrink: 0; background: none; border: none; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; border-radius: 8px; touch-action: manipulation; }
 .ibtn:active, .ibtn.on { background: #f0f0f0; }
+.ibtn:disabled { cursor: not-allowed; opacity: 0.45; }
 .txt { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 9px 12px; font-size: 16px; resize: none; outline: none; line-height: 1.4; max-height: 100px; min-height: 44px; -webkit-appearance: none; }
 .txt:focus { border-color: #07c160; }
 .sbtn { width: 64px; height: 44px; flex-shrink: 0; background: #b8e8c8; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 500; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }

@@ -122,7 +122,7 @@
           </div>
           <div class="input-row">
             <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" @click="emojiOpen = !emojiOpen">😊</button>
-            <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
+            <button class="ibtn tap-target" type="button" :disabled="uploadBusy" @click="fileEl?.click()">＋</button>
             <input ref="fileEl" type="file" hidden @change="onFile" />
             <textarea
               ref="inputEl"
@@ -321,7 +321,7 @@ function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!file) return
+  if (!file || uploadBusy.value) return
   if (file.size > 50 * 1024 * 1024) {
     ElMessage.warning('文件最大支持 50MB')
     return
@@ -488,6 +488,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .input-row { display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px; }
 .ibtn { width: 36px; height: 36px; flex-shrink: 0; background: none; border: none; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
 .ibtn:hover, .ibtn.on { background: #f0f0f0; }
+.ibtn:disabled { cursor: not-allowed; opacity: 0.45; }
 .txt { flex: 1; border: 1px solid #ddd; border-radius: 8px; padding: 8px 12px; font-size: 15px; resize: none; outline: none; line-height: 1.4; max-height: 100px; }
 .txt:focus { border-color: #07c160; }
 .sbtn { width: 56px; height: 36px; flex-shrink: 0; background: #07c160; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; }

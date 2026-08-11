@@ -4,6 +4,7 @@ import AttachmentSendDialog from './AttachmentSendDialog.vue'
 
 const createObjectURL = vi.fn(() => 'blob:preview')
 const revokeObjectURL = vi.fn()
+const wrappers: Array<{ unmount(): void }> = []
 
 beforeEach(() => {
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
@@ -11,13 +12,14 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  while (wrappers.length) wrappers.pop()?.unmount()
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
 })
 
 function mountDialog(options: { busy?: boolean; file?: File } = {}) {
   const file = options.file ?? new File(['hello'], 'photo.png', { type: 'image/png' })
-  return mount(AttachmentSendDialog, {
+  const wrapper = mount(AttachmentSendDialog, {
     props: {
       visible: true,
       file,
@@ -26,6 +28,8 @@ function mountDialog(options: { busy?: boolean; file?: File } = {}) {
     },
     global: { stubs: { teleport: true } },
   })
+  wrappers.push(wrapper)
+  return wrapper
 }
 
 describe('AttachmentSendDialog', () => {
@@ -76,6 +80,7 @@ describe('AttachmentSendDialog', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
 
     wrapper.unmount()
+    wrappers.splice(wrappers.indexOf(wrapper), 1)
     expect(revokeObjectURL).toHaveBeenCalledTimes(2)
   })
 })

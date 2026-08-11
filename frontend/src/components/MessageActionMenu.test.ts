@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MessageActionMenu from './MessageActionMenu.vue'
 
+const wrappers: Array<{ unmount(): void }> = []
+
+afterEach(() => {
+  while (wrappers.length) wrappers.pop()?.unmount()
+})
+
 function mountMenu(options: { x?: number; y?: number } = {}) {
-  return mount(MessageActionMenu, {
+  const wrapper = mount(MessageActionMenu, {
     props: {
       visible: true,
       actions: ['copy', 'retry'],
@@ -12,6 +18,8 @@ function mountMenu(options: { x?: number; y?: number } = {}) {
     },
     global: { stubs: { teleport: true } },
   })
+  wrappers.push(wrapper)
+  return wrapper
 }
 
 describe('MessageActionMenu', () => {
