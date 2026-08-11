@@ -319,12 +319,13 @@ async function openChat(id: number) {
 }
 
 async function ensureChat(contactId: number, seq: number) {
-  if (chatStore.currentContact?.userId !== contactId) {
+  const contactChanged = chatStore.currentContact?.userId !== contactId
+  if (contactChanged) {
     await chatStore.selectContact(contactId)
     if (seq !== historySyncSeq) return false
   }
   chatting.value = true
-  scroll.onContactChange()
+  if (contactChanged) scroll.onContactChange()
   await nextTick()
   grow()
   return seq === historySyncSeq
