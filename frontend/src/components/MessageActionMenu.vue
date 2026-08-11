@@ -100,7 +100,8 @@ function onKeydown(event: KeyboardEvent) {
   }
   if (event.key === 'End') {
     event.preventDefault()
-    menuItems().at(-1)?.focus()
+    const items = menuItems()
+    items[items.length - 1]?.focus()
   }
 }
 
