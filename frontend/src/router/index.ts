@@ -13,7 +13,10 @@ const router = createRouter({
       name: 'login',
       component: () => import('../views/LoginPage.vue'),
       beforeEnter: (_to, _from, next) => {
-        if (sessionStorage.getItem('fromCover') !== 'true') {
+        const enteredFromCover = sessionStorage.getItem('fromCover') === 'true'
+        sessionStorage.removeItem('fromCover')
+
+        if (!enteredFromCover) {
           next('/')
         } else {
           next()
