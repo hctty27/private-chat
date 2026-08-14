@@ -1,0 +1,158 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { defineComponent, nextTick, onMounted, ref } from 'vue'
+import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useChatStore } from '../stores/chat'
+import { useChatScroll } from './useChatScroll'
+
+vi.mock('@tanstack/vue-virtual', async () => {
+  const { ref } = await import('vue')
+  return {
+    useVirtualizer: () => ref({
+      getVirtualItems: () => [],
+      measureElement: vi.fn(),
+    }),
+  }
+})
+
+function createMessage(id: number) {
+  return {
+    id,
+    senderId: 1,
+    receiverId: 99,
+    msgType: 1 as const,
+    content: `message-${id}`,
+    fileId: null,
+    fileUrl: null,
+    fileName: null,
+    fileSize: null,
+    isRead: 1 as const,
+    createdAt: '2026-08-14T08:00:00Z',
+  }
+}
+
+function mountScrollHarness() {
+  let scroll!: ReturnType<typeof useChatScroll>
+
+  const Harness = defineComponent({
+    setup() {
+      const listEl = ref<HTMLElement | null>(null)
+      scroll = useChatScroll(listEl, ref(99))
+      onMounted(() => scroll.onListReady(listEl.value))
+      return { listEl }
+    },
+    template: '<div ref="listEl"></div>',
+  })
+
+  const wrapper = mount(Harness, { attachTo: document.body })
+  return { wrapper, getScroll: () => scroll }
+}
+
+async function settleScrollBinding() {
+  await nextTick()
+  await nextTick()
+}
+
+describe('useChatScroll load-more feedback', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('exposes a load-more error without moving the current scroll position', async () => {
+    const chatStore = useChatStore()
+    chatStore.hasMore = true
+    chatStore.messages = [createMessage(1)]
+    vi.spyOn(chatStore, 'loadMessages').mockResolvedValue(false)
+
+    const { wrapper, getScroll } = mountScrollHarness()
+    await settleScrollBinding()
+    const container = wrapper.element as HTMLElement
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    container.scrollTop = 20
+    const beforeScrollTop = container.scrollTop
+
+    container.dispatchEvent(new Event('scroll'))
+    await vi.waitFor(() => expect(chatStore.loadMessages).toHaveBeenCalledWith('loadMore'))
+    await nextTick()
+
+    expect(getScroll().loadMoreError.value).toBe('历史消息加载失败，点击重试')
+    expect(container.scrollTop).toBe(beforeScrollTop)
+
+    wrapper.unmount()
+  })
+
+  it('clears the load-more error after a successful retry', async () => {
+    const chatStore = useChatStore()
+    chatStore.hasMore = true
+    chatStore.messages = [createMessage(1)]
+    const load = vi.spyOn(chatStore, 'loadMessages')
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+
+    const { wrapper, getScroll } = mountScrollHarness()
+    await settleScrollBinding()
+    const container = wrapper.element as HTMLElement
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    container.scrollTop = 20
+
+    container.dispatchEvent(new Event('scroll'))
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+    await nextTick()
+    expect(getScroll().loadMoreError.value).toBe('历史消息加载失败，点击重试')
+
+    await getScroll().retryLoadMore()
+
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(getScroll().loadMoreError.value).toBe('')
+
+    wrapper.unmount()
+  })
+})
+
+describe('useChatScroll public anchor API', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('captures the first visible message anchor', async () => {
+    const chatStore = useChatStore()
+    chatStore.messages = [createMessage(10)]
+
+    const { wrapper, getScroll } = mountScrollHarness()
+    await settleScrollBinding()
+    const container = wrapper.element as HTMLElement
+    container.getBoundingClientRect = () => ({
+      top: 100,
+      bottom: 500,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 400,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    })
+
+    const item = document.createElement('div')
+    item.className = 'virtual-item'
+    item.dataset.msgId = '10'
+    item.getBoundingClientRect = () => ({
+      top: 112,
+      bottom: 184,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 72,
+      x: 0,
+      y: 112,
+      toJSON: () => ({}),
+    })
+    container.appendChild(item)
+
+    expect(getScroll().captureVisibleAnchor()).toEqual({ messageId: 10, offset: 12 })
+
+    wrapper.unmount()
+  })
+})
