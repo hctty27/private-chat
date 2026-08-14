@@ -21,6 +21,7 @@ export interface Contact {
 }
 
 export type LocalMessageStatus = 'sending' | 'sent' | 'failed' | 'queued' | 'uploading'
+export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
 export interface Message {
   id: number

@@ -29,16 +29,31 @@
 
       <div ref="listEl" class="msg-scroll" @click="collapseInput">
         <div class="load-more">
-          <span class="spinner" v-if="scroll.loading.value"></span>
-          <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
+          <template v-if="scroll.loading.value">
+            <span class="spinner"></span>
+            <span class="load-text">加载历史消息...</span>
+          </template>
+          <button
+            v-else-if="scroll.loadMoreError.value"
+            type="button"
+            class="load-retry tap-target"
+            @click.stop="scroll.retryLoadMore"
+          >
+            {{ scroll.loadMoreError.value }}
+          </button>
           <span class="load-text" v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
           <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
         </div>
 
-        <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
+        <ConversationMessageState
+          :state="chatStore.messageLoadState"
+          :has-messages="chatStore.messages.length > 0"
+          :error="chatStore.messageLoadError"
+          @retry="retryInitialMessages"
+        />
 
         <div
-          v-else
+          v-if="chatStore.messages.length > 0"
           class="virtual-list"
           :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
         >
@@ -100,12 +115,13 @@
                   </div>
                 </template>
               </div>
-              <div v-if="isLastSelfMessage(vi.index)" class="read-tag">
+              <div v-if="shouldShowMessageStatus(vi.index)" class="read-tag">
                 <MessageStatusIndicator
                   :status="chatStore.messages[vi.index].localStatus"
                   :is-read="chatStore.messages[vi.index].isRead === 1"
                   :progress="chatStore.messages[vi.index].uploadProgress"
                   :error="chatStore.messages[vi.index].localError"
+                  :show-read-state="!chatStore.messages[vi.index].localStatus && isLastSelfMessage(vi.index)"
                   @retry="retryMessageByClientId(chatStore.messages[vi.index]?.clientMsgId)"
                 />
               </div>
@@ -191,6 +207,8 @@ import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
 import { useChatDrafts } from '../composables/useChatDrafts'
 import { useAttachmentComposer } from '../composables/useAttachmentComposer'
+import { useAttachmentIngress } from '../composables/useAttachmentIngress'
+import { useConversationScrollMemory } from '../composables/useConversationScrollMemory'
 import { useMobileChatHistory, type MobileChatUiState, type MobileOverlayKind } from '../composables/useMobileChatHistory'
 import { useLongPress } from '../composables/useLongPress'
 import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
@@ -198,6 +216,7 @@ import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
+import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
@@ -209,6 +228,7 @@ const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
 const drafts = useChatDrafts()
+const scrollMemory = useConversationScrollMemory()
 const mobileHistory = useMobileChatHistory(router)
 
 const chatting = ref(false)
@@ -241,12 +261,24 @@ const text = computed({
   },
 })
 
+function currentRecipient() {
+  const contact = chatStore.currentContact
+  return contact ? { id: contact.userId, nickname: contact.nickname } : null
+}
+
 const attachmentComposer = useAttachmentComposer({
-  getCurrentRecipient: () => {
-    const contact = chatStore.currentContact
-    return contact ? { id: contact.userId, nickname: contact.nickname } : null
-  },
+  getCurrentRecipient: currentRecipient,
   onRecipientMismatch: () => ElMessage.warning('联系人已切换，请重新选择文件'),
+})
+
+const attachmentIngress = useAttachmentIngress({
+  maxBytes: 50 * 1024 * 1024,
+  getRecipient: currentRecipient,
+  onStage: (file, recipient) => {
+    emojiOpen.value = false
+    attachmentComposer.stage(file, recipient)
+  },
+  onWarning: (message) => ElMessage.warning(message),
 })
 
 const scroll = useChatScroll(listEl, uid)
@@ -281,6 +313,7 @@ onUnmounted(() => {
   unsubscribeHistory?.()
   longPress.cancel()
   drafts.clearAll()
+  scrollMemory.clearAll()
   if (vvHandler && window.visualViewport) {
     window.visualViewport.removeEventListener('resize', vvHandler)
     window.visualViewport.removeEventListener('scroll', vvHandler)
@@ -307,27 +340,43 @@ function requestBack() {
   mobileHistory.back()
 }
 
+function rememberCurrentScroll() {
+  const contactId = chatStore.currentContact?.userId
+  if (contactId) scrollMemory.remember(contactId, scroll.captureVisibleAnchor())
+}
+
+async function restoreContactScroll(contactId: number) {
+  await nextTick()
+  scroll.onContactChange({ scrollToBottom: false })
+  const anchor = scrollMemory.get(contactId)
+  const restored = anchor ? await scroll.restoreVisibleAnchor(anchor) : false
+  if (!restored) scroll.scrollToBottomAndClear(false)
+  grow()
+}
+
 async function openChat(id: number) {
   const seq = ++historySyncSeq
   await chatStore.selectContact(id)
   if (seq !== historySyncSeq) return
   chatting.value = true
-  scroll.onContactChange()
-  await nextTick()
-  grow()
+  await restoreContactScroll(id)
   await mobileHistory.pushChat(id)
 }
 
 async function ensureChat(contactId: number, seq: number) {
-  const contactChanged = chatStore.currentContact?.userId !== contactId
+  const previousId = chatStore.currentContact?.userId
+  const contactChanged = previousId !== contactId
   if (contactChanged) {
+    if (previousId) scrollMemory.remember(previousId, scroll.captureVisibleAnchor())
     await chatStore.selectContact(contactId)
     if (seq !== historySyncSeq) return false
   }
   chatting.value = true
-  if (contactChanged) scroll.onContactChange()
-  await nextTick()
-  grow()
+  if (contactChanged) await restoreContactScroll(contactId)
+  else {
+    await nextTick()
+    grow()
+  }
   return seq === historySyncSeq
 }
 
@@ -337,6 +386,7 @@ async function applyHistoryState(state: MobileChatUiState) {
   longPress.cancel()
 
   if (state.kind === 'list') {
+    rememberCurrentScroll()
     emojiOpen.value = false
     previewVisible.value = false
     attachmentComposer.cancel()
@@ -383,11 +433,15 @@ async function applyHistoryState(state: MobileChatUiState) {
 
 watch(() => chatStore.currentContact?.userId, () => {
   closeMessageMenu()
-  if (chatting.value) scroll.onContactChange()
   nextTick(grow)
 })
 watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
 watch(() => chatStore.messages, closeMessageMenu)
+
+async function retryInitialMessages() {
+  const loaded = await chatStore.retryInitialMessages()
+  if (loaded) scroll.scrollToBottomAndClear(false)
+}
 
 async function send() {
   const contactId = chatStore.currentContact?.userId
@@ -407,15 +461,9 @@ async function onFile(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || uploadBusy.value) return
-  if (file.size > 50 * 1024 * 1024) {
-    ElMessage.warning('文件最大支持 50MB')
-    return
-  }
-  const contact = chatStore.currentContact
-  if (!contact) return
-  emojiOpen.value = false
-  attachmentComposer.stage(file, { id: contact.userId, nickname: contact.nickname })
-  await mobileHistory.pushOverlay(contact.userId, 'attachment')
+  const contactId = chatStore.currentContact?.userId
+  if (!contactId || !attachmentIngress.acceptFiles([file])) return
+  await mobileHistory.pushOverlay(contactId, 'attachment')
 }
 
 async function confirmAttachment() {
@@ -516,6 +564,12 @@ function isLastSelfMessage(index: number) {
   const message = chatStore.messages[index]
   if (!message || message.senderId !== uid.value) return false
   return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
+}
+
+function shouldShowMessageStatus(index: number) {
+  const message = chatStore.messages[index]
+  if (!message || message.senderId !== uid.value) return false
+  return !!message.localStatus || isLastSelfMessage(index)
 }
 
 function isPendingMediaMessage(message: Message) {
@@ -633,6 +687,7 @@ async function handleMessageAction(action: MessageAction) {
 function logout() {
   historySyncSeq += 1
   drafts.clearAll()
+  scrollMemory.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
   chatStore.disconnectWs()
@@ -669,6 +724,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .msg-scroll { flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; padding: 12px; background: #ededed; touch-action: pan-y; }
 .load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .load-text { font-size: 12px; color: #999; }
+.load-retry { min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: #576b95; font-size: 12px; cursor: pointer; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #07c160; border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .time-bar { text-align: center; padding: 8px 0; }

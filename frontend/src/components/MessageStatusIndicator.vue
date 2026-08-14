@@ -12,7 +12,7 @@
 
     <template v-else-if="props.status === 'queued'">排队中</template>
     <template v-else-if="props.status === 'sending'">发送中</template>
-    <template v-else>{{ props.isRead ? '已读' : '未读' }}</template>
+    <template v-else-if="props.showReadState">{{ props.isRead ? '已读' : '未读' }}</template>
   </span>
 </template>
 
@@ -20,12 +20,15 @@
 import { computed } from 'vue'
 import type { LocalMessageStatus } from '../types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   status?: LocalMessageStatus
   isRead: boolean
   progress?: number
   error?: string
-}>()
+  showReadState?: boolean
+}>(), {
+  showReadState: true,
+})
 
 const emit = defineEmits<{
   retry: []
@@ -40,7 +43,7 @@ const statusClass = computed(() => ({
   'is-failed': props.status === 'failed',
   'is-uploading': props.status === 'uploading',
   'is-pending': props.status === 'queued' || props.status === 'sending',
-  'is-read': !props.status && props.isRead,
+  'is-read': !props.status && props.showReadState && props.isRead,
 }))
 </script>
 
