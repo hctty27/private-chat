@@ -35,10 +35,15 @@
             <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
           </div>
 
-          <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
+          <ConversationMessageState
+            :state="chatStore.messageLoadState"
+            :has-messages="chatStore.messages.length > 0"
+            :error="chatStore.messageLoadError"
+            @retry="retryInitialMessages"
+          />
 
           <div
-            v-else
+            v-if="chatStore.messages.length > 0"
             class="virtual-list"
             :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
           >
@@ -185,6 +190,7 @@ import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator,
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
+import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
@@ -253,6 +259,11 @@ watch(() => chatStore.messages, closeMessageMenu)
 async function pickContact(id: number) {
   await chatStore.selectContact(id)
   scroll.onSelectContact()
+}
+
+async function retryInitialMessages() {
+  const loaded = await chatStore.retryInitialMessages()
+  if (loaded) scroll.scrollToBottomAndClear(false)
 }
 
 function showTimeByIndex(i: number) {
