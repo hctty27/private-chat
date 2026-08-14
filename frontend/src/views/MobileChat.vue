@@ -35,10 +35,15 @@
           <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
         </div>
 
-        <div v-if="chatStore.messages.length === 0" class="empty-tip">开始聊天吧</div>
+        <ConversationMessageState
+          :state="chatStore.messageLoadState"
+          :has-messages="chatStore.messages.length > 0"
+          :error="chatStore.messageLoadError"
+          @retry="retryInitialMessages"
+        />
 
         <div
-          v-else
+          v-if="chatStore.messages.length > 0"
           class="virtual-list"
           :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
         >
@@ -198,6 +203,7 @@ import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
+import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
@@ -388,6 +394,11 @@ watch(() => chatStore.currentContact?.userId, () => {
 })
 watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
 watch(() => chatStore.messages, closeMessageMenu)
+
+async function retryInitialMessages() {
+  const loaded = await chatStore.retryInitialMessages()
+  if (loaded) scroll.scrollToBottomAndClear(false)
+}
 
 async function send() {
   const contactId = chatStore.currentContact?.userId
