@@ -4,7 +4,7 @@
 
 **Goal:** Improve chat feedback and navigation without changing backend APIs, database schema, WebSocket protocol, file-security semantics, or the disguise/privacy model.
 
-**Architecture:** Keep `ChatPage.vue` and `MobileChat.vue` as orchestration layers. Add focused shared units for conversation-state rendering, attachment ingress, and per-contact scroll memory; extend the existing chat store and `useChatScroll` only for state they already own. Preserve the current attachment confirmation and secure upload lifecycle.
+**Architecture:** Keep `ChatPage.vue` and `MobileChat.vue` as orchestration layers. Add focused shared units for conversation-state rendering, attachment ingress, per-contact scroll memory, and tab-visibility decisions; extend the chat store and `useChatScroll` only for state they already own. Preserve the current attachment confirmation and secure upload lifecycle.
 
 **Tech Stack:** Vue 3.5, TypeScript 5.8, Pinia 3, Vue Router 4.5, Element Plus 2.9, TanStack Vue Virtual 3.13, Vitest 4.1.10, Vue Test Utils 2.4.11, jsdom 27.4.0, Vite 6.2.
 
@@ -31,13 +31,13 @@ npm ci
 npm install --no-save vitest@4.1.10 @vue/test-utils@2.4.11 jsdom@27.4.0
 ```
 
-Focused tests use:
+Focused tests:
 
 ```bash
-npm exec vitest run <test-files...>
+npm exec vitest run path/to/test.ts
 ```
 
-Final frontend verification uses:
+Final verification:
 
 ```bash
 npm exec vitest run
@@ -58,13 +58,12 @@ npm run build
 - Modify: `frontend/src/views/MobileChat.vue`
 
 **Interfaces:**
-- Produces:
 
 ```ts
 export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 ```
 
-- `useChatStore()` additionally exposes:
+`useChatStore()` additionally exposes:
 
 ```ts
 messageLoadState: Ref<MessageLoadState>
@@ -72,7 +71,7 @@ messageLoadError: Ref<string>
 retryInitialMessages(): Promise<boolean>
 ```
 
-- `ConversationMessageState.vue` props/events:
+`ConversationMessageState.vue`:
 
 ```ts
 state: MessageLoadState
@@ -81,32 +80,40 @@ error?: string
 retry: []
 ```
 
-- [ ] **Step 1: Add failing store tests for initial load state**
+- [ ] **Step 1: Write failing store tests**
 
-Create `frontend/src/stores/chat.test.ts`. Use `createPinia()` + `setActivePinia()` and mock `../api` with Vitest. Cover these exact cases:
+Create `frontend/src/stores/chat.test.ts` using `createPinia()` / `setActivePinia()` and `vi.mock('../api')`. In `beforeEach`, clear `localStorage`, create a fresh Pinia, and initialize the user with:
 
 ```ts
-it('transitions initial load from loading to loaded', async () => {
-  // Arrange one selected contact and a deferred getMessages promise.
-  // Assert messageLoadState === 'loading' before resolving.
-  // Resolve { code: 200, data: { messages: [], hasMore: false } }.
-  // Assert messageLoadState === 'loaded' and messageLoadError === ''.
-})
-
-it('sets initial load error without fabricating an empty conversation', async () => {
-  // Reject getMessages.
-  // Assert loadMessages('init') === false.
-  // Assert messageLoadState === 'error'.
-  // Assert messageLoadError === '消息加载失败，请重试'.
-})
-
-it('does not let a stale contact response overwrite the active load state', async () => {
-  // Start A, switch to B, resolve B successfully, then resolve A.
-  // Assert active messages/state still belong to B and stay loaded.
-})
+const userStore = useUserStore()
+userStore.login('test-token', 99, 'Me')
 ```
 
-Use a stable contact factory with all required `Contact` fields and call `userStore.login('token', 99, 'Me')` in test setup so store token-generation guards behave normally.
+Cover these cases:
+
+```ts
+it('transitions initial load from loading to loaded')
+it('sets initial load error without fabricating an empty conversation')
+it('does not let a stale contact response overwrite the active load state')
+```
+
+Use deferred promises for `getMessages()` so the test can assert `messageLoadState === 'loading'` before resolution. Successful mock response:
+
+```ts
+{
+  data: {
+    code: 200,
+    data: { messages: [], hasMore: false },
+  },
+}
+```
+
+Failure must end with:
+
+```ts
+expect(chatStore.messageLoadState).toBe('error')
+expect(chatStore.messageLoadError).toBe('消息加载失败，请重试')
+```
 
 - [ ] **Step 2: Run store tests and verify RED**
 
@@ -114,24 +121,24 @@ Use a stable contact factory with all required `Contact` fields and call `userSt
 npm exec vitest run src/stores/chat.test.ts
 ```
 
-Expected: FAIL because `MessageLoadState`, `messageLoadState`, `messageLoadError`, and retry behavior do not exist.
+Expected: FAIL because the load-state fields do not exist.
 
 - [ ] **Step 3: Implement the store state machine**
 
-Add to `frontend/src/types/index.ts`:
+Add to `types/index.ts`:
 
 ```ts
 export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 ```
 
-In `chat.ts`, import the type and add:
+In `chat.ts`:
 
 ```ts
 const messageLoadState = ref<MessageLoadState>('idle')
 const messageLoadError = ref('')
 ```
 
-For `loadMessages('init')`:
+At the start of an initial load:
 
 ```ts
 if (mode === 'init') {
@@ -140,23 +147,23 @@ if (mode === 'init') {
 }
 ```
 
-Only the latest active initial request may finish the state transition. For its success path:
+Only the latest active initial request may commit the terminal state. On active success:
 
 ```ts
 messageLoadState.value = 'loaded'
 messageLoadError.value = ''
 ```
 
-For an active request that throws or returns non-200:
+On active exception or non-200 response:
 
 ```ts
 messageLoadState.value = 'error'
 messageLoadError.value = '消息加载失败，请重试'
 ```
 
-Do not change `messageLoadState` for `loadMore` calls. Reset both values in `clearState()` and when a new contact selection starts.
+Do not modify this state for `loadMore`. Reset it in `clearState()` and when selecting a new contact.
 
-Add:
+Add and return:
 
 ```ts
 async function retryInitialMessages() {
@@ -164,32 +171,26 @@ async function retryInitialMessages() {
 }
 ```
 
-Return all three new store members.
-
 - [ ] **Step 4: Run store tests and verify GREEN**
 
 ```bash
 npm exec vitest run src/stores/chat.test.ts
 ```
 
-Expected: all initial-load tests PASS.
+- [ ] **Step 5: Write failing shared-state component tests**
 
-- [ ] **Step 5: Add failing component tests for `ConversationMessageState.vue`**
-
-Cover:
+Create `ConversationMessageState.test.ts` and cover:
 
 ```ts
-it('shows loading but not empty copy while initial load is pending')
-it('shows empty copy only after loaded with no messages')
+it('shows loading but not empty copy while pending')
+it('shows empty copy only after loaded')
 it('shows retry UI on error and emits retry')
-it('renders nothing when messages already exist')
+it('renders no state panel when messages exist')
 ```
-
-The retry control must be a real `<button type="button">重新加载</button>`.
 
 - [ ] **Step 6: Implement `ConversationMessageState.vue`**
 
-Use a centered state container with these exact visible copies:
+Visible strings are exactly:
 
 ```text
 加载消息中...
@@ -198,11 +199,11 @@ Use a centered state container with these exact visible copies:
 开始聊天吧
 ```
 
-For loading/error feedback, use `role="status"` for passive status text. Do not autofocus the retry button.
+Use a real `<button type="button">重新加载</button>`. Loading/error status text may use `role="status"`; do not autofocus anything.
 
-- [ ] **Step 7: Wire the shared state into desktop and mobile pages**
+- [ ] **Step 7: Wire desktop and mobile pages**
 
-Replace the current unconditional `messages.length === 0 -> 开始聊天吧` branch with:
+Replace the current unconditional empty-history branch with:
 
 ```vue
 <ConversationMessageState
@@ -215,7 +216,7 @@ Replace the current unconditional `messages.length === 0 -> 开始聊天吧` bra
 
 Keep the virtual list mounted only when messages exist.
 
-Add page helper:
+Page helper:
 
 ```ts
 async function retryInitialMessages() {
@@ -224,25 +225,18 @@ async function retryInitialMessages() {
 }
 ```
 
-- [ ] **Step 8: Run focused tests and build**
+- [ ] **Step 8: Verify and commit**
 
 ```bash
 npm exec vitest run src/stores/chat.test.ts src/components/ConversationMessageState.test.ts
 npm run build
-```
-
-Expected: tests PASS; type-check/build succeeds.
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add frontend/src/types/index.ts frontend/src/stores/chat.ts frontend/src/stores/chat.test.ts frontend/src/components/ConversationMessageState.vue frontend/src/components/ConversationMessageState.test.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "feat: expose conversation loading states"
 ```
 
 ---
 
-### Task 2: Load-more error feedback and retry without scroll jumps
+### Task 2: Load-more error feedback and public scroll-anchor API
 
 **Files:**
 - Modify: `frontend/src/composables/useChatScroll.ts`
@@ -251,16 +245,8 @@ git commit -m "feat: expose conversation loading states"
 - Modify: `frontend/src/views/MobileChat.vue`
 
 **Interfaces:**
-- `useChatScroll()` additionally returns:
 
-```ts
-loadMoreError: Ref<string>
-retryLoadMore(): Promise<void>
-captureVisibleAnchor(): ConversationScrollAnchor | null
-restoreVisibleAnchor(anchor: ConversationScrollAnchor): Promise<boolean>
-```
-
-`ConversationScrollAnchor` is introduced in Task 4, but define/export it in `useChatScroll.ts` now so Task 4 can import the exact same type:
+Define in `useChatScroll.ts` now; Task 5 consumes this exact type:
 
 ```ts
 export interface ConversationScrollAnchor {
@@ -269,35 +255,42 @@ export interface ConversationScrollAnchor {
 }
 ```
 
-- [ ] **Step 1: Write failing tests for load-more failure**
+`useChatScroll()` additionally returns:
 
-In `useChatScroll.test.ts`, mock the Pinia chat store method `loadMessages` to return `false`. Mount the composable through a minimal harness component with a scroll container. Assert:
+```ts
+loadMoreError: Ref<string>
+retryLoadMore(): Promise<void>
+captureVisibleAnchor(): ConversationScrollAnchor | null
+restoreVisibleAnchor(anchor: ConversationScrollAnchor): Promise<boolean>
+```
+
+- [ ] **Step 1: Write failing load-more tests**
+
+Mount `useChatScroll` through a minimal Vue harness with a fake scroll container. Mock `chatStore.loadMessages('loadMore')` to return `false`. Assert:
 
 ```ts
 expect(scroll.loadMoreError.value).toBe('历史消息加载失败，点击重试')
 expect(container.scrollTop).toBe(beforeScrollTop)
 ```
 
-Then switch the mock to return `true`, call `retryLoadMore()`, and assert `loadMoreError` clears.
+Then make the mock return `true`, call `retryLoadMore()`, and assert the error clears.
 
-- [ ] **Step 2: Run focused test and verify RED**
+- [ ] **Step 2: Run and verify RED**
 
 ```bash
 npm exec vitest run src/composables/useChatScroll.test.ts
 ```
 
-Expected: FAIL because load-more error state/retry are not exposed.
+- [ ] **Step 3: Expose the existing anchor behavior**
 
-- [ ] **Step 3: Refactor anchor helpers into public composable methods**
-
-Rename the existing private anchor functions to public names without changing behavior:
+Rename/refactor the private anchor functions without changing their semantics:
 
 ```ts
 function captureVisibleAnchor(): ConversationScrollAnchor | null
 async function restoreVisibleAnchor(anchor: ConversationScrollAnchor): Promise<boolean>
 ```
 
-`restoreVisibleAnchor` should use the existing two-frame + `nextTick()` stabilization and return `false` if the message is absent.
+`restoreVisibleAnchor()` keeps the existing frame/`nextTick()` stabilization and returns `false` if the anchor message is not loaded.
 
 - [ ] **Step 4: Implement load-more error state**
 
@@ -307,19 +300,13 @@ Add:
 const loadMoreError = ref('')
 ```
 
-At the beginning of a load-more attempt:
-
-```ts
-loadMoreError.value = ''
-```
-
-If `await chatStore.loadMessages('loadMore')` returns `false`, stop without applying scroll-height compensation and set:
+Clear it when a new attempt starts. If `await chatStore.loadMessages('loadMore')` returns `false`, set:
 
 ```ts
 loadMoreError.value = '历史消息加载失败，点击重试'
 ```
 
-Always clear `loading` / `isLoadingMore` in `finally`-equivalent cleanup.
+Do not apply scroll-height compensation after a failed fetch. Always clear `loading` and `isLoadingMore` on exit.
 
 Add:
 
@@ -330,33 +317,29 @@ async function retryLoadMore() {
 }
 ```
 
-Return the new state/methods.
+- [ ] **Step 5: Update desktop/mobile top-of-history UI**
 
-- [ ] **Step 5: Update desktop/mobile history-load UI**
-
-In the existing `.load-more` area, order states as:
+Use this priority:
 
 ```vue
 <template v-if="scroll.loading.value">...</template>
-<button v-else-if="scroll.loadMoreError.value" type="button" class="load-retry" @click="scroll.retryLoadMore">
+<button
+  v-else-if="scroll.loadMoreError.value"
+  type="button"
+  class="load-retry"
+  @click="scroll.retryLoadMore"
+>
   {{ scroll.loadMoreError.value }}
 </button>
 <span v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
 <span v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
 ```
 
-Keep the button compact and keyboard-focusable.
-
-- [ ] **Step 6: Run focused tests and build**
+- [ ] **Step 6: Verify and commit**
 
 ```bash
 npm exec vitest run src/composables/useChatScroll.test.ts
 npm run build
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add frontend/src/composables/useChatScroll.ts frontend/src/composables/useChatScroll.test.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "feat: retry failed history loads"
 ```
@@ -372,17 +355,16 @@ git commit -m "feat: retry failed history loads"
 - Modify: `frontend/src/views/MobileChat.vue`
 
 **Interfaces:**
-- Add prop:
+
+Add optional prop with compatibility default:
 
 ```ts
 showReadState?: boolean
 ```
 
-Default it to `true` for compatibility.
-
 - [ ] **Step 1: Write failing component tests**
 
-Cover exact statuses:
+Cover:
 
 ```ts
 it.each([
@@ -390,18 +372,14 @@ it.each([
   ['queued', '排队中'],
   ['sending', '发送中'],
   ['failed', '发送失败'],
-])(...)
-```
+])('renders %s status', ...)
 
-Also assert:
-
-```ts
 it('emits retry from a failed message')
 it('shows 已读/未读 only when showReadState is true and no local status exists')
 it('renders no read text when showReadState is false and no local status exists')
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: Run and verify RED**
 
 ```bash
 npm exec vitest run src/components/MessageStatusIndicator.test.ts
@@ -409,7 +387,21 @@ npm exec vitest run src/components/MessageStatusIndicator.test.ts
 
 - [ ] **Step 3: Implement `showReadState`**
 
-Use `withDefaults(defineProps<...>(), { showReadState: true })`. The final fallback branch becomes conditional:
+Use:
+
+```ts
+const props = withDefaults(defineProps<{
+  status?: LocalMessageStatus
+  isRead: boolean
+  progress?: number
+  error?: string
+  showReadState?: boolean
+}>(), {
+  showReadState: true,
+})
+```
+
+Final template fallback:
 
 ```vue
 <template v-else-if="props.showReadState">
@@ -417,9 +409,9 @@ Use `withDefaults(defineProps<...>(), { showReadState: true })`. The final fallb
 </template>
 ```
 
-- [ ] **Step 4: Replace last-message-only rendering rule in both pages**
+- [ ] **Step 4: Change the page rendering rule**
 
-Add helper:
+Add to both pages:
 
 ```ts
 function shouldShowMessageStatus(index: number) {
@@ -429,28 +421,23 @@ function shouldShowMessageStatus(index: number) {
 }
 ```
 
-Render the status row when `shouldShowMessageStatus(vi.index)` and pass:
+Mount the indicator when `shouldShowMessageStatus(vi.index)` and pass:
 
 ```vue
 :show-read-state="!chatStore.messages[vi.index].localStatus && isLastSelfMessage(vi.index)"
 ```
 
-This guarantees an earlier failed/queued/uploading message keeps its own status/retry affordance after newer messages are sent.
+An earlier failed/uploading/queued/sending message therefore retains its own status after newer messages are appended.
 
-- [ ] **Step 5: Add a page-level regression test or pure rendering helper test**
+- [ ] **Step 5: Add a regression assertion**
 
-Verify two outgoing messages where the first has `localStatus: 'failed'` and the second is confirmed: the first still renders a retry control and the second owns the read/unread text.
+Test a two-message scenario: the first outgoing message has `localStatus: 'failed'`; the second is confirmed. Assert the first owns a retry button while only the second can render read/unread text.
 
-- [ ] **Step 6: Run focused tests and build**
+- [ ] **Step 6: Verify and commit**
 
 ```bash
 npm exec vitest run src/components/MessageStatusIndicator.test.ts
 npm run build
-```
-
-- [ ] **Step 7: Commit**
-
-```bash
 git add frontend/src/components/MessageStatusIndicator.vue frontend/src/components/MessageStatusIndicator.test.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "feat: show per-message delivery feedback"
 ```
@@ -467,11 +454,10 @@ git commit -m "feat: show per-message delivery feedback"
 
 **Interfaces:**
 
+Reuse the existing recipient type rather than defining a duplicate:
+
 ```ts
-export interface AttachmentRecipient {
-  id: number
-  nickname: string
-}
+import type { AttachmentRecipient } from './useAttachmentComposer'
 
 export interface AttachmentIngressOptions {
   maxBytes: number
@@ -500,20 +486,19 @@ it('stages exactly one dropped file and prevents default navigation')
 it('rejects multiple files with 暂时只支持一次发送 1 个文件')
 it('rejects a file larger than 50 MB with 文件最大支持 50MB')
 it('does not stage when there is no active recipient')
-it('never calls an upload function because ingress only stages')
 ```
 
-Build clipboard/drop events with `DataTransfer` and `File` objects in jsdom. Keep tests at the composable boundary; do not depend on `chatStore.sendFile()`.
+The composable has no upload callback, so its API itself proves that ingress cannot call `chatStore.sendFile()`.
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: Run and verify RED**
 
 ```bash
 npm exec vitest run src/composables/useAttachmentIngress.test.ts
 ```
 
-- [ ] **Step 3: Implement single-file validation and staging**
+- [ ] **Step 3: Implement single-file validation**
 
-Implementation contract:
+Core function:
 
 ```ts
 function acceptFiles(input: FileList | File[]) {
@@ -523,25 +508,28 @@ function acceptFiles(input: FileList | File[]) {
     options.onWarning('暂时只支持一次发送 1 个文件')
     return false
   }
+
   const recipient = options.getRecipient()
   if (!recipient) return false
+
   const file = files[0]
   if (file.size > options.maxBytes) {
     options.onWarning('文件最大支持 50MB')
     return false
   }
+
   options.onStage(file, { ...recipient })
   return true
 }
 ```
 
-`handlePaste` must inspect `event.clipboardData?.files`. If there are no files, return `false` without calling `preventDefault()`. If files exist, call `preventDefault()` and run validation.
+`handlePaste()` checks `event.clipboardData?.files`. If there are no files, return `false` without preventing normal text paste. If there are files, call `preventDefault()` and validate them.
 
-`handleDrop` must inspect `event.dataTransfer?.files`; when at least one file exists, call `preventDefault()` to stop browser navigation, then validate.
+`handleDrop()` checks `event.dataTransfer?.files`. If there are files, call `preventDefault()` to stop browser navigation, then validate them.
 
-- [ ] **Step 4: Wire file picker through the shared ingress helper**
+- [ ] **Step 4: Route both file pickers through ingress**
 
-In both pages, replace duplicate size/recipient validation with:
+In both pages:
 
 ```ts
 const attachmentIngress = useAttachmentIngress({
@@ -555,45 +543,37 @@ const attachmentIngress = useAttachmentIngress({
 })
 ```
 
-Picker handler calls `acceptFiles()` and retains the existing mobile history-overlay push after a successful stage.
+The picker handler calls `acceptFiles()`. Mobile keeps its existing history-overlay push only after staging succeeds.
 
-- [ ] **Step 5: Add desktop paste and drag/drop UI**
+- [ ] **Step 5: Add desktop paste and drag/drop**
 
-On desktop `ChatPage.vue`:
+Add handlers on desktop `chat-main`:
 
 ```vue
-<main
-  class="chat-main"
-  @paste="onPasteAttachment"
-  @dragenter.prevent="onDragEnter"
-  @dragover.prevent="onDragOver"
-  @dragleave="onDragLeave"
-  @drop="onDropAttachment"
->
+@paste="onPasteAttachment"
+@dragenter.prevent="onDragEnter"
+@dragover.prevent="onDragOver"
+@dragleave="onDragLeave"
+@drop="onDropAttachment"
 ```
 
-Track a drag-depth counter or equivalent boolean that is reset on drop. Show an overlay only while a file drag is active:
+Use a drag-depth counter so child enter/leave events do not flicker the overlay. While an actual file drag is active, show:
 
 ```text
 松开以发送文件
 ```
 
-Do not intercept ordinary text paste.
+Drop/paste only stage the file; the existing `AttachmentSendDialog.vue` remains the sole confirmation point.
 
-- [ ] **Step 6: Keep mobile behavior conservative**
+- [ ] **Step 6: Keep mobile paste native**
 
-Mobile continues to use the picker through `acceptFiles()`. Do not add a drag overlay. Do not add a global mobile paste listener; normal textarea paste remains native unless a later platform-specific need is proven.
+Mobile uses ingress for picker validation only. Do not install a global mobile paste handler or drag overlay.
 
-- [ ] **Step 7: Run tests and build**
+- [ ] **Step 7: Verify and commit**
 
 ```bash
 npm exec vitest run src/composables/useAttachmentIngress.test.ts src/composables/useAttachmentComposer.test.ts src/components/AttachmentSendDialog.test.ts
 npm run build
-```
-
-- [ ] **Step 8: Commit**
-
-```bash
 git add frontend/src/composables/useAttachmentIngress.ts frontend/src/composables/useAttachmentIngress.test.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "feat: support paste and drop attachments"
 ```
@@ -606,6 +586,7 @@ git commit -m "feat: support paste and drop attachments"
 - Create: `frontend/src/composables/useConversationScrollMemory.ts`
 - Create: `frontend/src/composables/useConversationScrollMemory.test.ts`
 - Modify: `frontend/src/composables/useChatScroll.ts`
+- Modify: `frontend/src/composables/useChatScroll.test.ts`
 - Modify: `frontend/src/views/ChatPage.vue`
 - Modify: `frontend/src/views/MobileChat.vue`
 
@@ -624,7 +605,13 @@ export interface ConversationScrollMemory {
 export function useConversationScrollMemory(): ConversationScrollMemory
 ```
 
-- [ ] **Step 1: Write failing memory tests**
+Extend the existing contact-change hook to let callers suppress the old unconditional bottom scroll:
+
+```ts
+onContactChange(options?: { scrollToBottom?: boolean }): void
+```
+
+- [ ] **Step 1: Write failing scroll-memory tests**
 
 Cover:
 
@@ -633,75 +620,98 @@ it('isolates anchors by contact id')
 it('overwrites one contact without changing another')
 it('clears one contact')
 it('clears all contacts')
-it('stores immutable anchor copies rather than caller-owned objects')
+it('stores immutable copies')
 ```
 
-- [ ] **Step 2: Run test and verify RED**
+- [ ] **Step 2: Run and verify RED**
 
 ```bash
 npm exec vitest run src/composables/useConversationScrollMemory.test.ts
 ```
 
-- [ ] **Step 3: Implement the in-memory map**
-
-Use a plain `Map<number, ConversationScrollAnchor>`; no browser storage.
+- [ ] **Step 3: Implement the session-only map**
 
 ```ts
+const anchors = new Map<number, ConversationScrollAnchor>()
+
 remember(contactId, anchor) {
   if (anchor) anchors.set(contactId, { ...anchor })
   else anchors.delete(contactId)
 }
 ```
 
-- [ ] **Step 4: Add anchor API regression tests to `useChatScroll.test.ts`**
+Do not use browser storage.
 
-Build a fake scroll viewport containing `.virtual-item[data-msg-id]` elements with deterministic mocked `getBoundingClientRect()` values. Assert:
+- [ ] **Step 4: Add anchor API tests**
+
+In `useChatScroll.test.ts`, use fake `.virtual-item[data-msg-id]` nodes with mocked `getBoundingClientRect()` to verify:
 
 ```ts
-captureVisibleAnchor() // returns first item intersecting top edge + offset
-restoreVisibleAnchor(anchor) // adjusts scrollTop and returns true
-restoreVisibleAnchor(missingAnchor) // returns false
+captureVisibleAnchor()
+restoreVisibleAnchor(existingAnchor) === true
+restoreVisibleAnchor(missingAnchor) === false
 ```
 
-- [ ] **Step 5: Wire desktop contact switching**
+- [ ] **Step 5: Make `onContactChange` restoration-friendly**
 
-Before `chatStore.selectContact(id)`:
+Change it to:
+
+```ts
+function onContactChange(options: { scrollToBottom?: boolean } = {}) {
+  prevMsgCount = chatStore.messages.length
+  newMessageCount.value = 0
+  showBottomButton.value = false
+  bindScrollListener()
+  if (options.scrollToBottom !== false) scrollToBottom(false)
+}
+```
+
+Existing callers keep current behavior by default. Restore-aware flows pass `{ scrollToBottom: false }`.
+
+- [ ] **Step 6: Wire desktop switching**
+
+Before selecting a new contact:
 
 ```ts
 const oldContactId = chatStore.currentContact?.userId
-if (oldContactId) scrollMemory.remember(oldContactId, scroll.captureVisibleAnchor())
+if (oldContactId) {
+  scrollMemory.remember(oldContactId, scroll.captureVisibleAnchor())
+}
 ```
 
-After `selectContact(id)` and render:
+After `await chatStore.selectContact(id)`:
 
 ```ts
+scroll.onContactChange({ scrollToBottom: false })
+await nextTick()
 const remembered = scrollMemory.get(id)
 const restored = remembered ? await scroll.restoreVisibleAnchor(remembered) : false
 if (!restored) scroll.scrollToBottomAndClear(false)
 ```
 
-Avoid calling both the old unconditional `onSelectContact()` bottom-scroll and the new restore path.
+Remove the redundant old `onSelectContact()` bottom-scroll from this path.
 
-- [ ] **Step 6: Wire mobile open/close/back behavior**
+- [ ] **Step 7: Wire mobile list/chat transitions**
 
-When leaving a chat for the contact list, remember the active contact anchor before clearing messages/current contact. When opening or restoring a contact from router history, attempt its remembered anchor after `selectContact()` + render; fall back to bottom if unavailable.
+Before a history state changes from chat to list, remember the active contact anchor. When `ensureChat()` loads/restores a contact, call `onContactChange({ scrollToBottom: false })`, await render, then restore its memory; fall back to bottom if unavailable.
 
-Overlay transitions (`media`, `emoji`, `attachment`) must not capture or overwrite contact scroll memory because they do not represent a conversation switch.
+Do not capture/overwrite memory for `media`, `emoji`, or `attachment` overlay transitions.
 
-- [ ] **Step 7: Clear memory on logout/unmount**
+- [ ] **Step 8: Clear memory on logout/unmount**
 
-Call `scrollMemory.clearAll()` during logout and mobile teardown, alongside existing draft cleanup.
+Call:
 
-- [ ] **Step 8: Run focused regressions and build**
+```ts
+scrollMemory.clearAll()
+```
+
+alongside existing draft/attachment cleanup.
+
+- [ ] **Step 9: Verify and commit**
 
 ```bash
 npm exec vitest run src/composables/useConversationScrollMemory.test.ts src/composables/useChatScroll.test.ts src/composables/useMobileChatHistory.test.ts
 npm run build
-```
-
-- [ ] **Step 9: Commit**
-
-```bash
 git add frontend/src/composables/useConversationScrollMemory.ts frontend/src/composables/useConversationScrollMemory.test.ts frontend/src/composables/useChatScroll.ts frontend/src/composables/useChatScroll.test.ts frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "feat: restore conversation reading position"
 ```
@@ -711,87 +721,111 @@ git commit -m "feat: restore conversation reading position"
 ### Task 6: Make read receipts and unread badges visibility-aware
 
 **Files:**
+- Create: `frontend/src/utils/chatVisibility.ts`
+- Create: `frontend/src/utils/chatVisibility.test.ts`
 - Modify: `frontend/src/composables/useChatScroll.ts`
 - Modify: `frontend/src/composables/useChatScroll.test.ts`
 - Modify: `frontend/src/stores/chat.ts`
 - Modify: `frontend/src/stores/chat.test.ts`
 
 **Interfaces:**
-- Add internal helper in `useChatScroll.ts`:
 
 ```ts
-function isDocumentVisible() {
-  return typeof document === 'undefined' || !document.visibilityState || document.visibilityState === 'visible'
-}
-```
+export function isDocumentVisible(): boolean
 
-- [ ] **Step 1: Write failing read-receipt visibility test**
-
-In `useChatScroll.test.ts`, set `document.visibilityState` to `hidden`, make an unread incoming message visible in the virtualizer, trigger the read check, and assert `chatStore.sendWsMessage` is not called.
-
-Then set visibility to `visible`, dispatch `visibilitychange`, rerun/schedule the read check, and assert the read receipt is sent once.
-
-Restore the original property descriptor after each test.
-
-- [ ] **Step 2: Run focused test and verify RED**
-
-```bash
-npm exec vitest run src/composables/useChatScroll.test.ts
-```
-
-- [ ] **Step 3: Gate read checks on visibility**
-
-At the top of `checkVisibleUnread()`:
-
-```ts
-if (!isDocumentVisible()) return
-```
-
-Register one `visibilitychange` handler inside the composable that calls `scheduleReadCheck()` when the page becomes visible; remove it in `cleanup()`.
-
-- [ ] **Step 4: Write failing hidden-tab unread store test**
-
-In `chat.test.ts`, simulate an incoming chat message for the currently selected contact while `document.visibilityState === 'hidden'`. The contact starts with `unreadCount: 0`. Assert it becomes `1` even though the conversation is selected.
-
-Also keep a regression test that an incoming message in a visible selected conversation does not increment the badge, and an existing server `read` event clears the badge.
-
-For testability, extract the contact-unread decision into a small exported pure helper in `chat.ts` or `frontend/src/utils/chatVisibility.ts` rather than exposing private WebSocket internals. Preferred helper:
-
-```ts
 export function shouldIncrementUnread(options: {
   senderId: number
   currentUserId: number
   contactId: number
   currentContactId: number | null
   documentVisible: boolean
-}) {
-  if (options.senderId === options.currentUserId) return false
-  return options.currentContactId !== options.contactId || !options.documentVisible
+}): boolean
+```
+
+- [ ] **Step 1: Write failing pure visibility tests**
+
+Create `chatVisibility.test.ts`:
+
+```ts
+it('treats a hidden selected conversation as unread')
+it('does not increment for a visible selected conversation')
+it('increments for another conversation')
+it('never increments for the current user own message')
+```
+
+Expected rule:
+
+```ts
+senderId !== currentUserId &&
+(currentContactId !== contactId || !documentVisible)
+```
+
+- [ ] **Step 2: Implement the pure helpers**
+
+`isDocumentVisible()`:
+
+```ts
+export function isDocumentVisible() {
+  return typeof document === 'undefined' ||
+    !document.visibilityState ||
+    document.visibilityState === 'visible'
 }
 ```
 
-- [ ] **Step 5: Implement visibility-aware unread increment**
+`shouldIncrementUnread()` implements the rule above.
 
-Use the helper in `handleWsMessage('chat')` with:
+- [ ] **Step 3: Write failing read-receipt visibility test**
+
+In `useChatScroll.test.ts`, temporarily redefine `document.visibilityState` to `hidden`, make an unread incoming message part of the visible virtual range, trigger the scheduled read check, and assert `chatStore.sendWsMessage` is not called.
+
+Then set visibility to `visible`, dispatch `visibilitychange`, flush timers, and assert the read receipt is sent. Restore the original property descriptor after the test.
+
+- [ ] **Step 4: Gate read checks and register visibility retry**
+
+Import `isDocumentVisible`. At the top of `checkVisibleUnread()`:
 
 ```ts
-const documentVisible = typeof document === 'undefined' || !document.visibilityState || document.visibilityState === 'visible'
+if (!isDocumentVisible()) return
 ```
 
-Increment the contact badge when the message is from another user and either another conversation is selected or the document is hidden.
+Register one `visibilitychange` listener inside `useChatScroll`; when visibility becomes visible, call `scheduleReadCheck()`. Remove the listener in `cleanup()`.
 
-Do not send any new WebSocket message from the store; `useChatScroll` remains responsible for read receipts.
+- [ ] **Step 5: Add store integration regression tests**
 
-- [ ] **Step 6: Run visibility tests**
+In `chat.test.ts`, cover:
 
-```bash
-npm exec vitest run src/stores/chat.test.ts src/composables/useChatScroll.test.ts
+```ts
+it('increments unread for the selected conversation while the tab is hidden')
+it('does not increment unread for the selected conversation while visible')
+it('server read event still clears the contact unread badge')
 ```
 
-- [ ] **Step 7: Commit**
+Drive the pure unread decision through the store's incoming chat handling; do not add a new WebSocket protocol or browser notification path.
+
+- [ ] **Step 6: Use the visibility helper in `chat.ts`**
+
+In `handleWsMessage('chat')`, replace the current contact-only unread condition with:
+
+```ts
+if (contact && shouldIncrementUnread({
+  senderId: msg.senderId,
+  currentUserId: userStore.userId,
+  contactId,
+  currentContactId: currentContact.value?.userId ?? null,
+  documentVisible: isDocumentVisible(),
+})) {
+  contact.unreadCount++
+}
+```
+
+Keep read receipt sending in `useChatScroll`; the store only owns badge state.
+
+- [ ] **Step 7: Verify and commit**
 
 ```bash
-git add frontend/src/stores/chat.ts frontend/src/stores/chat.test.ts frontend/src/composables/useChatScroll.ts frontend/src/composables/useChatScroll.test.ts
+npm exec vitest run src/utils/chatVisibility.test.ts src/stores/chat.test.ts src/composables/useChatScroll.test.ts
+npm run build
+git add frontend/src/utils/chatVisibility.ts frontend/src/utils/chatVisibility.test.ts frontend/src/stores/chat.ts frontend/src/stores/chat.test.ts frontend/src/composables/useChatScroll.ts frontend/src/composables/useChatScroll.test.ts
 git commit -m "fix: respect tab visibility for unread state"
 ```
 
@@ -800,8 +834,8 @@ git commit -m "fix: respect tab visibility for unread state"
 ### Task 7: Full interaction regression and privacy verification
 
 **Files:**
-- Modify only if a regression test exposes a defect in files already in scope.
-- Do not change backend, migrations, `frontend/index.html`, or browser-title behavior.
+- No planned production file outside Tasks 1-6.
+- If verification exposes a regression, fix only files already listed in Tasks 1-6.
 
 - [ ] **Step 1: Run the complete interaction suite**
 
@@ -820,60 +854,64 @@ npm run build
 
 Expected: `vue-tsc --noEmit && vite build` succeeds.
 
-- [ ] **Step 3: Run targeted privacy assertions**
-
-Verify existing cover/login tests still pass:
+- [ ] **Step 3: Re-run disguise/login privacy tests**
 
 ```bash
 npm exec vitest run src/views/CoverPage.test.ts src/views/LoginPage.test.ts
 ```
 
-Verify `frontend/index.html` still contains exactly:
+- [ ] **Step 4: Assert browser-title privacy directly**
 
-```html
-<title>有趣 - 随时随地发现新鲜事</title>
-```
-
-and no production code writes a chat unread count into `document.title`:
+From repository root:
 
 ```bash
-grep -R "document.title" -n src || true
+grep -F '<title>有趣 - 随时随地发现新鲜事</title>' frontend/index.html
+grep -R "document.title" -n frontend/src || true
 ```
 
-Expected: no new chat-specific title mutation.
+Expected: the disguise title line exists and no new chat-specific title mutation exists.
 
-- [ ] **Step 4: Review acceptance cases manually in code/test form**
+- [ ] **Step 5: Check every acceptance case against tests/code**
 
-Confirm each requirement has a passing automated test or direct code assertion:
+Confirm all 13 outcomes:
 
-1. Initial slow load never renders `开始聊天吧` early.
+1. Slow initial load never shows `开始聊天吧` early.
 2. Initial failure exposes `重新加载`.
-3. Load-more failure is retryable without anchor loss.
+3. Load-more failure is retryable without a scroll jump.
 4. Every local transient/failed outgoing message owns its status row.
-5. Earlier failed message can retry after newer messages exist.
+5. Earlier failed messages retain retry after newer messages exist.
 6. One pasted/dropped desktop file reaches attachment confirmation.
 7. Multiple pasted/dropped files are explicitly rejected.
-8. Paste/drop never calls upload before confirmation.
-9. A -> B -> A restores A's anchor when present in the first loaded page.
+8. Paste/drop never uploads before confirmation.
+9. A -> B -> A restores A's anchor when it is in the first loaded page.
 10. Hidden tabs do not send read receipts.
-11. Hidden selected conversation can accumulate an in-app unread badge until read.
-12. Browser disguise title is unchanged.
-13. Existing mobile overlay/back semantics still pass.
+11. A hidden selected conversation can accumulate an in-app unread badge until read.
+12. Browser disguise title remains unchanged.
+13. Existing mobile history/back/overlay tests still pass.
 
-- [ ] **Step 5: Final commit only if verification required fixes**
+- [ ] **Step 6: Commit only if verification required an in-scope fix**
 
-If Task 7 exposes and fixes an in-scope regression:
+If Step 1-5 required a fix, stage the complete allowed scope (unchanged files are ignored by Git) and commit:
 
 ```bash
-git add <only-files-modified-by-the-regression-fix>
+git add \
+  frontend/src/types/index.ts \
+  frontend/src/stores/chat.ts frontend/src/stores/chat.test.ts \
+  frontend/src/components/ConversationMessageState.vue frontend/src/components/ConversationMessageState.test.ts \
+  frontend/src/components/MessageStatusIndicator.vue frontend/src/components/MessageStatusIndicator.test.ts \
+  frontend/src/composables/useChatScroll.ts frontend/src/composables/useChatScroll.test.ts \
+  frontend/src/composables/useAttachmentIngress.ts frontend/src/composables/useAttachmentIngress.test.ts \
+  frontend/src/composables/useConversationScrollMemory.ts frontend/src/composables/useConversationScrollMemory.test.ts \
+  frontend/src/utils/chatVisibility.ts frontend/src/utils/chatVisibility.test.ts \
+  frontend/src/views/ChatPage.vue frontend/src/views/MobileChat.vue
 git commit -m "test: harden chat experience regressions"
 ```
 
-Otherwise do not create an empty commit.
+If no fix was needed, do not create an empty commit.
 
 ## Final Verification Commands
 
-Run from repository root:
+From repository root:
 
 ```bash
 cd frontend
@@ -883,4 +921,4 @@ npm exec vitest run
 npm run build
 ```
 
-The PR should rely on the existing `Frontend interactions` workflow and normal repository CI; no workflow dependency-version change is required for this feature.
+The PR should use the existing `Frontend interactions` workflow plus normal repository CI. No workflow dependency-version change is part of this feature.
