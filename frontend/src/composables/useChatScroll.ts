@@ -1,6 +1,7 @@
 import { ref, computed, nextTick, onUnmounted, watch, type ComponentPublicInstance, type Ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useChatStore } from '../stores/chat'
+import { isDocumentVisible } from '../utils/chatVisibility'
 
 export interface ConversationScrollAnchor {
   messageId: number
@@ -18,7 +19,6 @@ export function useChatScroll(
   const showBottomButton = ref(false)
   const estimatedMessageHeight = 72
 
-  // --- Virtualizer (传 computed 实现响应式) ---
   const virtualizer = useVirtualizer(computed(() => ({
     count: chatStore.messages.length,
     getScrollElement: () => listEl.value,
@@ -27,7 +27,6 @@ export function useChatScroll(
     overscan: 10,
   })))
 
-  // --- Scroll ---
   let isLoadingMore = false
   let prevMsgCount = 0
   let scrollThrottle = false
@@ -176,11 +175,10 @@ export function useChatScroll(
     await loadMore()
   }
 
-  // --- Read Observer ---
   let readCheckTimer: ReturnType<typeof setTimeout> | null = null
 
   function checkVisibleUnread() {
-    if (!chatStore.currentContact || !listEl.value) return
+    if (!isDocumentVisible() || !chatStore.currentContact || !listEl.value) return
     const v = virtualizer.value
     const items = v.getVirtualItems()
     if (!items.length) return
@@ -201,9 +199,17 @@ export function useChatScroll(
   }
 
   function sendReadReceipt() {
-    if (!chatStore.currentContact) return
+    if (!chatStore.currentContact || !isDocumentVisible()) return
     chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
     chatStore.currentContact.unreadCount = 0
+  }
+
+  function onVisibilityChange() {
+    if (isDocumentVisible()) scheduleReadCheck()
+  }
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
   }
 
   watch(
@@ -212,11 +218,12 @@ export function useChatScroll(
     { flush: 'post' }
   )
 
-  // --- Watchers ---
-  function onContactChange() {
+  function onContactChange(options: { scrollToBottom?: boolean } = {}) {
     prevMsgCount = chatStore.messages.length
+    newMessageCount.value = 0
+    showBottomButton.value = false
     bindScrollListener()
-    scrollToBottomAndClear(false)
+    if (options.scrollToBottom !== false) scrollToBottom(false)
   }
 
   function onMessagesChange() {
@@ -245,10 +252,12 @@ export function useChatScroll(
     scrollToBottomAndClear(false)
   }
 
-  // --- Cleanup ---
   function cleanup() {
     removeScrollListener()
     if (readCheckTimer) clearTimeout(readCheckTimer)
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }
 
   onUnmounted(cleanup)
