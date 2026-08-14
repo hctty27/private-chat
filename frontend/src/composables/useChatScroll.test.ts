@@ -1,21 +1,25 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick, onMounted, ref } from 'vue'
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '../stores/chat'
 import { useChatScroll } from './useChatScroll'
+
+const virtualizerMock = vi.hoisted(() => ({
+  items: [] as Array<{ index: number }>,
+}))
 
 vi.mock('@tanstack/vue-virtual', async () => {
   const { ref } = await import('vue')
   return {
     useVirtualizer: () => ref({
-      getVirtualItems: () => [],
+      getVirtualItems: () => virtualizerMock.items,
       measureElement: vi.fn(),
     }),
   }
 })
 
-function createMessage(id: number) {
+function createMessage(id: number, overrides: Record<string, unknown> = {}) {
   return {
     id,
     senderId: 1,
@@ -28,6 +32,7 @@ function createMessage(id: number) {
     fileSize: null,
     isRead: 1 as const,
     createdAt: '2026-08-14T08:00:00Z',
+    ...overrides,
   }
 }
 
@@ -53,9 +58,17 @@ async function settleScrollBinding() {
   await nextTick()
 }
 
+function setVisibility(value: 'visible' | 'hidden') {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value,
+  })
+}
+
 describe('useChatScroll load-more feedback', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    virtualizerMock.items = []
   })
 
   it('exposes a load-more error without moving the current scroll position', async () => {
@@ -114,6 +127,7 @@ describe('useChatScroll load-more feedback', () => {
 describe('useChatScroll public anchor API', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    virtualizerMock.items = []
   })
 
   it('captures the first visible message anchor', async () => {
@@ -152,6 +166,68 @@ describe('useChatScroll public anchor API', () => {
     container.appendChild(item)
 
     expect(getScroll().captureVisibleAnchor()).toEqual({ messageId: 10, offset: 12 })
+
+    wrapper.unmount()
+  })
+
+  it('returns false when the remembered anchor message is not loaded', async () => {
+    const chatStore = useChatStore()
+    chatStore.messages = [createMessage(10)]
+    const { wrapper, getScroll } = mountScrollHarness()
+    await settleScrollBinding()
+
+    await expect(getScroll().restoreVisibleAnchor({ messageId: 99, offset: 0 })).resolves.toBe(false)
+
+    wrapper.unmount()
+  })
+})
+
+describe('useChatScroll visibility-aware read receipts', () => {
+  const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    virtualizerMock.items = [{ index: 0 }]
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility)
+  })
+
+  it('does not send while hidden and retries when the document becomes visible', async () => {
+    const chatStore = useChatStore()
+    chatStore.currentContact = {
+      userId: 2,
+      nickname: 'Bob',
+      online: true,
+      lastSeenAt: null,
+      lastMessage: '',
+      lastMessageTime: '',
+      unreadCount: 1,
+    }
+    chatStore.messages = [createMessage(1, {
+      senderId: 2,
+      receiverId: 99,
+      isRead: 0,
+    })]
+    const send = vi.spyOn(chatStore, 'sendWsMessage')
+
+    setVisibility('hidden')
+    const { wrapper } = mountScrollHarness()
+    await settleScrollBinding()
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(350)
+    expect(send).not.toHaveBeenCalled()
+
+    setVisibility('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(350)
+
+    expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
+    expect(chatStore.currentContact.unreadCount).toBe(0)
 
     wrapper.unmount()
   })
