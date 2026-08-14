@@ -13,10 +13,45 @@ export interface AttachmentIngress {
   handleDrop(event: DragEvent): boolean
 }
 
-export function useAttachmentIngress(_options: AttachmentIngressOptions): AttachmentIngress {
+export function useAttachmentIngress(options: AttachmentIngressOptions): AttachmentIngress {
+  function acceptFiles(input: FileList | File[]) {
+    const files = Array.from(input)
+    if (files.length === 0) return false
+    if (files.length > 1) {
+      options.onWarning('暂时只支持一次发送 1 个文件')
+      return false
+    }
+
+    const recipient = options.getRecipient()
+    if (!recipient) return false
+
+    const file = files[0]
+    if (file.size > options.maxBytes) {
+      options.onWarning('文件最大支持 50MB')
+      return false
+    }
+
+    options.onStage(file, { ...recipient })
+    return true
+  }
+
+  function handlePaste(event: ClipboardEvent) {
+    const files = event.clipboardData?.files
+    if (!files || files.length === 0) return false
+    event.preventDefault()
+    return acceptFiles(files)
+  }
+
+  function handleDrop(event: DragEvent) {
+    const files = event.dataTransfer?.files
+    if (!files || files.length === 0) return false
+    event.preventDefault()
+    return acceptFiles(files)
+  }
+
   return {
-    acceptFiles: () => false,
-    handlePaste: () => false,
-    handleDrop: () => false,
+    acceptFiles,
+    handlePaste,
+    handleDrop,
   }
 }
