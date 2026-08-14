@@ -2,12 +2,18 @@ import { ref, computed, nextTick, onUnmounted, watch, type ComponentPublicInstan
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useChatStore } from '../stores/chat'
 
+export interface ConversationScrollAnchor {
+  messageId: number
+  offset: number
+}
+
 export function useChatScroll(
   listEl: Ref<HTMLElement | null>,
   uid: Ref<number>
 ) {
   const chatStore = useChatStore()
   const loading = ref(false)
+  const loadMoreError = ref('')
   const newMessageCount = ref(0)
   const showBottomButton = ref(false)
   const estimatedMessageHeight = 72
@@ -22,11 +28,6 @@ export function useChatScroll(
   })))
 
   // --- Scroll ---
-  type ScrollAnchor = {
-    messageId: number
-    offset: number
-  }
-
   let isLoadingMore = false
   let prevMsgCount = 0
   let scrollThrottle = false
@@ -79,7 +80,7 @@ export function useChatScroll(
     return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   }
 
-  function captureScrollAnchor(): ScrollAnchor | null {
+  function captureVisibleAnchor(): ConversationScrollAnchor | null {
     if (!listEl.value) return null
     const containerTop = listEl.value.getBoundingClientRect().top
     const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id]')
@@ -96,7 +97,7 @@ export function useChatScroll(
     return null
   }
 
-  function restoreScrollAnchor(anchor: ScrollAnchor) {
+  function restoreAnchorPosition(anchor: ConversationScrollAnchor) {
     if (!listEl.value) return false
     const item = listEl.value.querySelector<HTMLElement>(`.virtual-item[data-msg-id="${anchor.messageId}"]`)
     if (!item) return false
@@ -106,15 +107,14 @@ export function useChatScroll(
     return true
   }
 
-  async function restoreLoadedAnchor(anchor: ScrollAnchor | null) {
-    if (!anchor) return false
+  async function restoreVisibleAnchor(anchor: ConversationScrollAnchor) {
     if (!chatStore.messages.some((m) => m.id === anchor.messageId)) return false
 
     await nextFrame()
     await nextTick()
-    const restored = restoreScrollAnchor(anchor)
+    const restored = restoreAnchorPosition(anchor)
     await nextFrame()
-    restoreScrollAnchor(anchor)
+    restoreAnchorPosition(anchor)
     return restored
   }
 
@@ -131,7 +131,7 @@ export function useChatScroll(
     if (loading.value || !chatStore.hasMore || scrollThrottle) return
     if (listEl.value.scrollTop < 60) {
       scrollThrottle = true
-      loadMore()
+      void loadMore()
       setTimeout(() => { scrollThrottle = false }, 300)
     }
   }
@@ -139,28 +139,41 @@ export function useChatScroll(
   async function loadMore() {
     if (!listEl.value || loading.value || !chatStore.hasMore) return
     loading.value = true
+    loadMoreError.value = ''
     isLoadingMore = true
-    const anchor = captureScrollAnchor()
+    const anchor = captureVisibleAnchor()
     const prevScrollHeight = listEl.value.scrollHeight
     const prevMsgCount = chatStore.messages.length
 
-    await chatStore.loadMessages('loadMore')
-    await nextTick()
+    try {
+      const loaded = await chatStore.loadMessages('loadMore')
+      if (!loaded) {
+        loadMoreError.value = '历史消息加载失败，点击重试'
+        return
+      }
 
-    if (!listEl.value) { loading.value = false; isLoadingMore = false; return }
+      await nextTick()
+      if (!listEl.value) return
 
-    const prependedCount = chatStore.messages.length - prevMsgCount
-    if (anchor && prependedCount > 0) {
-      listEl.value.scrollTop += prependedCount * estimatedMessageHeight
+      const prependedCount = chatStore.messages.length - prevMsgCount
+      if (anchor && prependedCount > 0) {
+        listEl.value.scrollTop += prependedCount * estimatedMessageHeight
+      }
+
+      const restored = anchor ? await restoreVisibleAnchor(anchor) : false
+      if (!restored) {
+        const delta = listEl.value.scrollHeight - prevScrollHeight
+        if (delta > 0) listEl.value.scrollTop += delta
+      }
+    } finally {
+      isLoadingMore = false
+      loading.value = false
     }
+  }
 
-    if (!(await restoreLoadedAnchor(anchor))) {
-      const delta = listEl.value.scrollHeight - prevScrollHeight
-      if (delta > 0) listEl.value.scrollTop += delta
-    }
-
-    isLoadingMore = false
-    loading.value = false
+  async function retryLoadMore() {
+    if (loading.value) return
+    await loadMore()
   }
 
   // --- Read Observer ---
@@ -242,6 +255,7 @@ export function useChatScroll(
 
   return {
     loading,
+    loadMoreError,
     newMessageCount,
     showBottomButton,
     virtualizer,
@@ -250,6 +264,9 @@ export function useChatScroll(
     scrollToBottomAndClear,
     measureItem,
     bindScrollListener,
+    retryLoadMore,
+    captureVisibleAnchor,
+    restoreVisibleAnchor,
     sendReadReceipt,
     onContactChange,
     onMessagesChange,
