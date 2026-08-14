@@ -215,17 +215,20 @@ describe('useChatScroll public anchor API', () => {
       const item = document.createElement('div')
       item.className = 'virtual-item'
       item.dataset.msgId = '20'
-      item.getBoundingClientRect = () => ({
-        top: 100,
-        bottom: 172,
-        left: 0,
-        right: 300,
-        width: 300,
-        height: 72,
-        x: 0,
-        y: 100,
-        toJSON: () => ({}),
-      })
+      item.getBoundingClientRect = () => {
+        const top = 200 - container.scrollTop
+        return {
+          top,
+          bottom: top + 72,
+          left: 0,
+          right: 300,
+          width: 300,
+          height: 72,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        }
+      }
       container.appendChild(item)
     }
 
