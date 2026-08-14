@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Contact, LocalMessageStatus, Message, WsClientChat, WsClientMessage, WsServerMessage } from '../types'
+import type { Contact, LocalMessageStatus, Message, MessageLoadState, WsClientChat, WsClientMessage, WsServerMessage } from '../types'
 import { getContacts, getMessages, uploadFile } from '../api'
 import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
@@ -10,6 +10,8 @@ export const useChatStore = defineStore('chat', () => {
   const currentContact = ref<Contact | null>(null)
   const messages = ref<Message[]>([])
   const hasMore = ref(false)
+  const messageLoadState = ref<MessageLoadState>('idle')
+  const messageLoadError = ref('')
   const ws = ref<WebSocket | null>(null)
   const wsConnected = ref(false)
   // connected | disconnected | reconnecting
@@ -83,6 +85,8 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value = []
     hasMore.value = false
+    messageLoadState.value = 'idle'
+    messageLoadError.value = ''
     const loaded = await loadMessages('init')
     // 发送已读请求，让后端标记已读；防止已切换联系人后给旧会话发送 read
     if (loaded && currentContact.value?.userId === targetId) {
@@ -95,7 +99,11 @@ export const useChatStore = defineStore('chat', () => {
     const targetId = currentContact.value?.userId
     if (!targetId) return false
     const requestSeq = mode === 'init' ? ++initLoadSeq : ++loadMoreSeq
-    if (mode === 'init') loadMoreSeq++
+    if (mode === 'init') {
+      loadMoreSeq++
+      messageLoadState.value = 'loading'
+      messageLoadError.value = ''
+    }
     try {
       let cursor: string | undefined
       if (mode === 'loadMore' && messages.value.length > 0) {
@@ -121,12 +129,24 @@ export const useChatStore = defineStore('chat', () => {
           confirmServerMessagesFromHistory(msgs)
         }
         hasMore.value = more
+        if (mode === 'init') {
+          messageLoadState.value = 'loaded'
+          messageLoadError.value = ''
+        }
         return true
       }
     } catch (e) {
       console.error('Failed to load messages', e)
     }
+    if (mode === 'init' && currentContact.value?.userId === targetId && requestSeq === initLoadSeq) {
+      messageLoadState.value = 'error'
+      messageLoadError.value = '消息加载失败，请重试'
+    }
     return false
+  }
+
+  async function retryInitialMessages() {
+    return loadMessages('init')
   }
 
   function trackLocalMessage(message: Message) {
@@ -801,6 +821,8 @@ export const useChatStore = defineStore('chat', () => {
     currentContact.value = null
     messages.value = []
     hasMore.value = false
+    messageLoadState.value = 'idle'
+    messageLoadError.value = ''
   }
 
   function tryReconnect() {
@@ -858,6 +880,8 @@ export const useChatStore = defineStore('chat', () => {
     currentContact,
     messages,
     hasMore,
+    messageLoadState,
+    messageLoadError,
     wsConnected,
     wsStatus,
     pendingChatCount,
@@ -866,6 +890,7 @@ export const useChatStore = defineStore('chat', () => {
     loadContacts,
     selectContact,
     loadMessages,
+    retryInitialMessages,
     sendMessage,
     sendFile,
     retryMessage,
