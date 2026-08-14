@@ -256,7 +256,9 @@ document.visibilityState === 'visible'
 
 before sending a read receipt.
 
-When an incoming message belongs to the selected conversation but the document is hidden, the contact's unread count should increase in that tab. When the document becomes visible again, the existing visibility/read check should run; after the message is actually visible, the normal read receipt clears the unread count.
+`useChatScroll` must also register a `visibilitychange` listener. When the document transitions back to `visible`, it schedules the normal visible-unread check after the current render, and it removes that listener during cleanup.
+
+When an incoming message belongs to the selected conversation but the document is hidden, the contact's unread count should increase in that tab. When the document becomes visible again, the visibility-triggered read check runs; after the message is actually visible, the normal read receipt clears the unread count.
 
 This keeps multi-tab state compatible with server read events: another visible tab may read the conversation first, and the server's read event can clear the hidden tab's local badge through the existing WebSocket flow.
 
@@ -319,6 +321,7 @@ Cover:
 - capture/restore anchor contract.
 - load-more error state and retry.
 - hidden document does not send read receipt.
+- transition back to visible schedules a read check.
 
 ### Page Integration Tests
 
