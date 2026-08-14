@@ -1,13 +1,16 @@
 export function isDocumentVisible() {
-  return true
+  return typeof document === 'undefined' ||
+    !document.visibilityState ||
+    document.visibilityState === 'visible'
 }
 
-export function shouldIncrementUnread(_options: {
+export function shouldIncrementUnread(options: {
   senderId: number
   currentUserId: number
   contactId: number
   currentContactId: number | null
   documentVisible: boolean
 }) {
-  return false
+  return options.senderId !== options.currentUserId &&
+    (options.currentContactId !== options.contactId || !options.documentVisible)
 }
