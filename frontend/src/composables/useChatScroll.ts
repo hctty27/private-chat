@@ -107,8 +107,10 @@ export function useChatScroll(
   }
 
   async function restoreVisibleAnchor(anchor: ConversationScrollAnchor) {
-    if (!chatStore.messages.some((m) => m.id === anchor.messageId)) return false
+    const index = chatStore.messages.findIndex((m) => m.id === anchor.messageId)
+    if (index < 0) return false
 
+    virtualizer.value.scrollToIndex(index, { align: 'start', behavior: 'auto' })
     await nextFrame()
     await nextTick()
     const restored = restoreAnchorPosition(anchor)
