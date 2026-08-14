@@ -10,7 +10,14 @@
       />
     </aside>
 
-    <main class="chat-main">
+    <main
+      class="chat-main"
+      @paste="onPaste"
+      @dragenter.prevent="onDragEnter"
+      @dragover.prevent
+      @dragleave.prevent="onDragLeave"
+      @drop="onDrop"
+    >
       <template v-if="chatStore.currentContact">
         <div class="chat-head">
           <div class="ch-avatar">{{ chatStore.currentContact.nickname[0] }}</div>
@@ -29,8 +36,18 @@
 
         <div ref="listEl" class="msg-scroll">
           <div class="load-more">
-            <span class="spinner" v-if="scroll.loading.value"></span>
-            <span class="load-text" v-if="scroll.loading.value">加载历史消息...</span>
+            <template v-if="scroll.loading.value">
+              <span class="spinner"></span>
+              <span class="load-text">加载历史消息...</span>
+            </template>
+            <button
+              v-else-if="scroll.loadMoreError.value"
+              type="button"
+              class="load-retry"
+              @click.stop="scroll.retryLoadMore"
+            >
+              {{ scroll.loadMoreError.value }}
+            </button>
             <span class="load-text" v-else-if="chatStore.hasMore">↑ 上拉加载更多</span>
             <span class="load-text" v-else-if="chatStore.messages.length > 0">没有更早的消息了</span>
           </div>
@@ -91,12 +108,13 @@
                     </div>
                   </template>
                 </div>
-                <div v-if="isLastSelfMessage(vi.index)" class="read-tag">
+                <div v-if="shouldShowMessageStatus(vi.index)" class="read-tag">
                   <MessageStatusIndicator
                     :status="chatStore.messages[vi.index].localStatus"
                     :is-read="chatStore.messages[vi.index].isRead === 1"
                     :progress="chatStore.messages[vi.index].uploadProgress"
                     :error="chatStore.messages[vi.index].localError"
+                    :show-read-state="!chatStore.messages[vi.index].localStatus && isLastSelfMessage(vi.index)"
                     @retry="retryMessageByClientId(chatStore.messages[vi.index]?.clientMsgId)"
                   />
                 </div>
@@ -141,6 +159,10 @@
             <button class="sbtn tap-target" type="button" :disabled="!text.trim()" @click="send">发送</button>
           </div>
         </div>
+
+        <div v-if="dragActive" class="drag-overlay" aria-hidden="true">
+          <div class="drag-overlay-card">松开以发送文件</div>
+        </div>
       </template>
 
       <div v-else class="empty-state">
@@ -178,7 +200,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
@@ -186,6 +208,8 @@ import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
 import { useChatDrafts } from '../composables/useChatDrafts'
 import { useAttachmentComposer } from '../composables/useAttachmentComposer'
+import { useAttachmentIngress } from '../composables/useAttachmentIngress'
+import { useConversationScrollMemory } from '../composables/useConversationScrollMemory'
 import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
@@ -203,6 +227,7 @@ const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
 const drafts = useChatDrafts()
+const scrollMemory = useConversationScrollMemory()
 
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -213,6 +238,7 @@ const uploadBusy = ref(false)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
+const dragActive = ref(false)
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
 const actionMenuVisible = ref(false)
@@ -220,6 +246,7 @@ const actionMenuActions = ref<MessageAction[]>([])
 const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
+let dragDepth = 0
 
 const text = computed({
   get() {
@@ -232,12 +259,24 @@ const text = computed({
   },
 })
 
+function currentRecipient() {
+  const contact = chatStore.currentContact
+  return contact ? { id: contact.userId, nickname: contact.nickname } : null
+}
+
 const attachmentComposer = useAttachmentComposer({
-  getCurrentRecipient: () => {
-    const contact = chatStore.currentContact
-    return contact ? { id: contact.userId, nickname: contact.nickname } : null
-  },
+  getCurrentRecipient: currentRecipient,
   onRecipientMismatch: () => ElMessage.warning('联系人已切换，请重新选择文件'),
+})
+
+const attachmentIngress = useAttachmentIngress({
+  maxBytes: 50 * 1024 * 1024,
+  getRecipient: currentRecipient,
+  onStage: (file, recipient) => {
+    emojiOpen.value = false
+    attachmentComposer.stage(file, recipient)
+  },
+  onWarning: (message) => ElMessage.warning(message),
 })
 
 const scroll = useChatScroll(listEl, uid)
@@ -247,9 +286,14 @@ onMounted(async () => {
   chatStore.connectWs()
 })
 
+onUnmounted(() => {
+  scrollMemory.clearAll()
+  dragActive.value = false
+  dragDepth = 0
+})
+
 watch(() => chatStore.currentContact?.userId, () => {
   closeMessageMenu()
-  scroll.onContactChange()
   nextTick(grow)
 })
 watch(listEl, (el) => { scroll.onListReady(el) })
@@ -257,8 +301,16 @@ watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
 watch(() => chatStore.messages, closeMessageMenu)
 
 async function pickContact(id: number) {
+  const previousId = chatStore.currentContact?.userId
+  if (previousId) scrollMemory.remember(previousId, scroll.captureVisibleAnchor())
+
   await chatStore.selectContact(id)
-  scroll.onSelectContact()
+  await nextTick()
+  scroll.onContactChange({ scrollToBottom: false })
+
+  const anchor = scrollMemory.get(id)
+  const restored = anchor ? await scroll.restoreVisibleAnchor(anchor) : false
+  if (!restored) scroll.scrollToBottomAndClear(false)
 }
 
 async function retryInitialMessages() {
@@ -275,6 +327,12 @@ function isLastSelfMessage(index: number) {
   const message = chatStore.messages[index]
   if (!message || message.senderId !== uid.value) return false
   return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
+}
+
+function shouldShowMessageStatus(index: number) {
+  const message = chatStore.messages[index]
+  if (!message || message.senderId !== uid.value) return false
+  return !!message.localStatus || isLastSelfMessage(index)
 }
 
 function isPendingMediaMessage(message: Message) {
@@ -300,6 +358,7 @@ function openPreview(url: string, type: 'image' | 'video') {
 
 function logout() {
   drafts.clearAll()
+  scrollMemory.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
   chatStore.disconnectWs()
@@ -333,13 +392,33 @@ function onFile(event: Event) {
   const file = input.files?.[0]
   input.value = ''
   if (!file || uploadBusy.value) return
-  if (file.size > 50 * 1024 * 1024) {
-    ElMessage.warning('文件最大支持 50MB')
-    return
-  }
-  const contact = chatStore.currentContact
-  if (!contact) return
-  attachmentComposer.stage(file, { id: contact.userId, nickname: contact.nickname })
+  attachmentIngress.acceptFiles([file])
+}
+
+function onPaste(event: ClipboardEvent) {
+  attachmentIngress.handlePaste(event)
+}
+
+function hasDraggedFiles(event: DragEvent) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+function onDragEnter(event: DragEvent) {
+  if (!hasDraggedFiles(event) || !chatStore.currentContact) return
+  dragDepth += 1
+  dragActive.value = true
+}
+
+function onDragLeave(event: DragEvent) {
+  if (!hasDraggedFiles(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragActive.value = false
+}
+
+function onDrop(event: DragEvent) {
+  dragDepth = 0
+  dragActive.value = false
+  attachmentIngress.handleDrop(event)
 }
 
 async function confirmAttachment() {
@@ -464,6 +543,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 :deep(.new-message-button) { position: absolute; right: 24px; bottom: 74px; z-index: 5; }
 .load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .load-text { font-size: 12px; color: #999; }
+.load-retry { min-height: 32px; padding: 4px 10px; border: 0; background: transparent; color: #576b95; font-size: 12px; cursor: pointer; }
+.load-retry:hover { text-decoration: underline; }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #07c160; border-radius: 50%; animation: spin 0.6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .time-bar { text-align: center; padding: 8px 0; }
@@ -488,6 +569,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 4px; }
 .empty-desc { font-size: 14px; }
+.drag-overlay { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; background: rgba(237,237,237,0.8); pointer-events: none; }
+.drag-overlay-card { padding: 18px 28px; border: 2px dashed #07c160; border-radius: 12px; background: #fff; color: #2f855a; font-size: 15px; font-weight: 600; }
 .emoji-box { background: #fff; border-top: 1px solid #e5e5e5; flex-shrink: 0; max-height: 220px; animation: slideUp .2s ease; }
 @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 .emoji-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; font-size: 13px; color: #666; border-bottom: 1px solid #f0f0f0; }
