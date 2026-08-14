@@ -4,6 +4,7 @@ import type { Contact, LocalMessageStatus, Message, MessageLoadState, WsClientCh
 import { getContacts, getMessages, uploadFile } from '../api'
 import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
+import { isDocumentVisible, shouldIncrementUnread } from '../utils/chatVisibility'
 
 export const useChatStore = defineStore('chat', () => {
   const contacts = ref<Contact[]>([])
@@ -88,8 +89,8 @@ export const useChatStore = defineStore('chat', () => {
     messageLoadState.value = 'idle'
     messageLoadError.value = ''
     const loaded = await loadMessages('init')
-    // 发送已读请求，让后端标记已读；防止已切换联系人后给旧会话发送 read
-    if (loaded && currentContact.value?.userId === targetId) {
+    // 发送已读请求，让后端标记已读；隐藏标签页不能仅因选中会话就标已读
+    if (loaded && currentContact.value?.userId === targetId && isDocumentVisible()) {
       sendWsMessage({ type: 'read', data: { targetId } })
     }
   }
@@ -537,12 +538,10 @@ export const useChatStore = defineStore('chat', () => {
           sentClientMsgIds.delete(msg.clientMsgId)
           sentClientMsgTimes.delete(msg.clientMsgId)
         }
-        // If message belongs to current conversation, add to list
         if (currentContact.value && belongsToConversation(msg, userStore.userId, currentContact.value.userId)) {
           appendOrReplaceMessage(msg)
-          // 不在这里发 read，由 IntersectionObserver 在消息进入视口时触发
+          // 不在这里发 read，由可见消息检查负责
         }
-        // Update contact last message
         const contactId = msg.senderId === userStore.userId ? msg.receiverId : msg.senderId
         const contact = contacts.value.find((c) => c.userId === contactId)
         if (contact) {
@@ -550,7 +549,13 @@ export const useChatStore = defineStore('chat', () => {
             ? (msg.msgType === 2 ? '[图片]' : msg.msgType === 5 ? '[视频]' : msg.fileName || '[文件]')
             : '[文件]'
           contact.lastMessageTime = msg.createdAt
-          if (msg.senderId !== userStore.userId && (!currentContact.value || currentContact.value.userId !== contactId)) {
+          if (shouldIncrementUnread({
+            senderId: msg.senderId,
+            currentUserId: userStore.userId,
+            contactId,
+            currentContactId: currentContact.value?.userId ?? null,
+            documentVisible: isDocumentVisible(),
+          })) {
             contact.unreadCount++
           }
         }
@@ -568,7 +573,6 @@ export const useChatStore = defineStore('chat', () => {
           }
           currentContact.value.unreadCount = 0
         }
-        // 同步清联系人列表角标
         const readerContact = contacts.value.find(c => c.userId === readerId)
         if (readerContact) readerContact.unreadCount = 0
         break
@@ -676,7 +680,6 @@ export const useChatStore = defineStore('chat', () => {
     clearHeartbeatTimer()
     wsConnected.value = false
 
-    // 清理旧连接
     if (ws.value) {
       closeWsWithoutReconnect(ws.value)
       ws.value = null
@@ -715,7 +718,6 @@ export const useChatStore = defineStore('chat', () => {
       heartbeatTimer = setInterval(() => {
         sendWsMessage({ type: 'heartbeat', data: {} })
       }, 25000)
-      // 补拉断连期间的消息，loadMessages('init') 会恢复本地待确认消息
       if (currentContact.value) {
         const currentRecoverySeq = ++recoverySeq
         recoveringMessages = true
@@ -828,18 +830,15 @@ export const useChatStore = defineStore('chat', () => {
   function tryReconnect() {
     const userStore = useUserStore()
     if (!userStore.token || reconnecting || reconnectTimer) return
-    // 先尝试 ping 检测连接是否真正存活（手机后台挂起后 readyState 可能仍为 OPEN）
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
       try {
         wsConnected.value = false
         ws.value.send(JSON.stringify({ type: 'heartbeat', data: {} }))
       } catch {
-        // 发送失败说明连接已死
         reconnectAttempts = 0
         scheduleReconnect()
         return
       }
-      // 2s 内没恢复则认为连接已死，强制重连
       clearReconnectCheckTimer()
       reconnectCheckTimer = setTimeout(() => {
         reconnectCheckTimer = null
@@ -854,19 +853,16 @@ export const useChatStore = defineStore('chat', () => {
       }, 2000)
       return
     }
-    // 连接不存在或已关闭，直接重连
     reconnectAttempts = 0
     scheduleReconnect()
   }
 
-  // 监听标签页可见性和网络状态
   if (typeof window !== 'undefined') {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         tryReconnect()
       }
     })
-    // pageshow 比 visibilitychange 更可靠，特别是从后台切回时
     window.addEventListener('pageshow', () => {
       tryReconnect()
     })
