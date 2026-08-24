@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import mobileChatSource from './MobileChat.vue?raw'
+import mainCssSource from '../assets/main.css?raw'
 
 describe('MobileChat iOS viewport layout', () => {
-  it('does not hard-lock the document with position fixed', () => {
-    expect(mobileChatSource).not.toContain('position: fixed')
+  it('overrides the mobile document fixed-position lock', () => {
+    expect(mainCssSource).toContain('position: static !important')
   })
 
   it('uses dynamic viewport sizing and horizontal safe-area padding', () => {
-    expect(mobileChatSource).toContain('100dvh')
-    expect(mobileChatSource).toContain('env(safe-area-inset-left)')
-    expect(mobileChatSource).toContain('env(safe-area-inset-right)')
+    expect(mainCssSource).toContain('100dvh')
+    expect(mainCssSource).toContain('env(safe-area-inset-left)')
+    expect(mainCssSource).toContain('env(safe-area-inset-right)')
   })
 })
