@@ -15,6 +15,19 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mainCssSource).toContain('env(safe-area-inset-left)')
     expect(mainCssSource).toContain('env(safe-area-inset-right)')
   })
+
+  it('compensates when iOS pans the visual viewport above the keyboard', () => {
+    expect(mobileChatSource).toContain('const viewportTop = ref(0)')
+    expect(mobileChatSource).toContain('vv.pageTop - window.scrollY')
+    expect(mobileChatSource).toContain('vv.offsetTop')
+    expect(mobileChatSource).toContain('transform: `translateY(${viewportTop.value}px)`')
+  })
+
+  it('resamples the viewport during the iOS keyboard transition', () => {
+    expect(mobileChatSource).toContain('requestAnimationFrame(updateViewport)')
+    expect(mobileChatSource).toContain('window.setTimeout(updateViewport, 50)')
+    expect(mobileChatSource).toContain('window.setTimeout(updateViewport, 250)')
+  })
 })
 
 describe('MobileChat iOS visual polish', () => {

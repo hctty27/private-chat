@@ -240,6 +240,7 @@ const progress = ref(0)
 const uploadBusy = ref(false)
 const inputFocused = ref(false)
 const viewportHeight = ref(0)
+const viewportTop = ref(0)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
@@ -283,7 +284,10 @@ const attachmentIngress = useAttachmentIngress({
 
 const scroll = useChatScroll(listEl, uid)
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-const chatPageStyle = computed(() => viewportHeight.value ? { height: `${viewportHeight.value}px` } : undefined)
+const chatPageStyle = computed(() => viewportHeight.value ? {
+  height: `${viewportHeight.value}px`,
+  transform: `translateY(${viewportTop.value}px)`,
+} : undefined)
 
 let vvHandler: (() => void) | null = null
 let unsubscribeHistory: (() => void) | null = null
@@ -322,7 +326,9 @@ onUnmounted(() => {
 })
 
 function updateViewport() {
-  viewportHeight.value = window.visualViewport?.height || window.innerHeight
+  const vv = window.visualViewport
+  viewportHeight.value = vv?.height || window.innerHeight
+  viewportTop.value = vv ? Math.max(0, vv.pageTop - window.scrollY, vv.offsetTop) : 0
   if (shouldStickToBottomOnViewportChange) requestAnimationFrame(() => scroll.scrollToBottom(false))
 }
 
@@ -536,6 +542,9 @@ function onFocus() {
   if (emojiOpen.value) closeOverlay('emoji')
   shouldStickToBottomOnViewportChange = scroll.isNearBottom(120)
   updateViewport()
+  requestAnimationFrame(updateViewport)
+  window.setTimeout(updateViewport, 50)
+  window.setTimeout(updateViewport, 250)
   if (shouldStickToBottomOnViewportChange) {
     setTimeout(() => scroll.scrollToBottom(false), 100)
     setTimeout(() => scroll.scrollToBottom(false), 350)
