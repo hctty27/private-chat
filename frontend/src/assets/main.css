@@ -34,6 +34,56 @@ html, body, #app {
 }
 
 @media (pointer: coarse), (max-width: 767px) {
+  html,
+  body,
+  #app {
+    position: static !important;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 100svh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .mobile-root {
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 100svh;
+    overscroll-behavior: none;
+  }
+
+  .chat-head {
+    padding-left: calc(16px + env(safe-area-inset-left)) !important;
+    padding-right: calc(16px + env(safe-area-inset-right)) !important;
+  }
+
+  .connection-notice {
+    margin-left: calc(12px + env(safe-area-inset-left)) !important;
+    margin-right: calc(12px + env(safe-area-inset-right)) !important;
+  }
+
+  .msg-scroll {
+    padding-left: calc(12px + env(safe-area-inset-left)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right)) !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .new-message-entry {
+    right: calc(16px + env(safe-area-inset-right)) !important;
+  }
+
+  .emoji-head,
+  .input-row {
+    padding-left: calc(12px + env(safe-area-inset-left)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right)) !important;
+  }
+
+  .emoji-list {
+    padding-left: calc(8px + env(safe-area-inset-left)) !important;
+    padding-right: calc(8px + env(safe-area-inset-right)) !important;
+  }
+
   .tap-target {
     min-width: var(--touch-target-comfortable);
     min-height: var(--touch-target-comfortable);
