@@ -201,7 +201,7 @@ private-chat/
 
 ### WebSocket
 
-连接地址：`ws://host/ws/chat?token=<JWT>`。新登录会话也会携带 HttpOnly Cookie；查询参数 Token 仅用于兼容现有客户端，后续版本将移除。
+连接地址：`ws://host/ws/chat`（生产环境使用 `wss://`）。WebSocket 握手只使用浏览器自动携带的 `private_chat_session` HttpOnly Cookie 鉴权；查询参数 `?token=<JWT>` 和 `Authorization` Header 不参与 WebSocket 鉴权。
 
 **客户端消息类型**
 
