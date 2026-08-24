@@ -84,6 +84,26 @@ html, body, #app {
     padding-right: calc(8px + env(safe-area-inset-right)) !important;
   }
 
+  .cl-header,
+  .contact-item {
+    padding-left: calc(16px + env(safe-area-inset-left)) !important;
+    padding-right: calc(16px + env(safe-area-inset-right)) !important;
+  }
+
+  .cl-search {
+    padding-left: calc(12px + env(safe-area-inset-left)) !important;
+    padding-right: calc(12px + env(safe-area-inset-right)) !important;
+  }
+
+  .cl-search-icon {
+    left: calc(20px + env(safe-area-inset-left)) !important;
+  }
+
+  .cl-list {
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: contain;
+  }
+
   .tap-target {
     min-width: var(--touch-target-comfortable);
     min-height: var(--touch-target-comfortable);
