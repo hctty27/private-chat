@@ -74,7 +74,9 @@ docker logs private-chat-frontend --tail 50
 
 ## WebSocket 协议
 
-连接: `ws://host/ws/chat?token=<JWT>`
+连接: `ws://host/ws/chat`（生产环境使用 `wss://`）
+
+鉴权: WebSocket 握手只使用 `private_chat_session` HttpOnly Cookie；查询参数 JWT 和 `Authorization` Header 不参与 WebSocket 鉴权。
 
 客户端→服务端:
 - `{ "type": "chat", "data": { "receiverId", "msgType", "content", "fileUrl", "fileName", "fileSize" } }`
