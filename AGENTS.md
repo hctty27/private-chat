@@ -73,7 +73,9 @@ private-chat/
 
 ## WebSocket 协议
 
-连接: `ws://host/ws/chat?token=<JWT>`
+连接: `ws://host/ws/chat`（生产环境使用 `wss://`）
+
+鉴权: WebSocket 握手只使用 `private_chat_session` HttpOnly Cookie；不要在 URL 中追加 JWT，查询参数和 `Authorization` Header 都不参与 WebSocket 鉴权。
 
 ### 客户端→服务端
 ```json
