@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const mainCssSource = readFileSync(new URL('../assets/main.css', import.meta.url), 'utf8')
+const mainCssSource = readFileSync(resolve(process.cwd(), 'src/assets/main.css'), 'utf8')
 
 describe('MobileChat iOS viewport layout', () => {
   it('overrides the mobile document fixed-position lock', () => {
