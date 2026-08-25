@@ -1,0 +1,49 @@
+name: Patch load-more margin
+
+on:
+  push:
+    branches:
+      - fix/load-more-loop
+    paths:
+      - .github/workflows/patch-load-more-margin.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/load-more-loop
+      - name: Apply virtual scroll margin
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/views/MobileChat.vue')
+          source = path.read_text()
+          source = source.replace(
+              "import { useChatScroll } from '../composables/useChatScroll'",
+              "import { CHAT_SCROLL_MARGIN, useChatScroll } from '../composables/useChatScroll'",
+              1,
+          )
+          source = source.replace(
+              "transform: `translateY(${vi.start}px)`",
+              "transform: `translateY(${vi.start - CHAT_SCROLL_MARGIN}px)`",
+              1,
+          )
+          path.write_text(source)
+          PY
+          rm .github/workflows/patch-load-more-margin.yml
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/views/MobileChat.vue .github/workflows/patch-load-more-margin.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: align virtual items with history status row"
+          git push origin HEAD:fix/load-more-loop
