@@ -74,12 +74,14 @@ type FilePresignUploadRequest struct {
 }
 
 type FilePresignUploadDTO struct {
-	FileID    int64             `json:"fileId"`
-	UploadURL string            `json:"uploadUrl"`
-	URL       string            `json:"url"`
-	FileName  string            `json:"fileName"`
-	FileSize  int64             `json:"fileSize"`
-	Headers   map[string]string `json:"headers"`
+	FileID             int64             `json:"fileId"`
+	UploadURL          string            `json:"uploadUrl"`
+	URL                string            `json:"url"`
+	FileName           string            `json:"fileName"`
+	FileSize           int64             `json:"fileSize"`
+	Headers            map[string]string `json:"headers"`
+	ThumbnailUploadURL string            `json:"thumbnailUploadUrl,omitempty"`
+	ThumbnailHeaders   map[string]string `json:"thumbnailHeaders,omitempty"`
 }
 
 type User struct {
