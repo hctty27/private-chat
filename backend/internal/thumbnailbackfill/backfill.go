@@ -51,13 +51,13 @@ type Failure struct {
 }
 
 type Result struct {
-	Scanned          int
-	Eligible         int
-	Created          int
-	SkippedExisting  int
-	SkippedNonImage  int
-	Failed           int
-	Failures         []Failure
+	Scanned         int
+	Eligible        int
+	Created         int
+	SkippedExisting int
+	SkippedNonImage int
+	Failed          int
+	Failures        []Failure
 }
 
 type fileRepository interface {
