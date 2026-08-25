@@ -184,6 +184,7 @@ describe('useChatScroll chat mode', () => {
       container.dispatchEvent(new Event('scroll'))
       await Promise.resolve()
       expect(loadMessages).toHaveBeenCalledTimes(1)
+      expect(getScroll().loading.value).toBe(true)
 
       await vi.advanceTimersByTimeAsync(301)
       resolveLoad(true)
