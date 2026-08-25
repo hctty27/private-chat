@@ -84,9 +84,9 @@
                 <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
                   <img
                     :src="chatStore.messages[vi.index].fileId ? `/api/files/${chatStore.messages[vi.index].fileId}/thumbnail` : chatStore.messages[vi.index].fileUrl ?? undefined"
-                    loading="lazy"
                     decoding="async"
                     class="pic"
+                    @error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"
                     @click.stop="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')"
                   />
                 </template>
@@ -437,7 +437,6 @@ async function applyHistoryState(state: MobileChatUiState) {
     inputFocused.value = false
     return
   }
-
   previewVisible.value = false
   emojiOpen.value = false
   if (!attachmentComposer.staged.value) await mobileHistory.replaceChat(state.contactId)
@@ -609,6 +608,14 @@ function retryMessageByClientId(clientMsgId?: string) {
 function bubbleType(message: { msgType: number; senderId: number }) {
   if (message.msgType === 4) return 'emoji'
   return message.senderId === uid.value ? 'mine' : 'his'
+}
+
+function fallbackImageToOriginal(event: Event, message: Message) {
+  const image = event.currentTarget
+  if (!(image instanceof HTMLImageElement) || !message.fileId || !message.fileUrl) return
+  if (image.dataset.originalFallback === '1') return
+  image.dataset.originalFallback = '1'
+  image.src = message.fileUrl
 }
 
 function guardNativeMessageClick(event: MouseEvent) {
