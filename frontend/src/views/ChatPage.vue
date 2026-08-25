@@ -457,7 +457,10 @@ function retryMessageByClientId(clientMsgId?: string) {
 function grow() {
   if (!inputEl.value) return
   inputEl.value.style.height = 'auto'
-  inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 100) + 'px'
+  const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight
+  const contentHeight = inputEl.value.scrollHeight + borderHeight
+  inputEl.value.style.height = Math.min(contentHeight, 100) + 'px'
+  inputEl.value.style.overflowY = contentHeight > 100 ? 'auto' : 'hidden'
 }
 
 function openMessageMenu(event: MouseEvent, message: Message) {

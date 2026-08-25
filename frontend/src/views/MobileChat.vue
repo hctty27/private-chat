@@ -540,7 +540,10 @@ function closeOverlay(kind: MobileOverlayKind) {
 function grow() {
   if (!inputEl.value) return
   inputEl.value.style.height = 'auto'
-  inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 108) + 'px'
+  const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight
+  const contentHeight = inputEl.value.scrollHeight + borderHeight
+  inputEl.value.style.height = Math.min(contentHeight, 108) + 'px'
+  inputEl.value.style.overflowY = contentHeight > 108 ? 'auto' : 'hidden'
 }
 
 function onFocus() {
