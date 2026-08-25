@@ -187,6 +187,7 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.POST("/file/presign-upload", a.filePresignUploadHandler)
 			protected.POST("/files/:fileId/complete", a.fileCompleteHandler)
 			protected.GET("/files/:fileId/content", a.fileContentHandler)
+			protected.GET("/files/:fileId/thumbnail", a.fileThumbnailHandler)
 
 			// Compatibility window for migrated historical URLs only. New uploads use fileId.
 			protected.GET("/file/download/:objectName", a.requireLegacyFileAccess(), a.downloadHandler)

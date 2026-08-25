@@ -58,6 +58,8 @@ export interface FileUploadResponse {
 export interface FilePresignUploadResponse extends FileUploadResponse {
   uploadUrl: string
   headers: Record<string, string>
+  thumbnailUploadUrl?: string
+  thumbnailHeaders?: Record<string, string>
 }
 
 // WebSocket message types
