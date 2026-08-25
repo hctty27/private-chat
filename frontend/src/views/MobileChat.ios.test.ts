@@ -43,6 +43,11 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mobileChatSource).toContain('const keepAtEnd = scroll.isNearBottom(160)')
     expect(mobileChatSource).toContain('if (keepAtEnd) scroll.scrollToBottom(false)')
   })
+
+  it('subtracts the fixed history status row from virtual item positioning', () => {
+    expect(mobileChatSource).toContain('CHAT_SCROLL_MARGIN')
+    expect(mobileChatSource).toContain('vi.start - CHAT_SCROLL_MARGIN')
+  })
 })
 
 describe('MobileChat iOS visual polish', () => {
