@@ -14,6 +14,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.74
 	github.com/redis/go-redis/v9 v9.7.0
 	golang.org/x/crypto v0.36.0
+	golang.org/x/image v0.25.0
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.25.12
 )
