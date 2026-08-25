@@ -36,6 +36,7 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mobileChatSource).toContain('const expectedHeight = viewportHeight.value')
     expect(mobileChatSource).toContain('focusStartedAtEnd = scroll.isNearBottom(120)')
     expect(mobileChatSource).toContain('if (heightChanged && inputFocused.value && focusStartedAtEnd) schedulePinnedEndSync()')
+    expect(mobileChatSource).toContain('cancelAnimationFrame(pinnedEndFrame)')
   })
 
   it('keeps the latest edge visible when opening the in-app emoji panel', () => {
