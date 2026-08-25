@@ -1,0 +1,25 @@
+name: Thumbnail backfill probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: thumbnail-backfill-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-focused:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - run: go test ./cmd/privatechat ./internal/thumbnailbackfill -count=1
