@@ -3,6 +3,10 @@ import { useVirtualizer } from '@tanstack/vue-virtual'
 import { useChatStore } from '../stores/chat'
 import { isDocumentVisible } from '../utils/chatVisibility'
 
+export const CHAT_SCROLL_MARGIN = 44
+const LOAD_MORE_TRIGGER_PX = 24
+const LOAD_MORE_REARM_PX = 120
+
 export interface ConversationScrollAnchor {
   messageId: number
   offset: number
@@ -27,12 +31,13 @@ export function useChatScroll(
     anchorTo: 'end' as const,
     followOnAppend: true,
     scrollEndThreshold: 80,
+    scrollMargin: CHAT_SCROLL_MARGIN,
     overscan: 6,
   })))
 
   let isLoadingMore = false
   let prevMsgCount = 0
-  let scrollThrottle = false
+  let loadMoreArmed = true
   let scrollHandler: (() => void) | null = null
   let wasNearBottom = true
 
@@ -45,6 +50,7 @@ export function useChatScroll(
 
   function bindScrollListener() {
     removeScrollListener()
+    loadMoreArmed = true
     nextTick(() => {
       if (listEl.value) {
         scrollHandler = onScroll
@@ -129,15 +135,17 @@ export function useChatScroll(
   function onScroll() {
     if (!listEl.value) return
 
+    const scrollTop = listEl.value.scrollTop
+    if (scrollTop > LOAD_MORE_REARM_PX) loadMoreArmed = true
+
     wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
 
-    if (loading.value || !chatStore.hasMore || scrollThrottle) return
-    if (listEl.value.scrollTop < 60) {
-      scrollThrottle = true
+    if (loading.value || !chatStore.hasMore || !loadMoreArmed) return
+    if (scrollTop <= LOAD_MORE_TRIGGER_PX) {
+      loadMoreArmed = false
       void loadMore()
-      setTimeout(() => { scrollThrottle = false }, 300)
     }
   }
 
