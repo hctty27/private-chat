@@ -29,6 +29,19 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mobileChatSource).not.toContain('setTimeout(() => scroll.scrollToBottom')
     expect(mobileChatSource).not.toContain('requestAnimationFrame(() => scroll.scrollToBottom')
   })
+
+  it('restores the latest edge once after the keyboard viewport settles when focus began at the bottom', () => {
+    expect(mobileChatSource).toContain('let focusStartedAtEnd = false')
+    expect(mobileChatSource).toContain('function schedulePinnedEndSync()')
+    expect(mobileChatSource).toContain('const expectedHeight = viewportHeight.value')
+    expect(mobileChatSource).toContain('focusStartedAtEnd = scroll.isNearBottom(120)')
+    expect(mobileChatSource).toContain('if (heightChanged && inputFocused.value && focusStartedAtEnd) schedulePinnedEndSync()')
+  })
+
+  it('keeps the latest edge visible when opening the in-app emoji panel', () => {
+    expect(mobileChatSource).toContain('const keepAtEnd = scroll.isNearBottom(160)')
+    expect(mobileChatSource).toContain('if (keepAtEnd) scroll.scrollToBottom(false)')
+  })
 })
 
 describe('MobileChat iOS visual polish', () => {
