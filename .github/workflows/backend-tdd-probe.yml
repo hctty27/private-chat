@@ -12,5 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run image loading regression tests
-        working-directory: backend
-        run: go test ./internal/app -run 'Test(ImageUploadPresignsOriginalAndThumbnail|FileContentHandlerUsesPrivateFiveMinuteCache|RoutesExposeProtectedThumbnailEndpoint)' -count=1
+        run: >-
+          docker run --rm
+          -v "$GITHUB_WORKSPACE:/src"
+          -w /src/backend
+          golang:1.23
+          go test ./internal/app
+          -run 'Test(ImageUploadPresignsOriginalAndThumbnail|FileContentHandlerUsesPrivateFiveMinuteCache|RoutesExposeProtectedThumbnailEndpoint)'
+          -count=1
