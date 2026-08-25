@@ -1,0 +1,16 @@
+name: Backend TDD probe
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  image-loading-red:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run image loading regression tests
+        working-directory: backend
+        run: go test ./internal/app -run 'Test(ImageUploadPresignsOriginalAndThumbnail|FileContentHandlerUsesPrivateFiveMinuteCache|RoutesExposeProtectedThumbnailEndpoint)' -count=1
