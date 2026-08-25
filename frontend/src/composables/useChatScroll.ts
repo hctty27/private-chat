@@ -24,13 +24,17 @@ export function useChatScroll(
     getScrollElement: () => listEl.value,
     estimateSize: () => estimatedMessageHeight,
     getItemKey: (index: number) => chatStore.messages[index]?.id ?? index,
-    overscan: 10,
+    anchorTo: 'end' as const,
+    followOnAppend: true,
+    scrollEndThreshold: 80,
+    overscan: 6,
   })))
 
   let isLoadingMore = false
   let prevMsgCount = 0
   let scrollThrottle = false
   let scrollHandler: (() => void) | null = null
+  let wasNearBottom = true
 
   function removeScrollListener() {
     if (listEl.value && scrollHandler) {
@@ -45,6 +49,7 @@ export function useChatScroll(
       if (listEl.value) {
         scrollHandler = onScroll
         listEl.value.addEventListener('scroll', scrollHandler, { passive: true })
+        wasNearBottom = isNearBottom(80)
       }
     })
   }
@@ -66,12 +71,9 @@ export function useChatScroll(
   }
 
   function scrollToBottom(smooth = false) {
+    wasNearBottom = true
     requestAnimationFrame(() => {
-      if (!listEl.value) return
-      listEl.value.scrollTo({
-        top: listEl.value.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto',
-      })
+      virtualizer.value.scrollToEnd({ behavior: smooth ? 'smooth' : 'auto' })
     })
   }
 
@@ -116,6 +118,7 @@ export function useChatScroll(
     const restored = restoreAnchorPosition(anchor)
     await nextFrame()
     restoreAnchorPosition(anchor)
+    wasNearBottom = isNearBottom(80)
     return restored
   }
 
@@ -126,6 +129,7 @@ export function useChatScroll(
   function onScroll() {
     if (!listEl.value) return
 
+    wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
 
@@ -142,9 +146,6 @@ export function useChatScroll(
     loading.value = true
     loadMoreError.value = ''
     isLoadingMore = true
-    const anchor = captureVisibleAnchor()
-    const prevScrollHeight = listEl.value.scrollHeight
-    const prevMsgCount = chatStore.messages.length
 
     try {
       const loaded = await chatStore.loadMessages('loadMore')
@@ -154,18 +155,6 @@ export function useChatScroll(
       }
 
       await nextTick()
-      if (!listEl.value) return
-
-      const prependedCount = chatStore.messages.length - prevMsgCount
-      if (anchor && prependedCount > 0) {
-        listEl.value.scrollTop += prependedCount * estimatedMessageHeight
-      }
-
-      const restored = anchor ? await restoreVisibleAnchor(anchor) : false
-      if (!restored) {
-        const delta = listEl.value.scrollHeight - prevScrollHeight
-        if (delta > 0) listEl.value.scrollTop += delta
-      }
     } finally {
       isLoadingMore = false
       loading.value = false
@@ -233,9 +222,8 @@ export function useChatScroll(
     const addedCount = currentMsgCount - prevMsgCount
 
     if (!isLoadingMore && addedCount > 0) {
-      if (isNearBottom()) {
+      if (wasNearBottom) {
         newMessageCount.value = 0
-        scrollToBottom(true)
       } else {
         newMessageCount.value += addedCount
       }
