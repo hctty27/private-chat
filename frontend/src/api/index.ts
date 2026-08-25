@@ -7,6 +7,9 @@ const api = axios.create({
   timeout: 30000,
 })
 
+const thumbnailMaxEdge = 640
+const thumbnailQuality = 0.8
+
 function setLoginNotice(message: string) {
   if (typeof window === 'undefined') return
   try {
@@ -53,6 +56,34 @@ export function getMessages(targetId: number, cursor?: string, size = 20, mode: 
   return api.get<ApiResponse<MessagesResponse>>(`/api/messages/${targetId}`, { params })
 }
 
+async function createImageThumbnail(file: File): Promise<Blob | null> {
+  if (!file.type.startsWith('image/') || typeof createImageBitmap !== 'function') return null
+
+  let bitmap: ImageBitmap | null = null
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+    const longestEdge = Math.max(bitmap.width, bitmap.height)
+    const scale = longestEdge > thumbnailMaxEdge ? thumbnailMaxEdge / longestEdge : 1
+    const width = Math.max(1, Math.round(bitmap.width * scale))
+    const height = Math.max(1, Math.round(bitmap.height * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(bitmap, 0, 0, width, height)
+
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', thumbnailQuality)
+    })
+  } catch {
+    return null
+  } finally {
+    bitmap?.close()
+  }
+}
+
 export async function uploadFile(file: File, receiverId: number, onProgress?: (p: number) => void) {
   const contentType = file.type || 'application/octet-stream'
   const presignRes = await api.post<ApiResponse<FilePresignUploadResponse>>('/api/file/presign-upload', {
@@ -65,7 +96,9 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
     return presignRes
   }
 
-  const { fileId, uploadUrl, headers } = presignRes.data.data
+  const { fileId, uploadUrl, headers, thumbnailUploadUrl, thumbnailHeaders } = presignRes.data.data
+  const thumbnailPromise = thumbnailUploadUrl ? createImageThumbnail(file) : Promise.resolve(null)
+
   await axios.put(uploadUrl, file, {
     headers: headers || { 'Content-Type': contentType },
     timeout: 600000,
@@ -75,6 +108,18 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
       }
     },
   })
+
+  const thumbnail = await thumbnailPromise
+  if (thumbnail && thumbnailUploadUrl) {
+    try {
+      await axios.put(thumbnailUploadUrl, thumbnail, {
+        headers: thumbnailHeaders || { 'Content-Type': 'image/jpeg' },
+        timeout: 600000,
+      })
+    } catch {
+      // Thumbnail upload is an optimization. The original file remains usable.
+    }
+  }
 
   return api.post<ApiResponse<FileUploadResponse>>(`/api/files/${fileId}/complete`)
 }
