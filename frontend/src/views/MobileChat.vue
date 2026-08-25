@@ -82,7 +82,13 @@
                 <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
-                  <img :src="chatStore.messages[vi.index].fileUrl ?? undefined" class="pic" @click.stop="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')" />
+                  <img
+                    :src="chatStore.messages[vi.index].fileId ? `/api/files/${chatStore.messages[vi.index].fileId}/thumbnail` : chatStore.messages[vi.index].fileUrl ?? undefined"
+                    loading="lazy"
+                    decoding="async"
+                    class="pic"
+                    @click.stop="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')"
+                  />
                 </template>
                 <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
                   <a
