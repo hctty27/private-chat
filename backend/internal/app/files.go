@@ -30,9 +30,8 @@ var (
 )
 
 const (
-	fileDownloadExpiry     = 10 * time.Minute
-	filePrivateCacheValue  = "private, max-age=300"
-	maxThumbnailObjectSize = 5 << 20
+	fileDownloadExpiry    = 10 * time.Minute
+	filePrivateCacheValue = "private, max-age=300"
 )
 
 type fileRepository interface {
@@ -120,6 +119,7 @@ func (s minioFileStorage) PresignGet(ctx context.Context, objectKey, contentType
 	params := url.Values{}
 	params.Set("response-content-type", contentType)
 	params.Set("response-content-disposition", disposition)
+	params.Set("response-cache-control", filePrivateCacheValue)
 	u, err := s.client.PresignedGetObject(ctx, s.bucket, s.key(objectKey), expiry, params)
 	if err != nil {
 		return "", err
@@ -360,23 +360,7 @@ func (m *fileManager) PresignThumbnail(ctx context.Context, userID, fileID int64
 	if err != nil {
 		return "", err
 	}
-	if err := m.ensureDetectedContentType(ctx, &file); err != nil {
-		return "", err
-	}
-	if file.DetectedContentType == nil || !isImageUploadContentType(*file.DetectedContentType) {
-		return m.presignOriginal(ctx, file, expiry)
-	}
-
 	thumbnailKey := thumbnailObjectKey(file.ObjectKey)
-	size, err := m.storage.Stat(ctx, thumbnailKey)
-	if err != nil || size <= 0 || size > maxThumbnailObjectSize {
-		return m.presignOriginal(ctx, file, expiry)
-	}
-	prefix, err := m.storage.ReadPrefix(ctx, thumbnailKey, 512)
-	if err != nil || http.DetectContentType(prefix) != "image/jpeg" {
-		return m.presignOriginal(ctx, file, expiry)
-	}
-
 	disposition := fmt.Sprintf(`inline; filename="%s"`, cleanDisplayFileName(file.OriginalName+".thumb.jpg"))
 	return m.storage.PresignGet(ctx, thumbnailKey, "image/jpeg", disposition, expiry)
 }

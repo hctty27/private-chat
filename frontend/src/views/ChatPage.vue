@@ -92,6 +92,7 @@
                       loading="lazy"
                       decoding="async"
                       class="pic"
+                      @error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"
                       @click="openPreview(chatStore.messages[vi.index].fileUrl!, 'image')"
                     />
                   </template>
@@ -354,6 +355,14 @@ function pendingMediaText(message: Message) {
 function bubbleType(message: { msgType: number; senderId: number }) {
   if (message.msgType === 4) return 'emoji'
   return message.senderId === uid.value ? 'mine' : 'his'
+}
+
+function fallbackImageToOriginal(event: Event, message: Message) {
+  const image = event.currentTarget
+  if (!(image instanceof HTMLImageElement) || !message.fileId || !message.fileUrl) return
+  if (image.dataset.originalFallback === '1') return
+  image.dataset.originalFallback = '1'
+  image.src = message.fileUrl
 }
 
 function openPreview(url: string, type: 'image' | 'video') {
