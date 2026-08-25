@@ -2,16 +2,18 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"privatechat/internal/model"
 
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type countingFileStorage struct {
@@ -28,41 +30,26 @@ func (s *countingFileStorage) PresignPut(ctx context.Context, objectKey, content
 
 type thumbnailFileStorage struct {
 	*fakeFileStorage
-	statSizes  map[string]int64
-	statErrors map[string]error
-	prefixes   map[string][]byte
-	getURLs    map[string]string
-	statKeys   []string
-	readKeys   []string
-	getKeys    []string
+	getURLs  map[string]string
+	statKeys []string
+	readKeys []string
+	getKeys  []string
 }
 
 func (s *thumbnailFileStorage) Stat(ctx context.Context, objectKey string) (int64, error) {
 	s.statKeys = append(s.statKeys, objectKey)
-	if err, ok := s.statErrors[objectKey]; ok {
-		return 0, err
-	}
-	if size, ok := s.statSizes[objectKey]; ok {
-		return size, nil
-	}
 	return s.fakeFileStorage.Stat(ctx, objectKey)
 }
 
 func (s *thumbnailFileStorage) ReadPrefix(ctx context.Context, objectKey string, maxBytes int64) ([]byte, error) {
 	s.readKeys = append(s.readKeys, objectKey)
-	if prefix, ok := s.prefixes[objectKey]; ok {
-		if int64(len(prefix)) > maxBytes {
-			return append([]byte(nil), prefix[:maxBytes]...), nil
-		}
-		return append([]byte(nil), prefix...), nil
-	}
 	return s.fakeFileStorage.ReadPrefix(ctx, objectKey, maxBytes)
 }
 
 func (s *thumbnailFileStorage) PresignGet(ctx context.Context, objectKey, contentType, disposition string, expiry time.Duration) (string, error) {
 	s.getKeys = append(s.getKeys, objectKey)
-	if url, ok := s.getURLs[objectKey]; ok {
-		return url, nil
+	if signedURL, ok := s.getURLs[objectKey]; ok {
+		return signedURL, nil
 	}
 	return s.fakeFileStorage.PresignGet(ctx, objectKey, contentType, disposition, expiry)
 }
@@ -116,8 +103,32 @@ func TestFileContentHandlerUsesPrivateFiveMinuteCache(t *testing.T) {
 	if recorder.Code != http.StatusFound {
 		t.Fatalf("expected redirect, got status %d", recorder.Code)
 	}
-	if got := recorder.Header().Get("Cache-Control"); got != "private, max-age=300" {
+	if got := recorder.Header().Get("Cache-Control"); got != filePrivateCacheValue {
 		t.Fatalf("expected private five-minute cache, got %q", got)
+	}
+}
+
+func TestPresignedGetOverridesObjectCacheControl(t *testing.T) {
+	client, err := minio.New("r2.example", &minio.Options{
+		Creds:  credentials.NewStaticV4("access", "secret", ""),
+		Secure: true,
+		Region: "us-east-1",
+	})
+	if err != nil {
+		t.Fatalf("create minio client: %v", err)
+	}
+	storage := minioFileStorage{client: client, bucket: "private-chat"}
+
+	rawURL, err := storage.PresignGet(context.Background(), "photo.jpg", "image/jpeg", `inline; filename="photo.jpg"`, time.Minute)
+	if err != nil {
+		t.Fatalf("presign get: %v", err)
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse presigned url: %v", err)
+	}
+	if got := parsed.Query().Get("response-cache-control"); got != filePrivateCacheValue {
+		t.Fatalf("expected response-cache-control %q, got %q", filePrivateCacheValue, got)
 	}
 }
 
@@ -137,13 +148,11 @@ func TestRoutesExposeProtectedThumbnailEndpoint(t *testing.T) {
 	t.Fatal("expected protected thumbnail route")
 }
 
-func TestFileThumbnailHandlerUsesValidatedThumbnailObject(t *testing.T) {
+func TestFileThumbnailHandlerPresignsThumbnailWithoutStorageProbe(t *testing.T) {
 	contentType := "image/jpeg"
 	thumbnailKey := "photo.jpg.thumb.jpg"
 	storage := &thumbnailFileStorage{
 		fakeFileStorage: &fakeFileStorage{},
-		statSizes:       map[string]int64{thumbnailKey: 128},
-		prefixes:        map[string][]byte{thumbnailKey: {0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}},
 		getURLs:         map[string]string{thumbnailKey: "https://r2.example/thumbnail"},
 	}
 	app := &App{files: newFileManager(newFakeFileRepository(model.File{
@@ -161,77 +170,14 @@ func TestFileThumbnailHandlerUsesValidatedThumbnailObject(t *testing.T) {
 	if recorder.Code != http.StatusFound || recorder.Header().Get("Location") != "https://r2.example/thumbnail" {
 		t.Fatalf("expected thumbnail redirect, got status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
 	}
-	if len(storage.statKeys) != 1 || storage.statKeys[0] != thumbnailKey {
-		t.Fatalf("expected thumbnail existence check, got %v", storage.statKeys)
+	if len(storage.statKeys) != 0 {
+		t.Fatalf("expected no thumbnail stat probe, got %v", storage.statKeys)
 	}
-	if len(storage.readKeys) != 1 || storage.readKeys[0] != thumbnailKey {
-		t.Fatalf("expected thumbnail content validation, got %v", storage.readKeys)
+	if len(storage.readKeys) != 0 {
+		t.Fatalf("expected no thumbnail content probe, got %v", storage.readKeys)
 	}
 	if len(storage.getKeys) != 1 || storage.getKeys[0] != thumbnailKey {
-		t.Fatalf("expected thumbnail presign, got %v", storage.getKeys)
-	}
-}
-
-func TestFileThumbnailHandlerFallsBackWhenThumbnailMissing(t *testing.T) {
-	contentType := "image/jpeg"
-	thumbnailKey := "photo.jpg.thumb.jpg"
-	storage := &thumbnailFileStorage{
-		fakeFileStorage: &fakeFileStorage{},
-		statErrors:      map[string]error{thumbnailKey: errors.New("not found")},
-		getURLs:         map[string]string{"photo.jpg": "https://r2.example/original"},
-	}
-	app := &App{files: newFileManager(newFakeFileRepository(model.File{
-		ID:                  32,
-		ObjectKey:           "photo.jpg",
-		OwnerID:             1,
-		ConversationID:      "1_2",
-		OriginalName:        "photo.jpg",
-		Status:              model.FileStatusReady,
-		DetectedContentType: &contentType,
-	}), storage)}
-
-	recorder := runThumbnailRequest(t, app, 1, 32)
-
-	if recorder.Code != http.StatusFound || recorder.Header().Get("Location") != "https://r2.example/original" {
-		t.Fatalf("expected original fallback, got status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
-	}
-	if len(storage.statKeys) != 1 || storage.statKeys[0] != thumbnailKey {
-		t.Fatalf("expected thumbnail existence check before fallback, got %v", storage.statKeys)
-	}
-	if len(storage.getKeys) != 1 || storage.getKeys[0] != "photo.jpg" {
-		t.Fatalf("expected original presign after missing thumbnail, got %v", storage.getKeys)
-	}
-}
-
-func TestFileThumbnailHandlerRejectsInvalidThumbnailContent(t *testing.T) {
-	contentType := "image/jpeg"
-	thumbnailKey := "photo.jpg.thumb.jpg"
-	storage := &thumbnailFileStorage{
-		fakeFileStorage: &fakeFileStorage{},
-		statSizes:       map[string]int64{thumbnailKey: 128},
-		prefixes:        map[string][]byte{thumbnailKey: []byte("<html>not an image</html>")},
-		getURLs:         map[string]string{"photo.jpg": "https://r2.example/original"},
-	}
-	app := &App{files: newFileManager(newFakeFileRepository(model.File{
-		ID:                  33,
-		ObjectKey:           "photo.jpg",
-		OwnerID:             1,
-		ConversationID:      "1_2",
-		OriginalName:        "photo.jpg",
-		Status:              model.FileStatusReady,
-		DetectedContentType: &contentType,
-	}), storage)}
-
-	recorder := runThumbnailRequest(t, app, 2, 33)
-
-	if recorder.Code != http.StatusFound || recorder.Header().Get("Location") != "https://r2.example/original" {
-		t.Fatalf("expected original fallback for invalid thumbnail, got status=%d location=%q", recorder.Code, recorder.Header().Get("Location"))
-	}
-	if len(storage.readKeys) != 1 || storage.readKeys[0] != thumbnailKey {
-		t.Fatalf("expected invalid thumbnail to be inspected, got %v", storage.readKeys)
-	}
-	if len(storage.getKeys) != 1 || storage.getKeys[0] != "photo.jpg" {
-		t.Fatalf("expected invalid thumbnail not to be served, got %v", storage.getKeys)
+		t.Fatalf("expected direct thumbnail presign, got %v", storage.getKeys)
 	}
 }
 
