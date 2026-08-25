@@ -1,0 +1,64 @@
+name: Patch pinned keyboard behavior
+
+on:
+  push:
+    branches:
+      - fix/ios-chat-scroll-model
+    paths:
+      - .github/workflows/patch-pinned-keyboard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ios-chat-scroll-model
+      - name: Apply pinned-end keyboard behavior
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/views/MobileChat.vue')
+          source = path.read_text()
+          replacements = [
+              (
+                  "let vvHandler: (() => void) | null = null\nlet unsubscribeHistory: (() => void) | null = null\nlet historySyncSeq = 0",
+                  "let vvHandler: (() => void) | null = null\nlet unsubscribeHistory: (() => void) | null = null\nlet pinnedEndFrame: number | null = null\nlet focusStartedAtEnd = false\nlet historySyncSeq = 0",
+              ),
+              (
+                  "  if (vvHandler && window.visualViewport) {\n    window.visualViewport.removeEventListener('resize', vvHandler)\n    window.visualViewport.removeEventListener('scroll', vvHandler)\n  }\n  chatStore.clearState()",
+                  "  if (vvHandler && window.visualViewport) {\n    window.visualViewport.removeEventListener('resize', vvHandler)\n    window.visualViewport.removeEventListener('scroll', vvHandler)\n  }\n  cancelPinnedEndSync()\n  chatStore.clearState()",
+              ),
+              (
+                  "function updateViewport() {\n  const vv = window.visualViewport\n  viewportHeight.value = vv?.height || window.innerHeight\n  viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0\n}",
+                  "function cancelPinnedEndSync() {\n  if (pinnedEndFrame === null) return\n  cancelAnimationFrame(pinnedEndFrame)\n  pinnedEndFrame = null\n}\n\nfunction schedulePinnedEndSync() {\n  cancelPinnedEndSync()\n  const expectedHeight = viewportHeight.value\n\n  pinnedEndFrame = requestAnimationFrame(() => {\n    pinnedEndFrame = requestAnimationFrame(() => {\n      pinnedEndFrame = null\n      if (!inputFocused.value || !focusStartedAtEnd) return\n      if (Math.abs(viewportHeight.value - expectedHeight) > 0.5) {\n        schedulePinnedEndSync()\n        return\n      }\n      scroll.scrollToBottom(false)\n    })\n  })\n}\n\nfunction updateViewport() {\n  const vv = window.visualViewport\n  const nextHeight = vv?.height || window.innerHeight\n  const heightChanged = Math.abs(nextHeight - viewportHeight.value) > 0.5\n  viewportHeight.value = nextHeight\n  viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0\n  if (heightChanged && inputFocused.value && focusStartedAtEnd) schedulePinnedEndSync()\n}",
+              ),
+              (
+                  "  emojiOpen.value = true\n  inputEl.value?.blur()\n  inputFocused.value = false\n  await mobileHistory.pushOverlay(contactId, 'emoji')\n  await nextTick()\n  grow()",
+                  "  const keepAtEnd = scroll.isNearBottom(160)\n  emojiOpen.value = true\n  inputEl.value?.blur()\n  inputFocused.value = false\n  await mobileHistory.pushOverlay(contactId, 'emoji')\n  await nextTick()\n  grow()\n  if (keepAtEnd) scroll.scrollToBottom(false)",
+              ),
+              (
+                  "function onFocus() {\n  inputFocused.value = true\n  if (emojiOpen.value) closeOverlay('emoji')\n  updateViewport()\n}\n\nfunction onBlur() {\n  inputFocused.value = false\n  updateViewport()\n}\n\nfunction collapseInput() {\n  if (emojiOpen.value) closeOverlay('emoji')\n  inputEl.value?.blur()\n  inputFocused.value = false\n}",
+                  "function onFocus() {\n  focusStartedAtEnd = scroll.isNearBottom(120)\n  inputFocused.value = true\n  if (emojiOpen.value) closeOverlay('emoji')\n  updateViewport()\n}\n\nfunction onBlur() {\n  inputFocused.value = false\n  focusStartedAtEnd = false\n  cancelPinnedEndSync()\n  updateViewport()\n}\n\nfunction collapseInput() {\n  if (emojiOpen.value) closeOverlay('emoji')\n  inputEl.value?.blur()\n  inputFocused.value = false\n  focusStartedAtEnd = false\n  cancelPinnedEndSync()\n}",
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'expected snippet not found:\n{old}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source)
+          PY
+      - name: Commit pinned keyboard behavior
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-pinned-keyboard.yml
+          git add frontend/src/views/MobileChat.vue
+          git commit -m "fix: preserve pinned chat through keyboard resize"
+          git push origin HEAD:fix/ios-chat-scroll-model
