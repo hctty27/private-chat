@@ -1,0 +1,60 @@
+name: Patch mobile viewport model
+
+on:
+  push:
+    branches:
+      - fix/ios-chat-scroll-model
+    paths:
+      - .github/workflows/patch-mobile-viewport.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ios-chat-scroll-model
+      - name: Apply focused viewport changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('frontend/src/views/MobileChat.vue')
+          source = path.read_text()
+          replacements = [
+              (
+                  "let vvHandler: (() => void) | null = null\nlet unsubscribeHistory: (() => void) | null = null\nlet shouldStickToBottomOnViewportChange = false\nlet historySyncSeq = 0",
+                  "let vvHandler: (() => void) | null = null\nlet unsubscribeHistory: (() => void) | null = null\nlet historySyncSeq = 0",
+              ),
+              (
+                  "function updateViewport() {\n  const vv = window.visualViewport\n  viewportHeight.value = vv?.height || window.innerHeight\n  viewportTop.value = vv ? Math.max(0, vv.pageTop - window.scrollY, vv.offsetTop) : 0\n  if (shouldStickToBottomOnViewportChange) requestAnimationFrame(() => scroll.scrollToBottom(false))\n}",
+                  "function updateViewport() {\n  const vv = window.visualViewport\n  viewportHeight.value = vv?.height || window.innerHeight\n  viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0\n}",
+              ),
+              (
+                  "  shouldStickToBottomOnViewportChange = scroll.isNearBottom(160)\n  emojiOpen.value = true\n  inputEl.value?.blur()\n  inputFocused.value = false\n  await mobileHistory.pushOverlay(contactId, 'emoji')\n  await nextTick()\n  grow()\n  if (shouldStickToBottomOnViewportChange) scroll.scrollToBottom(false)",
+                  "  emojiOpen.value = true\n  inputEl.value?.blur()\n  inputFocused.value = false\n  await mobileHistory.pushOverlay(contactId, 'emoji')\n  await nextTick()\n  grow()",
+              ),
+              (
+                  "function onFocus() {\n  inputFocused.value = true\n  if (emojiOpen.value) closeOverlay('emoji')\n  shouldStickToBottomOnViewportChange = scroll.isNearBottom(120)\n  updateViewport()\n  requestAnimationFrame(updateViewport)\n  window.setTimeout(updateViewport, 50)\n  window.setTimeout(updateViewport, 250)\n  if (shouldStickToBottomOnViewportChange) {\n    setTimeout(() => scroll.scrollToBottom(false), 100)\n    setTimeout(() => scroll.scrollToBottom(false), 350)\n  }\n}\n\nfunction onBlur() {\n  inputFocused.value = false\n  shouldStickToBottomOnViewportChange = false\n  setTimeout(updateViewport, 80)\n}\n\nfunction collapseInput() {\n  if (emojiOpen.value) closeOverlay('emoji')\n  inputEl.value?.blur()\n  inputFocused.value = false\n  shouldStickToBottomOnViewportChange = false\n}",
+                  "function onFocus() {\n  inputFocused.value = true\n  if (emojiOpen.value) closeOverlay('emoji')\n  updateViewport()\n}\n\nfunction onBlur() {\n  inputFocused.value = false\n  updateViewport()\n}\n\nfunction collapseInput() {\n  if (emojiOpen.value) closeOverlay('emoji')\n  inputEl.value?.blur()\n  inputFocused.value = false\n}",
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in source:
+                  raise SystemExit(f'expected snippet not found:\n{old}')
+              source = source.replace(old, new, 1)
+
+          path.write_text(source)
+          PY
+      - name: Commit viewport model
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-mobile-viewport.yml
+          git add frontend/src/views/MobileChat.vue
+          git commit -m "fix: decouple iOS viewport geometry from chat scroll"
+          git push origin HEAD:fix/ios-chat-scroll-model
