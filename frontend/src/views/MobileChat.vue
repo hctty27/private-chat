@@ -297,7 +297,6 @@ const chatPageStyle = computed(() => viewportHeight.value ? {
 
 let vvHandler: (() => void) | null = null
 let unsubscribeHistory: (() => void) | null = null
-let shouldStickToBottomOnViewportChange = false
 let historySyncSeq = 0
 let historyBackPending = false
 let suppressNativeClickUntil = 0
@@ -334,8 +333,7 @@ onUnmounted(() => {
 function updateViewport() {
   const vv = window.visualViewport
   viewportHeight.value = vv?.height || window.innerHeight
-  viewportTop.value = vv ? Math.max(0, vv.pageTop - window.scrollY, vv.offsetTop) : 0
-  if (shouldStickToBottomOnViewportChange) requestAnimationFrame(() => scroll.scrollToBottom(false))
+  viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0
 }
 
 function installViewportHandler() {
@@ -515,14 +513,12 @@ async function toggleEmoji() {
     return
   }
 
-  shouldStickToBottomOnViewportChange = scroll.isNearBottom(160)
   emojiOpen.value = true
   inputEl.value?.blur()
   inputFocused.value = false
   await mobileHistory.pushOverlay(contactId, 'emoji')
   await nextTick()
   grow()
-  if (shouldStickToBottomOnViewportChange) scroll.scrollToBottom(false)
 }
 
 function closeOverlay(kind: MobileOverlayKind) {
@@ -548,28 +544,18 @@ function grow() {
 function onFocus() {
   inputFocused.value = true
   if (emojiOpen.value) closeOverlay('emoji')
-  shouldStickToBottomOnViewportChange = scroll.isNearBottom(120)
   updateViewport()
-  requestAnimationFrame(updateViewport)
-  window.setTimeout(updateViewport, 50)
-  window.setTimeout(updateViewport, 250)
-  if (shouldStickToBottomOnViewportChange) {
-    setTimeout(() => scroll.scrollToBottom(false), 100)
-    setTimeout(() => scroll.scrollToBottom(false), 350)
-  }
 }
 
 function onBlur() {
   inputFocused.value = false
-  shouldStickToBottomOnViewportChange = false
-  setTimeout(updateViewport, 80)
+  updateViewport()
 }
 
 function collapseInput() {
   if (emojiOpen.value) closeOverlay('emoji')
   inputEl.value?.blur()
   inputFocused.value = false
-  shouldStickToBottomOnViewportChange = false
 }
 
 function showTimeByIndex(i: number) {
