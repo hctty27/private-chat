@@ -29,7 +29,10 @@ var (
 	errFileNotReady     = errors.New("file not ready")
 )
 
-const fileDownloadExpiry = 10 * time.Minute
+const (
+	fileDownloadExpiry    = 10 * time.Minute
+	filePrivateCacheValue = "private, max-age=300"
+)
 
 type fileRepository interface {
 	Create(context.Context, *model.File) error
@@ -136,6 +139,15 @@ func stableFileURL(fileID int64) string {
 	return fmt.Sprintf("/api/files/%d/content", fileID)
 }
 
+func thumbnailObjectKey(objectKey string) string {
+	return objectKey + ".thumb.jpg"
+}
+
+func isImageUploadContentType(contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return strings.HasPrefix(contentType, "image/")
+}
+
 func normalizeUploadContentType(fileName, contentType string) string {
 	contentType = strings.TrimSpace(strings.Split(contentType, ";")[0])
 	if contentType != "" {
@@ -195,14 +207,23 @@ func (m *fileManager) CreatePending(ctx context.Context, ownerID int64, req mode
 	if err != nil {
 		return model.FilePresignUploadDTO{}, err
 	}
-	return model.FilePresignUploadDTO{
+
+	resp := model.FilePresignUploadDTO{
 		FileID:    file.ID,
 		UploadURL: uploadURL,
 		URL:       stableFileURL(file.ID),
 		FileName:  file.OriginalName,
 		FileSize:  file.ExpectedSize,
 		Headers:   map[string]string{"Content-Type": contentType},
-	}, nil
+	}
+	if isImageUploadContentType(contentType) {
+		thumbnailURL, thumbnailErr := m.storage.PresignPut(ctx, thumbnailObjectKey(file.ObjectKey), "image/jpeg", expiry)
+		if thumbnailErr == nil {
+			resp.ThumbnailUploadURL = thumbnailURL
+			resp.ThumbnailHeaders = map[string]string{"Content-Type": "image/jpeg"}
+		}
+	}
+	return resp, nil
 }
 
 func (m *fileManager) Confirm(ctx context.Context, userID, fileID int64) (model.FileUploadDTO, error) {
@@ -389,7 +410,32 @@ func (a *App) fileContentHandler(c *gin.Context) {
 	case err != nil:
 		respondError(c, http.StatusBadGateway, http.StatusBadGateway, "文件暂时不可用")
 	default:
-		c.Header("Cache-Control", "private, no-store")
+		c.Header("Cache-Control", filePrivateCacheValue)
+		c.Redirect(http.StatusFound, downloadURL)
+	}
+}
+
+func (a *App) fileThumbnailHandler(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		unauthorized(c)
+		return
+	}
+	fileID, err := strconv.ParseInt(c.Param("fileId"), 10, 64)
+	if err != nil || fileID <= 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	downloadURL, err := a.files.PresignDownload(c.Request.Context(), userID, fileID, fileDownloadExpiry)
+	switch {
+	case errors.Is(err, errFileForbidden):
+		forbidden(c, "无权访问该文件")
+	case errors.Is(err, errFileNotReady), errors.Is(err, gorm.ErrRecordNotFound):
+		c.Status(http.StatusNotFound)
+	case err != nil:
+		respondError(c, http.StatusBadGateway, http.StatusBadGateway, "文件暂时不可用")
+	default:
+		c.Header("Cache-Control", filePrivateCacheValue)
 		c.Redirect(http.StatusFound, downloadURL)
 	}
 }
