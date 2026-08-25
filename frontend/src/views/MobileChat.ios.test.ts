@@ -16,17 +16,18 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mainCssSource).toContain('env(safe-area-inset-right)')
   })
 
-  it('compensates when iOS pans the visual viewport above the keyboard', () => {
+  it('uses the full visual viewport page offset when iOS pans for the keyboard', () => {
     expect(mobileChatSource).toContain('const viewportTop = ref(0)')
-    expect(mobileChatSource).toContain('vv.pageTop - window.scrollY')
-    expect(mobileChatSource).toContain('vv.offsetTop')
+    expect(mobileChatSource).toContain('viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0')
+    expect(mobileChatSource).not.toContain('vv.pageTop - window.scrollY')
     expect(mobileChatSource).toContain('transform: `translateY(${viewportTop.value}px)`')
   })
 
-  it('resamples the viewport during the iOS keyboard transition', () => {
-    expect(mobileChatSource).toContain('requestAnimationFrame(updateViewport)')
-    expect(mobileChatSource).toContain('window.setTimeout(updateViewport, 50)')
-    expect(mobileChatSource).toContain('window.setTimeout(updateViewport, 250)')
+  it('keeps viewport events geometry-only instead of repeatedly scrolling the conversation', () => {
+    expect(mobileChatSource).not.toContain('shouldStickToBottomOnViewportChange')
+    expect(mobileChatSource).not.toContain('window.setTimeout(updateViewport')
+    expect(mobileChatSource).not.toContain('setTimeout(() => scroll.scrollToBottom')
+    expect(mobileChatSource).not.toContain('requestAnimationFrame(() => scroll.scrollToBottom')
   })
 })
 
