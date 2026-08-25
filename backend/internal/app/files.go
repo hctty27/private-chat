@@ -30,8 +30,9 @@ var (
 )
 
 const (
-	fileDownloadExpiry    = 10 * time.Minute
-	filePrivateCacheValue = "private, max-age=300"
+	fileDownloadExpiry      = 10 * time.Minute
+	filePrivateCacheValue   = "private, max-age=300"
+	maxThumbnailObjectSize  = 5 << 20
 )
 
 type fileRepository interface {
@@ -311,30 +312,73 @@ func downloadMetadata(file model.File) (string, string) {
 	return contentType, fmt.Sprintf(`%s; filename="%s"`, kind, cleanDisplayFileName(file.OriginalName))
 }
 
-func (m *fileManager) PresignDownload(ctx context.Context, userID, fileID int64, expiry time.Duration) (string, error) {
+func (m *fileManager) authorizedReadyFile(ctx context.Context, userID, fileID int64) (model.File, error) {
 	file, err := m.repo.FindByID(ctx, fileID)
 	if err != nil {
-		return "", err
+		return model.File{}, err
 	}
 	if file.Status != model.FileStatusReady {
-		return "", errFileNotReady
+		return model.File{}, errFileNotReady
 	}
 	if !conversationContainsUser(file.ConversationID, userID) {
-		return "", errFileForbidden
+		return model.File{}, errFileForbidden
 	}
-	// Migrated legacy rows do not have a previously detected MIME type. Sniff the
-	// object itself instead of trusting its filename/extension so historical
-	// images and videos can still render without weakening the new upload path.
-	if file.DetectedContentType == nil || strings.TrimSpace(*file.DetectedContentType) == "" {
-		prefix, err := m.storage.ReadPrefix(ctx, file.ObjectKey, 512)
-		if err != nil {
-			return "", err
-		}
-		detected := http.DetectContentType(prefix)
-		file.DetectedContentType = &detected
+	return file, nil
+}
+
+func (m *fileManager) ensureDetectedContentType(ctx context.Context, file *model.File) error {
+	if file.DetectedContentType != nil && strings.TrimSpace(*file.DetectedContentType) != "" {
+		return nil
+	}
+	prefix, err := m.storage.ReadPrefix(ctx, file.ObjectKey, 512)
+	if err != nil {
+		return err
+	}
+	detected := http.DetectContentType(prefix)
+	file.DetectedContentType = &detected
+	return nil
+}
+
+func (m *fileManager) presignOriginal(ctx context.Context, file model.File, expiry time.Duration) (string, error) {
+	if err := m.ensureDetectedContentType(ctx, &file); err != nil {
+		return "", err
 	}
 	contentType, disposition := downloadMetadata(file)
 	return m.storage.PresignGet(ctx, file.ObjectKey, contentType, disposition, expiry)
+}
+
+func (m *fileManager) PresignDownload(ctx context.Context, userID, fileID int64, expiry time.Duration) (string, error) {
+	file, err := m.authorizedReadyFile(ctx, userID, fileID)
+	if err != nil {
+		return "", err
+	}
+	return m.presignOriginal(ctx, file, expiry)
+}
+
+func (m *fileManager) PresignThumbnail(ctx context.Context, userID, fileID int64, expiry time.Duration) (string, error) {
+	file, err := m.authorizedReadyFile(ctx, userID, fileID)
+	if err != nil {
+		return "", err
+	}
+	if err := m.ensureDetectedContentType(ctx, &file); err != nil {
+		return "", err
+	}
+	if file.DetectedContentType == nil || !isImageUploadContentType(*file.DetectedContentType) {
+		return m.presignOriginal(ctx, file, expiry)
+	}
+
+	thumbnailKey := thumbnailObjectKey(file.ObjectKey)
+	size, err := m.storage.Stat(ctx, thumbnailKey)
+	if err != nil || size <= 0 || size > maxThumbnailObjectSize {
+		return m.presignOriginal(ctx, file, expiry)
+	}
+	prefix, err := m.storage.ReadPrefix(ctx, thumbnailKey, 512)
+	if err != nil || http.DetectContentType(prefix) != "image/jpeg" {
+		return m.presignOriginal(ctx, file, expiry)
+	}
+
+	disposition := fmt.Sprintf(`inline; filename="%s"`, cleanDisplayFileName(file.OriginalName+".thumb.jpg"))
+	return m.storage.PresignGet(ctx, thumbnailKey, "image/jpeg", disposition, expiry)
 }
 
 func (a *App) filePresignUploadHandler(c *gin.Context) {
@@ -426,7 +470,7 @@ func (a *App) fileThumbnailHandler(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	downloadURL, err := a.files.PresignDownload(c.Request.Context(), userID, fileID, fileDownloadExpiry)
+	downloadURL, err := a.files.PresignThumbnail(c.Request.Context(), userID, fileID, fileDownloadExpiry)
 	switch {
 	case errors.Is(err, errFileForbidden):
 		forbidden(c, "无权访问该文件")
