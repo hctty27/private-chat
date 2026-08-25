@@ -67,7 +67,7 @@ describe('useChatScroll chat mode', () => {
     virtualizerMock.scrollToIndex.mockReset()
   })
 
-  it('configures end anchoring for a dynamic-height chat feed', async () => {
+  it('configures end anchoring and accounts for the history status row', async () => {
     const chatStore = useChatStore()
     chatStore.messages = [createMessage(1)]
     const { wrapper } = mountScrollHarness()
@@ -79,6 +79,7 @@ describe('useChatScroll chat mode', () => {
       followOnAppend: true,
       scrollEndThreshold: 80,
       overscan: 6,
+      scrollMargin: 44,
     })
 
     wrapper.unmount()
@@ -155,5 +156,55 @@ describe('useChatScroll chat mode', () => {
     expect(container.scrollTop).toBe(20)
 
     wrapper.unmount()
+  })
+
+  it('loads history only once until the viewport leaves the top zone', async () => {
+    vi.useFakeTimers()
+    const chatStore = useChatStore()
+    chatStore.hasMore = true
+    chatStore.messages = [createMessage(1), createMessage(2)]
+
+    let resolveLoad!: (value: boolean) => void
+    const pendingLoad = new Promise<boolean>((resolve) => {
+      resolveLoad = resolve
+    })
+    const loadMessages = vi.spyOn(chatStore, 'loadMessages').mockImplementation(() => pendingLoad)
+
+    const { wrapper, getScroll } = mountScrollHarness()
+
+    try {
+      await nextTick()
+      await nextTick()
+
+      const container = wrapper.element as HTMLElement
+      Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+
+      container.scrollTop = 10
+      container.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+      expect(loadMessages).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(301)
+      resolveLoad(true)
+      await Promise.resolve()
+      await nextTick()
+      await Promise.resolve()
+      expect(getScroll().loading.value).toBe(false)
+
+      container.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+      expect(loadMessages).toHaveBeenCalledTimes(1)
+
+      container.scrollTop = 160
+      container.dispatchEvent(new Event('scroll'))
+      container.scrollTop = 10
+      container.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+      expect(loadMessages).toHaveBeenCalledTimes(2)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 })
