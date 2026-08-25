@@ -297,6 +297,8 @@ const chatPageStyle = computed(() => viewportHeight.value ? {
 
 let vvHandler: (() => void) | null = null
 let unsubscribeHistory: (() => void) | null = null
+let pinnedEndFrame: number | null = null
+let focusStartedAtEnd = false
 let historySyncSeq = 0
 let historyBackPending = false
 let suppressNativeClickUntil = 0
@@ -327,13 +329,40 @@ onUnmounted(() => {
     window.visualViewport.removeEventListener('resize', vvHandler)
     window.visualViewport.removeEventListener('scroll', vvHandler)
   }
+  cancelPinnedEndSync()
   chatStore.clearState()
 })
 
+function cancelPinnedEndSync() {
+  if (pinnedEndFrame === null) return
+  cancelAnimationFrame(pinnedEndFrame)
+  pinnedEndFrame = null
+}
+
+function schedulePinnedEndSync() {
+  cancelPinnedEndSync()
+  const expectedHeight = viewportHeight.value
+
+  pinnedEndFrame = requestAnimationFrame(() => {
+    pinnedEndFrame = requestAnimationFrame(() => {
+      pinnedEndFrame = null
+      if (!inputFocused.value || !focusStartedAtEnd) return
+      if (Math.abs(viewportHeight.value - expectedHeight) > 0.5) {
+        schedulePinnedEndSync()
+        return
+      }
+      scroll.scrollToBottom(false)
+    })
+  })
+}
+
 function updateViewport() {
   const vv = window.visualViewport
-  viewportHeight.value = vv?.height || window.innerHeight
+  const nextHeight = vv?.height || window.innerHeight
+  const heightChanged = Math.abs(nextHeight - viewportHeight.value) > 0.5
+  viewportHeight.value = nextHeight
   viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0
+  if (heightChanged && inputFocused.value && focusStartedAtEnd) schedulePinnedEndSync()
 }
 
 function installViewportHandler() {
@@ -513,12 +542,14 @@ async function toggleEmoji() {
     return
   }
 
+  const keepAtEnd = scroll.isNearBottom(160)
   emojiOpen.value = true
   inputEl.value?.blur()
   inputFocused.value = false
   await mobileHistory.pushOverlay(contactId, 'emoji')
   await nextTick()
   grow()
+  if (keepAtEnd) scroll.scrollToBottom(false)
 }
 
 function closeOverlay(kind: MobileOverlayKind) {
@@ -542,6 +573,7 @@ function grow() {
 }
 
 function onFocus() {
+  focusStartedAtEnd = scroll.isNearBottom(120)
   inputFocused.value = true
   if (emojiOpen.value) closeOverlay('emoji')
   updateViewport()
@@ -549,6 +581,8 @@ function onFocus() {
 
 function onBlur() {
   inputFocused.value = false
+  focusStartedAtEnd = false
+  cancelPinnedEndSync()
   updateViewport()
 }
 
@@ -556,6 +590,8 @@ function collapseInput() {
   if (emojiOpen.value) closeOverlay('emoji')
   inputEl.value?.blur()
   inputFocused.value = false
+  focusStartedAtEnd = false
+  cancelPinnedEndSync()
 }
 
 function showTimeByIndex(i: number) {
