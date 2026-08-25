@@ -1,6 +1,9 @@
 name: Thumbnail backfill probe
 
 on:
+  push:
+    branches:
+      - perf/backfill-thumbnails
   pull_request:
 
 permissions:
