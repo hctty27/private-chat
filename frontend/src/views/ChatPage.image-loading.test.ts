@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import chatPageSource from './ChatPage.vue?raw'
+import mobileChatSource from './MobileChat.vue?raw'
 
 function imageMessageTemplate(source: string) {
   const marker = 'msgType === 2 && chatStore.messages[vi.index].fileUrl'
@@ -10,12 +11,19 @@ function imageMessageTemplate(source: string) {
   return source.slice(start, end)
 }
 
-describe('ChatPage image loading', () => {
-  it('uses thumbnail URL and deferred decoding for chat images', () => {
-    const template = imageMessageTemplate(chatPageSource)
+function expectOptimizedImageTemplate(source: string) {
+  const template = imageMessageTemplate(source)
+  expect(template).toMatch(/:src="thumbnailUrl\(chatStore\.messages\[vi\.index\]\)"/)
+  expect(template).toContain('loading="lazy"')
+  expect(template).toContain('decoding="async"')
+}
 
-    expect(template).toMatch(/:src="thumbnailUrl\(/)
-    expect(template).toContain('loading="lazy"')
-    expect(template).toContain('decoding="async"')
+describe('chat image loading', () => {
+  it('uses thumbnail URL and deferred decoding on desktop', () => {
+    expectOptimizedImageTemplate(chatPageSource)
+  })
+
+  it('uses thumbnail URL and deferred decoding on mobile', () => {
+    expectOptimizedImageTemplate(mobileChatSource)
   })
 })
