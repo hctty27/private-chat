@@ -27,6 +27,18 @@ describe('uploadFile image optimization', () => {
     mocks.apiPost.mockReset()
     mocks.put.mockReset()
     mocks.put.mockResolvedValue({ status: 200 })
+
+    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({
+      width: 1600,
+      height: 1200,
+      close: vi.fn(),
+    }))
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['thumbnail'], { type: 'image/jpeg' }))
+    })
   })
 
   it('uploads a generated thumbnail when the presign response provides a thumbnail target', async () => {
