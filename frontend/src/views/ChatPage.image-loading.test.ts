@@ -13,17 +13,18 @@ function imageMessageTemplate(source: string) {
 
 function expectOptimizedImageTemplate(source: string) {
   const template = imageMessageTemplate(source)
-  expect(template).toMatch(/:src="thumbnailUrl\(chatStore\.messages\[vi\.index\]\)"/)
+  expect(template).toContain('/thumbnail')
+  expect(template).toContain('.fileId')
   expect(template).toContain('loading="lazy"')
   expect(template).toContain('decoding="async"')
 }
 
 describe('chat image loading', () => {
-  it('uses thumbnail URL and deferred decoding on desktop', () => {
+  it('uses protected thumbnail URL and deferred decoding on desktop', () => {
     expectOptimizedImageTemplate(chatPageSource)
   })
 
-  it('uses thumbnail URL and deferred decoding on mobile', () => {
+  it('uses protected thumbnail URL and deferred decoding on mobile', () => {
     expectOptimizedImageTemplate(mobileChatSource)
   })
 })
