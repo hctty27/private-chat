@@ -11,20 +11,23 @@ function imageMessageTemplate(source: string) {
   return source.slice(start, end)
 }
 
-function expectOptimizedImageTemplate(source: string) {
+function expectThumbnailAndFallback(source: string) {
   const template = imageMessageTemplate(source)
   expect(template).toContain('/thumbnail')
   expect(template).toContain('.fileId')
-  expect(template).toContain('loading="lazy"')
   expect(template).toContain('decoding="async"')
+  expect(template).toContain('@error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"')
+  return template
 }
 
 describe('chat image loading', () => {
-  it('uses protected thumbnail URL and deferred decoding on desktop', () => {
-    expectOptimizedImageTemplate(chatPageSource)
+  it('keeps lazy loading on desktop and falls back to the protected original', () => {
+    const template = expectThumbnailAndFallback(chatPageSource)
+    expect(template).toContain('loading="lazy"')
   })
 
-  it('uses protected thumbnail URL and deferred decoding on mobile', () => {
-    expectOptimizedImageTemplate(mobileChatSource)
+  it('avoids native lazy loading on the virtualized mobile chat and falls back to the protected original', () => {
+    const template = expectThumbnailAndFallback(mobileChatSource)
+    expect(template).not.toContain('loading="lazy"')
   })
 })
