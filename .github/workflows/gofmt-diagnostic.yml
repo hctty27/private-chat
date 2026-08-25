@@ -1,0 +1,27 @@
+name: Gofmt diagnostic
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gofmt-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  list-unformatted:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+      - name: List unformatted Go files
+        working-directory: backend
+        run: |
+          files="$(gofmt -l .)"
+          printf '%s\n' "$files"
+          test -z "$files"
