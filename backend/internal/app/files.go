@@ -30,9 +30,9 @@ var (
 )
 
 const (
-	fileDownloadExpiry      = 10 * time.Minute
-	filePrivateCacheValue   = "private, max-age=300"
-	maxThumbnailObjectSize  = 5 << 20
+	fileDownloadExpiry     = 10 * time.Minute
+	filePrivateCacheValue  = "private, max-age=300"
+	maxThumbnailObjectSize = 5 << 20
 )
 
 type fileRepository interface {
