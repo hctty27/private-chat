@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { getMessages, uploadFile } from '../api'
+import { bindAttachmentRecipient } from '../utils/attachmentRecipient'
 import { useChatStore } from './chat'
 import { useUserStore } from './user'
 import type { Contact, Message } from '../types'
@@ -137,10 +138,7 @@ describe('chat store conversation loading state', () => {
     const alice = contact(1, 'Alice')
     const bob = contact(2, 'Bob')
     const file = new File(['image'], 'photo.png', { type: 'image/png' })
-    Object.defineProperty(file, Symbol.for('private-chat.attachmentRecipientId'), {
-      configurable: true,
-      value: alice.userId,
-    })
+    bindAttachmentRecipient([file], alice.userId)
     vi.mocked(uploadFile).mockResolvedValueOnce({
       data: {
         code: 200,
