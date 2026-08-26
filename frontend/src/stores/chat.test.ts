@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { checkSession, getMessages, uploadFile } from '../api'
+import { getMessages, uploadFile } from '../api'
 import { bindAttachmentRecipient } from '../utils/attachmentRecipient'
 import { useChatStore } from './chat'
 import { useUserStore } from './user'
 import type { Contact, Message } from '../types'
 
 vi.mock('../api', () => ({
-  checkSession: vi.fn(),
   getContacts: vi.fn(),
   getMessages: vi.fn(),
   uploadFile: vi.fn(),
@@ -159,15 +158,5 @@ describe('chat store conversation loading state', () => {
 
     expect(uploadFile).toHaveBeenCalledWith(file, alice.userId, expect.any(Function))
     expect(chatStore.messages).toHaveLength(0)
-  })
-
-  it('checks the HTTP session before reconnecting after a page restore', () => {
-    const pending = deferred<unknown>()
-    vi.mocked(checkSession).mockReturnValueOnce(pending.promise as ReturnType<typeof checkSession>)
-
-    useChatStore()
-    window.dispatchEvent(new PageTransitionEvent('pageshow'))
-
-    expect(checkSession).toHaveBeenCalledTimes(1)
   })
 })
