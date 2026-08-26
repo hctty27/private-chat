@@ -2,8 +2,9 @@ import type { AttachmentRecipient } from './useAttachmentComposer'
 
 export interface AttachmentIngressOptions {
   maxBytes: number
+  maxFiles: number
   getRecipient: () => AttachmentRecipient | null
-  onStage: (file: File, recipient: AttachmentRecipient) => void
+  onStage: (files: File[], recipient: AttachmentRecipient) => void
   onWarning: (message: string) => void
 }
 
@@ -17,21 +18,26 @@ export function useAttachmentIngress(options: AttachmentIngressOptions): Attachm
   function acceptFiles(input: FileList | File[]) {
     const files = Array.from(input)
     if (files.length === 0) return false
-    if (files.length > 1) {
-      options.onWarning('暂时只支持一次发送 1 个文件')
+
+    if (files.length > options.maxFiles) {
+      options.onWarning(`一次最多发送 ${options.maxFiles} 张图片`)
+      return false
+    }
+
+    if (files.length > 1 && files.some(file => !file.type.startsWith('image/'))) {
+      options.onWarning('批量发送仅支持图片')
       return false
     }
 
     const recipient = options.getRecipient()
     if (!recipient) return false
 
-    const file = files[0]
-    if (file.size > options.maxBytes) {
+    if (files.some(file => file.size > options.maxBytes)) {
       options.onWarning('文件最大支持 50MB')
       return false
     }
 
-    options.onStage(file, { ...recipient })
+    options.onStage(files, { ...recipient })
     return true
   }
 

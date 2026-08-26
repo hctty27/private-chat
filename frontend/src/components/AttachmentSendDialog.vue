@@ -14,22 +14,36 @@
             <button class="dialog-close tap-target" type="button" aria-label="关闭" @click="emit('cancel')">×</button>
           </div>
 
-          <div class="attachment-preview">
-            <img v-if="presentation === 'image' && previewUrl" :src="previewUrl" alt="待发送图片预览" />
-            <video v-else-if="presentation === 'video' && previewUrl" :src="previewUrl" controls muted playsinline preload="metadata" />
+          <div v-if="files.length > 1" class="batch-preview">
+            <div v-for="(file, index) in files" :key="`${file.name}-${file.size}-${index}`" class="batch-preview-item">
+              <img v-if="previewUrls[index]" :src="previewUrls[index]" :alt="`待发送图片 ${index + 1}`" />
+              <div v-else class="file-placeholder" aria-hidden="true">📎</div>
+              <span>{{ index + 1 }}</span>
+            </div>
+          </div>
+
+          <div v-else class="attachment-preview">
+            <img v-if="singlePresentation === 'image' && previewUrls[0]" :src="previewUrls[0]" alt="待发送图片预览" />
+            <video v-else-if="singlePresentation === 'video' && previewUrls[0]" :src="previewUrls[0]" controls muted playsinline preload="metadata" />
             <div v-else class="file-placeholder" aria-hidden="true">📎</div>
           </div>
 
-          <div v-if="file" class="attachment-meta">
-            <strong>{{ file.name }}</strong>
-            <span>{{ formatFileSize(file.size) }}</span>
+          <div v-if="singleFile" class="attachment-meta">
+            <template v-if="files.length === 1">
+              <strong>{{ singleFile.name }}</strong>
+              <span>{{ formatFileSize(singleFile.size) }}</span>
+            </template>
+            <template v-else>
+              <strong>{{ files.length }} 张图片</strong>
+              <span>共 {{ formatFileSize(totalSize) }}</span>
+            </template>
           </div>
           <div class="recipient">发送给：<strong>{{ recipientName }}</strong></div>
 
           <div class="attachment-actions">
             <button class="secondary tap-target" type="button" :disabled="busy" @click="emit('cancel')">取消</button>
-            <button ref="confirmEl" class="primary tap-target" type="button" :disabled="busy || !file" @click="emit('confirm')">
-              {{ busy ? '发送中…' : '发送' }}
+            <button ref="confirmEl" class="primary tap-target" type="button" :disabled="busy || files.length === 0" @click="emit('confirm')">
+              {{ confirmText }}
             </button>
           </div>
         </section>
@@ -44,11 +58,12 @@ import { formatFileSize } from '../utils/time'
 
 const props = withDefaults(defineProps<{
   visible: boolean
-  file: File | null
+  files: File[]
   recipientName: string
   busy?: boolean
 }>(), {
   busy: false,
+  files: () => [],
 })
 
 const emit = defineEmits<{
@@ -58,30 +73,42 @@ const emit = defineEmits<{
 
 const dialogEl = ref<HTMLElement | null>(null)
 const confirmEl = ref<HTMLButtonElement | null>(null)
-const previewUrl = ref('')
+const previewUrls = ref<string[]>([])
 let previousFocus: HTMLElement | null = null
 
-const presentation = computed<'image' | 'video' | 'file'>(() => {
-  if (!props.file) return 'file'
-  if (props.file.type.startsWith('image/')) return 'image'
-  if (props.file.type.startsWith('video/')) return 'video'
+const singleFile = computed(() => props.files[0] ?? null)
+const totalSize = computed(() => props.files.reduce((total, file) => total + file.size, 0))
+const singlePresentation = computed<'image' | 'video' | 'file'>(() => {
+  const file = singleFile.value
+  if (!file) return 'file'
+  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('video/')) return 'video'
   return 'file'
 })
+const confirmText = computed(() => {
+  if (props.busy) return '发送中…'
+  if (props.files.length > 1) return `发送 ${props.files.length} 张`
+  return '发送'
+})
 
-function revokePreview() {
-  if (!previewUrl.value) return
-  URL.revokeObjectURL(previewUrl.value)
-  previewUrl.value = ''
+function revokePreviews() {
+  for (const url of previewUrls.value) {
+    if (url) URL.revokeObjectURL(url)
+  }
+  previewUrls.value = []
 }
 
-function refreshPreview() {
-  revokePreview()
-  if (!props.visible || !props.file || presentation.value === 'file') return
-  try {
-    previewUrl.value = URL.createObjectURL(props.file)
-  } catch {
-    previewUrl.value = ''
-  }
+function refreshPreviews() {
+  revokePreviews()
+  if (!props.visible) return
+  previewUrls.value = props.files.map((file) => {
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) return ''
+    try {
+      return URL.createObjectURL(file)
+    } catch {
+      return ''
+    }
+  })
 }
 
 function focusableControls() {
@@ -113,7 +140,7 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-watch([() => props.file, () => props.visible], refreshPreview, { immediate: true })
+watch([() => props.files, () => props.visible], refreshPreviews, { immediate: true })
 
 watch(() => props.visible, async (visible, wasVisible) => {
   if (visible) {
@@ -125,14 +152,14 @@ watch(() => props.visible, async (visible, wasVisible) => {
   }
 
   document.removeEventListener('keydown', onKeydown)
-  revokePreview()
+  revokePreviews()
   if (wasVisible) previousFocus?.focus()
   previousFocus = null
 }, { immediate: true })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
-  revokePreview()
+  revokePreviews()
   previousFocus?.focus()
 })
 </script>
@@ -178,6 +205,35 @@ onUnmounted(() => {
 }
 .attachment-preview img,
 .attachment-preview video { max-width: 100%; max-height: 360px; object-fit: contain; }
+.batch-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px;
+}
+.batch-preview-item {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #f5f5f5;
+}
+.batch-preview-item img { width: 100%; height: 100%; object-fit: cover; }
+.batch-preview-item .file-placeholder { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+.batch-preview-item span {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+}
 .file-placeholder { font-size: 52px; }
 .attachment-meta,
 .recipient { display: flex; gap: 8px; padding: 0 16px 10px; color: #555; font-size: 14px; }
@@ -196,5 +252,6 @@ onUnmounted(() => {
   .attachment-overlay { align-items: flex-end; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .attachment-dialog { width: 100%; border-radius: 18px; }
   .attachment-preview { min-height: 140px; max-height: 42vh; }
+  .batch-preview { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 42vh; overflow-y: auto; }
 }
 </style>

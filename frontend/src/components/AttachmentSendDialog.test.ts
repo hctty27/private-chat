@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AttachmentSendDialog from './AttachmentSendDialog.vue'
 
-const createObjectURL = vi.fn(() => 'blob:preview')
+let objectUrlIndex = 0
+const createObjectURL = vi.fn(() => `blob:preview-${++objectUrlIndex}`)
 const revokeObjectURL = vi.fn()
 const wrappers: Array<{ unmount(): void }> = []
 
 beforeEach(() => {
+  objectUrlIndex = 0
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
 })
@@ -17,12 +19,12 @@ afterEach(() => {
   revokeObjectURL.mockClear()
 })
 
-function mountDialog(options: { busy?: boolean; file?: File } = {}) {
-  const file = options.file ?? new File(['hello'], 'photo.png', { type: 'image/png' })
+function mountDialog(options: { busy?: boolean; files?: File[] } = {}) {
+  const files = options.files ?? [new File(['hello'], 'photo.png', { type: 'image/png' })]
   const wrapper = mount(AttachmentSendDialog, {
     props: {
       visible: true,
-      file,
+      files,
       recipientName: 'Alice',
       busy: options.busy ?? false,
     },
@@ -33,14 +35,28 @@ function mountDialog(options: { busy?: boolean; file?: File } = {}) {
 }
 
 describe('AttachmentSendDialog', () => {
-  it('shows recipient, file metadata and image preview', () => {
+  it('shows recipient, file metadata and image preview for a single attachment', () => {
     const wrapper = mountDialog()
 
     expect(wrapper.get('[role="dialog"]').attributes('aria-modal')).toBe('true')
     expect(wrapper.text()).toContain('发送给：Alice')
     expect(wrapper.text()).toContain('photo.png')
     expect(wrapper.text()).toContain('5 B')
-    expect(wrapper.get('img').attributes('src')).toBe('blob:preview')
+    expect(wrapper.get('img').attributes('src')).toBe('blob:preview-1')
+  })
+
+  it('shows every image in a batch and the batch count', () => {
+    const wrapper = mountDialog({
+      files: [
+        new File(['a'], 'a.png', { type: 'image/png' }),
+        new File(['bb'], 'b.jpg', { type: 'image/jpeg' }),
+        new File(['ccc'], 'c.webp', { type: 'image/webp' }),
+      ],
+    })
+
+    expect(wrapper.findAll('.batch-preview img')).toHaveLength(3)
+    expect(wrapper.text()).toContain('3 张图片')
+    expect(wrapper.get('button.primary').text()).toBe('发送 3 张')
   })
 
   it('emits cancel and confirm from explicit controls', async () => {
@@ -73,15 +89,18 @@ describe('AttachmentSendDialog', () => {
     expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
-  it('revokes object URLs when the file changes and on unmount', async () => {
+  it('revokes object URLs when files change and on unmount', async () => {
     const wrapper = mountDialog()
-    const second = new File(['video'], 'clip.mp4', { type: 'video/mp4' })
+    const nextFiles = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+    ]
 
-    await wrapper.setProps({ file: second })
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview')
+    await wrapper.setProps({ files: nextFiles })
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview-1')
 
     wrapper.unmount()
     wrappers.splice(wrappers.indexOf(wrapper), 1)
-    expect(revokeObjectURL).toHaveBeenCalledTimes(2)
+    expect(revokeObjectURL).toHaveBeenCalledTimes(3)
   })
 })

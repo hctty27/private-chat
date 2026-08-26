@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useAttachmentIngress } from './useAttachmentIngress'
 
-function makeFile(name = 'photo.png', size = 1024) {
-  const file = new File(['x'], name, { type: 'image/png' })
+function makeFile(name = 'photo.png', size = 1024, type = 'image/png') {
+  const file = new File(['x'], name, { type })
   Object.defineProperty(file, 'size', { configurable: true, value: size })
   return file
 }
@@ -30,6 +30,7 @@ function setup(recipient: { id: number; nickname: string } | null = { id: 7, nic
   const onWarning = vi.fn()
   const ingress = useAttachmentIngress({
     maxBytes: 50 * 1024 * 1024,
+    maxFiles: 9,
     getRecipient: () => recipient,
     onStage,
     onWarning,
@@ -47,38 +48,64 @@ describe('useAttachmentIngress', () => {
     expect(onStage).not.toHaveBeenCalled()
   })
 
-  it('stages exactly one pasted file and prevents default', () => {
+  it('stages one pasted file and prevents default', () => {
     const { ingress, onStage } = setup()
     const file = makeFile()
     const event = makePasteEvent([file])
 
     expect(ingress.handlePaste(event)).toBe(true)
     expect(event.defaultPrevented).toBe(true)
-    expect(onStage).toHaveBeenCalledWith(file, { id: 7, nickname: 'Bob' })
+    expect(onStage).toHaveBeenCalledWith([file], { id: 7, nickname: 'Bob' })
   })
 
-  it('stages exactly one dropped file and prevents default navigation', () => {
+  it('stages multiple dropped images and prevents default navigation', () => {
     const { ingress, onStage } = setup()
-    const file = makeFile('report.pdf')
-    const event = makeDropEvent([file])
+    const files = [makeFile('a.png'), makeFile('b.jpg', 1024, 'image/jpeg')]
+    const event = makeDropEvent(files)
 
     expect(ingress.handleDrop(event)).toBe(true)
     expect(event.defaultPrevented).toBe(true)
-    expect(onStage).toHaveBeenCalledWith(file, { id: 7, nickname: 'Bob' })
+    expect(onStage).toHaveBeenCalledWith(files, { id: 7, nickname: 'Bob' })
   })
 
-  it('rejects multiple files with an explicit warning', () => {
-    const { ingress, onStage, onWarning } = setup()
+  it('allows up to nine images in one batch', () => {
+    const { ingress, onStage } = setup()
+    const files = Array.from({ length: 9 }, (_, index) => makeFile(`${index}.png`))
 
-    expect(ingress.acceptFiles([makeFile('a.png'), makeFile('b.png')])).toBe(false)
-    expect(onWarning).toHaveBeenCalledWith('暂时只支持一次发送 1 个文件')
+    expect(ingress.acceptFiles(files)).toBe(true)
+    expect(onStage).toHaveBeenCalledWith(files, { id: 7, nickname: 'Bob' })
+  })
+
+  it('rejects more than nine files with an explicit warning', () => {
+    const { ingress, onStage, onWarning } = setup()
+    const files = Array.from({ length: 10 }, (_, index) => makeFile(`${index}.png`))
+
+    expect(ingress.acceptFiles(files)).toBe(false)
+    expect(onWarning).toHaveBeenCalledWith('一次最多发送 9 张图片')
     expect(onStage).not.toHaveBeenCalled()
+  })
+
+  it('rejects a mixed batch that contains non-image files', () => {
+    const { ingress, onStage, onWarning } = setup()
+    const files = [makeFile('a.png'), makeFile('report.pdf', 1024, 'application/pdf')]
+
+    expect(ingress.acceptFiles(files)).toBe(false)
+    expect(onWarning).toHaveBeenCalledWith('批量发送仅支持图片')
+    expect(onStage).not.toHaveBeenCalled()
+  })
+
+  it('still allows a single non-image attachment', () => {
+    const { ingress, onStage } = setup()
+    const file = makeFile('report.pdf', 1024, 'application/pdf')
+
+    expect(ingress.acceptFiles([file])).toBe(true)
+    expect(onStage).toHaveBeenCalledWith([file], { id: 7, nickname: 'Bob' })
   })
 
   it('rejects a file larger than 50 MB', () => {
     const { ingress, onStage, onWarning } = setup()
 
-    expect(ingress.acceptFiles([makeFile('large.bin', 50 * 1024 * 1024 + 1)])).toBe(false)
+    expect(ingress.acceptFiles([makeFile('large.png', 50 * 1024 * 1024 + 1)])).toBe(false)
     expect(onWarning).toHaveBeenCalledWith('文件最大支持 50MB')
     expect(onStage).not.toHaveBeenCalled()
   })
