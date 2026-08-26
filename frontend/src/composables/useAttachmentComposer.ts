@@ -1,4 +1,5 @@
 import { readonly, ref, type Ref } from 'vue'
+import { bindAttachmentRecipient } from '../utils/attachmentRecipient'
 
 export interface AttachmentRecipient {
   id: number
@@ -22,6 +23,7 @@ export function useAttachmentComposer(options: {
   const staged = ref<StagedAttachment | null>(null)
 
   function stage(files: File[], recipient: AttachmentRecipient) {
+    bindAttachmentRecipient(files, recipient.id)
     staged.value = {
       files: [...files],
       recipient: { ...recipient },
