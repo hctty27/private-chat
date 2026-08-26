@@ -29,7 +29,7 @@ describe('session recovery', () => {
     expect(mocks.checkSession).toHaveBeenCalledTimes(1)
     mocks.checkSession.mockClear()
 
-    window.dispatchEvent(new PageTransitionEvent('pageshow'))
+    window.dispatchEvent(new Event('pageshow'))
     await Promise.resolve()
     await Promise.resolve()
 
