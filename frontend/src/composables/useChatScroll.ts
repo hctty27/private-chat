@@ -4,7 +4,7 @@ import { useChatStore } from '../stores/chat'
 import { isDocumentVisible } from '../utils/chatVisibility'
 
 export const CHAT_SCROLL_MARGIN = 44
-const LOAD_MORE_TRIGGER_PX = 24
+const LOAD_MORE_TRIGGER_PX = 120
 const LOAD_MORE_REARM_PX = 120
 
 export interface ConversationScrollAnchor {
