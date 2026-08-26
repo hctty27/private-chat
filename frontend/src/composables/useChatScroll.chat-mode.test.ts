@@ -158,7 +158,7 @@ describe('useChatScroll chat mode', () => {
     wrapper.unmount()
   })
 
-  it('loads history only once until the viewport leaves the top zone', async () => {
+  it('loads history ahead of the top edge only once until the viewport leaves the top zone', async () => {
     vi.useFakeTimers()
     const chatStore = useChatStore()
     chatStore.hasMore = true
@@ -180,7 +180,7 @@ describe('useChatScroll chat mode', () => {
       Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
       Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
 
-      container.scrollTop = 10
+      container.scrollTop = 100
       container.dispatchEvent(new Event('scroll'))
       await Promise.resolve()
       expect(loadMessages).toHaveBeenCalledTimes(1)
@@ -199,7 +199,7 @@ describe('useChatScroll chat mode', () => {
 
       container.scrollTop = 160
       container.dispatchEvent(new Event('scroll'))
-      container.scrollTop = 10
+      container.scrollTop = 100
       container.dispatchEvent(new Event('scroll'))
       await Promise.resolve()
       expect(loadMessages).toHaveBeenCalledTimes(2)
