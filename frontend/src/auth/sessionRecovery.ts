@@ -3,7 +3,7 @@ import { useUserStore } from '../stores/user'
 
 const CHECK_INTERVAL_MS = 60_000
 let inFlightCheck: Promise<void> | null = null
-let installed = false
+let cleanupRecovery: (() => void) | null = null
 
 export function verifyCurrentSession(): Promise<void> {
   if (!useUserStore().token) return Promise.resolve()
@@ -20,16 +20,25 @@ export function verifyCurrentSession(): Promise<void> {
 }
 
 export function installSessionRecovery() {
-  if (installed || typeof window === 'undefined') return
-  installed = true
+  if (cleanupRecovery || typeof window === 'undefined') return cleanupRecovery || undefined
 
   const verifyWhenVisible = () => {
     if (document.visibilityState === 'visible') void verifyCurrentSession()
   }
+  const intervalId = window.setInterval(verifyWhenVisible, CHECK_INTERVAL_MS)
 
   document.addEventListener('visibilitychange', verifyWhenVisible)
   window.addEventListener('pageshow', verifyWhenVisible)
   window.addEventListener('online', verifyWhenVisible)
-  window.setInterval(verifyWhenVisible, CHECK_INTERVAL_MS)
+
+  cleanupRecovery = () => {
+    document.removeEventListener('visibilitychange', verifyWhenVisible)
+    window.removeEventListener('pageshow', verifyWhenVisible)
+    window.removeEventListener('online', verifyWhenVisible)
+    window.clearInterval(intervalId)
+    cleanupRecovery = null
+  }
+
   void verifyCurrentSession()
+  return cleanupRecovery
 }
