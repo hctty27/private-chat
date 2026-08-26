@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { getMessages } from '../api'
+import { getMessages, uploadFile } from '../api'
 import { useChatStore } from './chat'
 import { useUserStore } from './user'
 import type { Contact, Message } from '../types'
@@ -131,5 +131,34 @@ describe('chat store conversation loading state', () => {
     expect(chatStore.messages.map(item => item.id)).toEqual([20])
     expect(chatStore.messageLoadState).toBe('loaded')
     expect(chatStore.messageLoadError).toBe('')
+  })
+
+  it('keeps a staged attachment bound to its original recipient after switching contacts', async () => {
+    const alice = contact(1, 'Alice')
+    const bob = contact(2, 'Bob')
+    const file = new File(['image'], 'photo.png', { type: 'image/png' })
+    Object.defineProperty(file, Symbol.for('private-chat.attachmentRecipientId'), {
+      configurable: true,
+      value: alice.userId,
+    })
+    vi.mocked(uploadFile).mockResolvedValueOnce({
+      data: {
+        code: 200,
+        data: {
+          fileId: 10,
+          url: '/api/files/10',
+          fileName: file.name,
+          fileSize: file.size,
+        },
+      },
+    } as any)
+
+    const chatStore = useChatStore()
+    chatStore.currentContact = bob
+
+    await chatStore.sendFile(file)
+
+    expect(uploadFile).toHaveBeenCalledWith(file, alice.userId, expect.any(Function))
+    expect(chatStore.messages).toHaveLength(0)
   })
 })
