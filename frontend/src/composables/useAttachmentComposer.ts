@@ -6,7 +6,7 @@ export interface AttachmentRecipient {
 }
 
 export interface StagedAttachment {
-  file: File
+  files: File[]
   recipient: AttachmentRecipient
 }
 
@@ -15,15 +15,15 @@ export function useAttachmentComposer(options: {
   onRecipientMismatch: () => void
 }): {
   staged: Readonly<Ref<StagedAttachment | null>>
-  stage(file: File, recipient: AttachmentRecipient): void
+  stage(files: File[], recipient: AttachmentRecipient): void
   cancel(): void
-  takeConfirmed(): File | null
+  takeConfirmed(): File[] | null
 } {
   const staged = ref<StagedAttachment | null>(null)
 
-  function stage(file: File, recipient: AttachmentRecipient) {
+  function stage(files: File[], recipient: AttachmentRecipient) {
     staged.value = {
-      file,
+      files: [...files],
       recipient: { ...recipient },
     }
   }
@@ -32,7 +32,7 @@ export function useAttachmentComposer(options: {
     staged.value = null
   }
 
-  function takeConfirmed(): File | null {
+  function takeConfirmed(): File[] | null {
     const pending = staged.value
     if (!pending) return null
 
@@ -42,7 +42,7 @@ export function useAttachmentComposer(options: {
       options.onRecipientMismatch()
       return null
     }
-    return pending.file
+    return [...pending.files]
   }
 
   return {
