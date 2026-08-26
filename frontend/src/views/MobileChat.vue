@@ -167,7 +167,7 @@
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" aria-label="表情" @click="toggleEmoji">😊</button>
           <button class="ibtn tap-target" type="button" aria-label="添加附件" :disabled="uploadBusy" @click="fileEl?.click()">＋</button>
-          <input ref="fileEl" type="file" hidden @change="onFile" />
+          <input ref="fileEl" type="file" multiple hidden @change="onFile" />
           <textarea
             ref="inputEl"
             v-model="text"
@@ -185,7 +185,7 @@
 
       <AttachmentSendDialog
         :visible="!!attachmentComposer.staged.value"
-        :file="attachmentComposer.staged.value?.file ?? null"
+        :files="attachmentComposer.staged.value?.files ?? []"
         :recipient-name="attachmentComposer.staged.value?.recipient.nickname ?? ''"
         :busy="uploadBusy"
         @cancel="closeOverlay('attachment')"
@@ -280,10 +280,11 @@ const attachmentComposer = useAttachmentComposer({
 
 const attachmentIngress = useAttachmentIngress({
   maxBytes: 50 * 1024 * 1024,
+  maxFiles: 9,
   getRecipient: currentRecipient,
-  onStage: (file, recipient) => {
+  onStage: (files, recipient) => {
     emojiOpen.value = false
-    attachmentComposer.stage(file, recipient)
+    attachmentComposer.stage(files, recipient)
   },
   onWarning: (message) => ElMessage.warning(message),
 })
@@ -496,33 +497,39 @@ async function send() {
 
 async function onFile(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = input.files ? Array.from(input.files) : []
   input.value = ''
-  if (!file || uploadBusy.value) return
+  if (files.length === 0 || uploadBusy.value) return
   const contactId = chatStore.currentContact?.userId
-  if (!contactId || !attachmentIngress.acceptFiles([file])) return
+  if (!contactId || !attachmentIngress.acceptFiles(files)) return
   await mobileHistory.pushOverlay(contactId, 'attachment')
 }
 
 async function confirmAttachment() {
-  const file = attachmentComposer.takeConfirmed()
-  if (!file || uploadBusy.value) return
+  const files = attachmentComposer.takeConfirmed()
+  if (!files?.length || uploadBusy.value) return
   const state = mobileHistory.read()
   if (state.kind === 'overlay' && state.overlay === 'attachment') requestBack()
   uploadBusy.value = true
   try {
-    await doUpload(file)
+    await doUpload(files)
   } finally {
     uploadBusy.value = false
   }
 }
 
-async function doUpload(file: File) {
+async function doUpload(files: File[]) {
+  const fileProgress = Array.from({ length: files.length }, () => 0)
   progress.value = 0
   try {
-    await chatStore.sendFile(file, p => { progress.value = p })
-    await nextTick()
-    scroll.scrollToBottomAndClear(true)
+    for (let index = 0; index < files.length; index++) {
+      await chatStore.sendFile(files[index], (p) => {
+        fileProgress[index] = p
+        progress.value = Math.round(fileProgress.reduce((sum, value) => sum + value, 0) / files.length)
+      })
+      await nextTick()
+      scroll.scrollToBottomAndClear(true)
+    }
   } finally {
     progress.value = 0
   }
