@@ -4,6 +4,7 @@ import type { Contact, LocalMessageStatus, Message, MessageLoadState, WsClientCh
 import { getContacts, getMessages, uploadFile } from '../api'
 import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
+import { getAttachmentRecipientId } from '../utils/attachmentRecipient'
 import { isDocumentVisible, shouldIncrementUnread } from '../utils/chatVisibility'
 
 export const useChatStore = defineStore('chat', () => {
@@ -410,12 +411,12 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendFile(file: File, onProgress?: (p: number) => void) {
     const userStore = useUserStore()
-    if (!currentContact.value || !userStore.userId) return
+    const userId = userStore.userId
+    const receiverId = getAttachmentRecipientId(file) ?? currentContact.value?.userId
+    if (!userId || !receiverId) return
 
     const generation = storeGeneration
-    const userId = userStore.userId
     const token = userStore.token
-    const receiverId = currentContact.value.userId
     const clientMsgId = createClientMsgId()
     const isImage = file.type.startsWith('image/')
     const isVideo = file.type.startsWith('video/')
@@ -433,8 +434,8 @@ export const useChatStore = defineStore('chat', () => {
       localFile: file,
       uploadProgress: 0,
     })
-    messages.value.push(local)
-    const tracked = messages.value[messages.value.length - 1]
+    const tracked = local
+    if (currentContact.value?.userId === receiverId) messages.value.push(tracked)
     trackLocalMessage(tracked)
 
     try {
