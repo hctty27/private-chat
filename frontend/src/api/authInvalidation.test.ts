@@ -4,7 +4,6 @@ import { createPinia, setActivePinia } from 'pinia'
 const mocks = vi.hoisted(() => ({
   requestUse: vi.fn(),
   responseUse: vi.fn(),
-  routerReplace: vi.fn(),
 }))
 
 vi.mock('axios', () => ({
@@ -21,12 +20,6 @@ vi.mock('axios', () => ({
   },
 }))
 
-vi.mock('../router', () => ({
-  default: {
-    replace: mocks.routerReplace,
-  },
-}))
-
 import { useUserStore } from '../stores/user'
 import './index'
 
@@ -34,7 +27,6 @@ describe('API auth invalidation', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    mocks.routerReplace.mockReset()
   })
 
   it('clears the in-memory user session when a protected request returns 401', async () => {
