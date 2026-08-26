@@ -181,6 +181,14 @@ func (a *App) routes() (*gin.Engine, error) {
 		protected := api.Group("")
 		protected.Use(a.secureAuthMiddleware())
 		{
+			protected.GET("/auth/session", func(c *gin.Context) {
+				userID, ok := getUserID(c)
+				if !ok {
+					unauthorized(c)
+					return
+				}
+				respondSuccess(c, gin.H{"userId": userID})
+			})
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/messages/:targetId", a.requireContactParam("targetId"), a.messagesHandler)
