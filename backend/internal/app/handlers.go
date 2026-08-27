@@ -236,7 +236,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 	}, nil
 }
 
-const maxFileUploadSize = 100 * 1024 * 1024
+const maxFileUploadSize = maxGenericUploadSize
 
 func (a *App) presignUploadHandler(c *gin.Context) {
 	_, ok := getUserID(c)
@@ -263,20 +263,13 @@ func (a *App) presignUpload(ctx context.Context, req model.FilePresignUploadRequ
 	if fileName == "" {
 		return model.FilePresignUploadDTO{}, fmt.Errorf("file name is empty")
 	}
-	if req.FileSize > maxFileUploadSize {
+	contentType := normalizeUploadContentType(fileName, req.ContentType)
+	if req.FileSize > maxUploadSizeFor(contentType) {
 		return model.FilePresignUploadDTO{}, fmt.Errorf("file too large")
 	}
 
 	ext := filepath.Ext(fileName)
 	objectName := uuid.NewString() + ext
-	contentType := strings.TrimSpace(req.ContentType)
-	if contentType == "" {
-		contentType = mime.TypeByExtension(strings.ToLower(ext))
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
 	storageKey := objectStorageKey(a.cfg.ObjectStoragePrefix, objectName)
 	uploadURL, err := a.storage.PresignedPutObject(ctx, a.cfg.StorageBucket, storageKey, expiry)
 	if err != nil {
