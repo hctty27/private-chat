@@ -8,7 +8,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -21,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/signer"
 	"gorm.io/gorm"
 )
 
@@ -80,11 +78,9 @@ type fileObjectStorage interface {
 }
 
 type minioFileStorage struct {
-	client    *minio.Client
-	bucket    string
-	prefix    string
-	accessKey string
-	secretKey string
+	client *minio.Client
+	bucket string
+	prefix string
 }
 
 func (s minioFileStorage) key(objectKey string) string {
@@ -107,27 +103,18 @@ func (s minioFileStorage) BeginMultipart(ctx context.Context, objectKey, content
 }
 
 func (s minioFileStorage) PresignMultipartPart(ctx context.Context, objectKey, uploadID string, partNumber int, expiry time.Duration) (string, error) {
-	if strings.TrimSpace(s.accessKey) == "" || strings.TrimSpace(s.secretKey) == "" {
-		return "", fmt.Errorf("storage credentials unavailable")
-	}
-	if uploadID == "" || partNumber <= 0 {
+	if strings.TrimSpace(uploadID) == "" || partNumber <= 0 {
 		return "", fmt.Errorf("invalid multipart request")
 	}
 
-	endpoint := s.client.EndpointURL()
-	target := *endpoint
-	target.Path = "/" + path.Join(strings.TrimPrefix(target.Path, "/"), s.bucket, s.key(objectKey))
-	query := target.Query()
-	query.Set("partNumber", strconv.Itoa(partNumber))
-	query.Set("uploadId", uploadID)
-	target.RawQuery = query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, target.String(), nil)
+	params := url.Values{}
+	params.Set("partNumber", strconv.Itoa(partNumber))
+	params.Set("uploadId", uploadID)
+	u, err := s.client.Presign(ctx, http.MethodPut, s.bucket, s.key(objectKey), expiry, params)
 	if err != nil {
 		return "", err
 	}
-	signed := signer.PreSignV4(*req, s.accessKey, s.secretKey, "", "auto", int64(expiry/time.Second))
-	return signed.URL.String(), nil
+	return u.String(), nil
 }
 
 func (s minioFileStorage) CompleteMultipart(ctx context.Context, objectKey, uploadID string, parts []model.FileMultipartCompletedPart) error {
