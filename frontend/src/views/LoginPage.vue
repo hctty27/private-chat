@@ -92,8 +92,8 @@ async function handleLogin() {
   try {
     const res = await loginApi(username.value.trim(), password.value)
     if (res.data.code === 200) {
-      const { token, userId, nickname } = res.data.data
-      userStore.login(token, userId, nickname)
+      const { userId, nickname } = res.data.data
+      userStore.login(userId, nickname)
       sessionStorage.removeItem('fromCover')
       router.push('/chat')
     } else {
