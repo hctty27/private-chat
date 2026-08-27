@@ -66,7 +66,7 @@ docker logs private-chat-frontend --tail 50
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/auth/login | 登录（username/password → JWT） |
+| POST | /api/auth/login | 登录并设置 HttpOnly 会话 Cookie |
 | GET | /api/contacts | 联系人列表 |
 | GET | /api/messages/:targetId | 历史消息（游标分页） |
 | POST | /api/file/upload | 文件上传（multipart） |
@@ -76,7 +76,7 @@ docker logs private-chat-frontend --tail 50
 
 连接: `ws://host/ws/chat`（生产环境使用 `wss://`）
 
-鉴权: WebSocket 握手只使用 `private_chat_session` HttpOnly Cookie；查询参数 JWT 和 `Authorization` Header 不参与 WebSocket 鉴权。
+鉴权: HTTP API 和 WebSocket 都只使用 `private_chat_session` HttpOnly Cookie；前端不保存 JWT，也不发送 Bearer Token。WebSocket 查询参数 JWT 和 `Authorization` Header 不参与鉴权。
 
 客户端→服务端:
 - `{ "type": "chat", "data": { "receiverId", "msgType", "content", "fileUrl", "fileName", "fileSize" } }`
