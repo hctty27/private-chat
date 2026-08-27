@@ -155,6 +155,54 @@ func formatLocalTime(t time.Time, loc *time.Location) string {
 	return t.In(loc).Format("2006-01-02T15:04:05")
 }
 
+type messageCursor struct {
+	CreatedAt time.Time
+	ID        int64
+	HasID     bool
+}
+
+func parseMessageCursor(raw string, loc *time.Location) (messageCursor, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return messageCursor{}, fmt.Errorf("cursor invalid")
+	}
+
+	if microsText, idText, found := strings.Cut(raw, ":"); found {
+		micros, err := strconv.ParseInt(microsText, 10, 64)
+		if err != nil {
+			return messageCursor{}, fmt.Errorf("cursor invalid")
+		}
+		id, err := strconv.ParseInt(idText, 10, 64)
+		if err != nil || id <= 0 {
+			return messageCursor{}, fmt.Errorf("cursor invalid")
+		}
+		return messageCursor{
+			CreatedAt: time.UnixMicro(micros).In(loc),
+			ID:        id,
+			HasID:     true,
+		}, nil
+	}
+
+	millis, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return messageCursor{}, fmt.Errorf("cursor invalid")
+	}
+	return messageCursor{CreatedAt: time.UnixMilli(millis).In(loc)}, nil
+}
+
+func nextMessageCursor(messages []model.Message) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	oldest := messages[0]
+	for _, msg := range messages[1:] {
+		if msg.CreatedAt.Before(oldest.CreatedAt) || (msg.CreatedAt.Equal(oldest.CreatedAt) && msg.ID < oldest.ID) {
+			oldest = msg
+		}
+	}
+	return fmt.Sprintf("%d:%d", oldest.CreatedAt.UTC().UnixMicro(), oldest.ID)
+}
+
 func reverseMessages(messages []model.Message) {
 	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
 		messages[i], messages[j] = messages[j], messages[i]
@@ -164,7 +212,15 @@ func reverseMessages(messages []model.Message) {
 func sortMessages(messages []model.Message) {
 	for i := 1; i < len(messages); i++ {
 		j := i
-		for j > 0 && messages[j-1].CreatedAt.After(messages[j].CreatedAt) {
+		for j > 0 {
+			previous := messages[j-1]
+			current := messages[j]
+			if previous.CreatedAt.Before(current.CreatedAt) {
+				break
+			}
+			if previous.CreatedAt.Equal(current.CreatedAt) && previous.ID <= current.ID {
+				break
+			}
 			messages[j-1], messages[j] = messages[j], messages[j-1]
 			j--
 		}
