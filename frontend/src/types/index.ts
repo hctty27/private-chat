@@ -25,9 +25,9 @@ export interface Contact {
   nickname: string
   online: boolean
   lastSeenAt: string | null
-  availabilityStartAt: string | null
-  availabilityEndAt: string | null
-  availabilityNote: string | null
+  availabilityStartAt?: string | null
+  availabilityEndAt?: string | null
+  availabilityNote?: string | null
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
