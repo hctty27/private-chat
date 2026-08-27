@@ -276,6 +276,7 @@ const attachments = useChatAttachments({
 const { attachmentComposer, attachmentIngress, progress, uploadBusy } = attachments
 const {
   showTimeByIndex,
+  isLastSelfMessage,
   shouldShowMessageStatus,
   isPendingMediaMessage,
   pendingMediaText,
