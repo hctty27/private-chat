@@ -5,7 +5,11 @@ export interface ApiResponse<T> {
 }
 
 export interface LoginResponse {
-  token: string
+  userId: number
+  nickname: string
+}
+
+export interface SessionResponse {
   userId: number
   nickname: string
 }
