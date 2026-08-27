@@ -29,10 +29,19 @@ describe('chat interaction performance guards', () => {
     }
   })
 
-  it('guards desktop scroll restoration against stale contact selections', () => {
+  it('opens explicit conversation selections at the latest message', () => {
     expect(chatPageSource).toContain('let selectionSeq = 0')
     expect(chatPageSource).toContain('const seq = ++selectionSeq')
     expect(chatPageSource).toContain('if (seq !== selectionSeq || chatStore.currentContact?.userId !== id) return')
+    expect(chatPageSource).toContain('scroll.onContactChange({ scrollToBottom: true })')
+    expect(chatPageSource).not.toContain('scrollMemory')
+    expect(chatPageSource).not.toContain('restoreVisibleAnchor')
+
+    expect(mobileChatSource).toContain('async function enterContactAtLatest()')
+    expect(mobileChatSource).toContain('scroll.onContactChange({ scrollToBottom: true })')
+    expect(mobileChatSource).toContain('await enterContactAtLatest()')
+    expect(mobileChatSource).not.toContain('scrollMemory')
+    expect(mobileChatSource).not.toContain('restoreContactScroll')
   })
 
   it('keeps mobile connection status out of chat layout flow', () => {
