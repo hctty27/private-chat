@@ -31,7 +31,7 @@ describe('API auth invalidation', () => {
 
   it('clears the in-memory user session when a protected request returns 401', async () => {
     const userStore = useUserStore()
-    userStore.login('expired-token', 42, 'Expired User')
+    userStore.login(42, 'Expired User')
 
     const error = {
       config: { url: '/api/contacts' },
@@ -39,7 +39,7 @@ describe('API auth invalidation', () => {
     }
     await expect(handleApiError(error)).rejects.toBe(error)
 
-    expect(userStore.token).toBe('')
+    expect(userStore.authenticated).toBe(false)
     expect(userStore.userId).toBe(0)
     expect(userStore.nickname).toBe('')
     expect(localStorage.getItem('token')).toBeNull()
