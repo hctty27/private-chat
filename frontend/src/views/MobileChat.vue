@@ -54,84 +54,81 @@
 
         <div
           v-if="chatStore.messages.length > 0"
-          class="virtual-list"
-          :style="{ height: scroll.virtualizer.value.getTotalSize() + 'px', position: 'relative' }"
+          class="message-list"
         >
           <div
-            v-for="vi in scroll.virtualizer.value.getVirtualItems()"
-            :key="String(vi.key)"
-            :ref="scroll.measureItem"
-            class="virtual-item"
-            :data-index="vi.index"
-            :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start - CHAT_SCROLL_MARGIN}px)` }"
-            :data-msg-id="chatStore.messages[vi.index]?.id"
+            v-for="(message, index) in chatStore.messages"
+            :key="message.clientMsgId || message.id"
+            class="message-item"
+            :data-index="index"
+            :data-msg-id="message.id"
           >
-            <div v-if="showTimeByIndex(vi.index)" class="time-bar">
-              <span>{{ fmtChatTime(chatStore.messages[vi.index].createdAt) }}</span>
+            <div v-if="showTimeByIndex(index)" class="time-bar">
+              <span>{{ fmtChatTime(message.createdAt) }}</span>
             </div>
             <div
               class="msg"
-              :class="chatStore.messages[vi.index].senderId === uid ? 'right' : 'left'"
-              @pointerdown="longPress.start($event, chatStore.messages[vi.index])"
+              :class="message.senderId === uid ? 'right' : 'left'"
+              @pointerdown="longPress.start($event, message)"
               @pointermove="longPress.move($event)"
               @pointerup="longPress.cancel"
               @pointercancel="longPress.cancel"
-              @contextmenu="onMobileContextMenu($event, chatStore.messages[vi.index])"
+              @contextmenu="onMobileContextMenu($event, message)"
             >
-              <div class="bubble" :class="bubbleType(chatStore.messages[vi.index])">
-                <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
-                <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
-                <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
+              <div class="bubble" :class="bubbleType(message)">
+                <template v-if="message.msgType === 1">{{ message.content }}</template>
+                <template v-else-if="message.msgType === 4"><span class="emoji-big">{{ message.content }}</span></template>
+                <template v-else-if="message.msgType === 2 && message.fileUrl">
                   <div class="pic-shell">
                     <img
-                      :src="chatStore.messages[vi.index].fileId ? `/api/files/${chatStore.messages[vi.index].fileId}/thumbnail` : chatStore.messages[vi.index].fileUrl ?? undefined"
+                      :src="message.fileId ? `/api/files/${message.fileId}/thumbnail` : message.fileUrl ?? undefined"
                       decoding="async"
                       class="pic"
                       @load="onImageLoaded"
-                      @error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"
-                      @click.stop="openPreviewFromBubble($event, chatStore.messages[vi.index].fileUrl!, 'image')"
+                      @error="fallbackImageToOriginal($event, message)"
+                      @click.stop="openPreviewFromBubble($event, message.fileUrl!, 'image')"
                     />
                   </div>
                 </template>
-                <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
+                <template v-else-if="message.msgType === 5 && message.fileUrl">
                   <a
-                    :href="chatStore.messages[vi.index].fileUrl ?? undefined"
+                    :href="message.fileUrl ?? undefined"
                     :target="isIOS ? '_self' : '_blank'"
                     rel="noopener"
                     class="video-link"
                     @click.stop="guardNativeMessageClick"
                   >
-                    {{ chatStore.messages[vi.index].fileName }}
-                    <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
+                    {{ message.fileName }}
+                    <small v-if="message.fileSize">{{ fmtSize(message.fileSize!) }}</small>
                   </a>
                 </template>
-                <template v-else-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileUrl">
+                <template v-else-if="message.msgType === 3 && message.fileUrl">
                   <a
-                    :href="chatStore.messages[vi.index].fileUrl ?? undefined"
+                    :href="message.fileUrl ?? undefined"
                     :target="isIOS ? '_self' : '_blank'"
                     :download="isIOS ? undefined : ''"
                     class="file-link"
                     @click.stop="guardNativeMessageClick"
                   >
-                    📎 {{ chatStore.messages[vi.index].fileName }}
-                    <small>{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
+                    📎 {{ message.fileName }}
+                    <small>{{ fmtSize(message.fileSize!) }}</small>
                   </a>
                 </template>
-                <template v-else-if="isPendingMediaMessage(chatStore.messages[vi.index])">
+                <template v-else-if="isPendingMediaMessage(message)">
                   <div class="media-fallback">
-                    <span>{{ pendingMediaText(chatStore.messages[vi.index]) }}</span>
-                    <small v-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
+                    <span>{{ pendingMediaText(message) }}</span>
+                    <small v-if="message.msgType === 3 && message.fileSize">{{ fmtSize(message.fileSize!) }}</small>
                   </div>
                 </template>
               </div>
-              <div v-if="shouldShowMessageStatus(vi.index)" class="read-tag">
+              <div v-if="shouldShowMessageStatus(index)" class="read-tag">
                 <MessageStatusIndicator
-                  :status="chatStore.messages[vi.index].localStatus"
-                  :is-read="chatStore.messages[vi.index].isRead === 1"
-                  :progress="chatStore.messages[vi.index].uploadProgress"
-                  :error="chatStore.messages[vi.index].localError"
-                  :show-read-state="!chatStore.messages[vi.index].localStatus && isLastSelfMessage(vi.index)"
-                  @retry="retryMessageByClientId(chatStore.messages[vi.index]?.clientMsgId)"
+                  :status="message.localStatus"
+                  :is-read="message.isRead === 1"
+                  :progress="message.uploadProgress"
+                  :error="message.localError"
+                  :show-read-state="!message.localStatus && isLastSelfMessage(index)"
+                  @retry="retryMessageByClientId(message?.clientMsgId)"
                 />
               </div>
             </div>
@@ -213,7 +210,7 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
-import { CHAT_SCROLL_MARGIN, useChatScroll } from '../composables/useChatScroll'
+import { useChatScroll } from '../composables/useChatScroll'
 import { useChatDrafts } from '../composables/useChatDrafts'
 import { useAttachmentComposer } from '../composables/useAttachmentComposer'
 import { useAttachmentIngress } from '../composables/useAttachmentIngress'
@@ -292,7 +289,7 @@ const attachmentIngress = useAttachmentIngress({
   onWarning: (message) => ElMessage.warning(message),
 })
 
-const scroll = useChatScroll(listEl, uid)
+const scroll = useChatScroll(listEl, uid, { virtualized: false })
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 const chatPageStyle = computed(() => viewportHeight.value ? {
   height: `${viewportHeight.value}px`,
@@ -783,7 +780,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .ch-status { margin-top: 3px; font-size: 11px; color: #8e8e93; }
 .chat-head-spacer { width: 44px; height: 44px; }
 :deep(.connection-notice) { margin: 8px 12px 0; flex-shrink: 0; }
-.msg-scroll { flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; padding: 12px; background: #ededed; touch-action: pan-y; }
+.msg-scroll { flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; padding: 12px; background: #ededed; touch-action: pan-y; overflow-anchor: none; }
+.message-list, .message-item { width: 100%; }
 .load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .load-text { font-size: 12px; color: #999; }
 .load-retry { min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: #576b95; font-size: 12px; cursor: pointer; }

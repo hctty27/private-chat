@@ -12,11 +12,17 @@ export interface ConversationScrollAnchor {
   offset: number
 }
 
+export interface ChatScrollOptions {
+  virtualized?: boolean
+}
+
 export function useChatScroll(
   listEl: Ref<HTMLElement | null>,
-  uid: Ref<number>
+  uid: Ref<number>,
+  options: ChatScrollOptions = {}
 ) {
   const chatStore = useChatStore()
+  const virtualized = options.virtualized !== false
   const loading = ref(false)
   const loadMoreError = ref('')
   const newMessageCount = ref(0)
@@ -26,6 +32,7 @@ export function useChatScroll(
   const virtualizer = useVirtualizer(computed(() => ({
     count: chatStore.messages.length,
     getScrollElement: () => listEl.value,
+    enabled: virtualized,
     estimateSize: () => estimatedMessageHeight,
     getItemKey: (index: number) => chatStore.messages[index]?.id ?? index,
     anchorTo: 'end' as const,
@@ -79,7 +86,17 @@ export function useChatScroll(
   function scrollToBottom(smooth = false) {
     wasNearBottom = true
     requestAnimationFrame(() => {
-      virtualizer.value.scrollToEnd({ behavior: smooth ? 'smooth' : 'auto' })
+      if (virtualized) {
+        virtualizer.value.scrollToEnd({ behavior: smooth ? 'smooth' : 'auto' })
+        return
+      }
+
+      const el = listEl.value
+      if (!el) return
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      })
     })
   }
 
@@ -90,7 +107,7 @@ export function useChatScroll(
   function captureVisibleAnchor(): ConversationScrollAnchor | null {
     if (!listEl.value) return null
     const containerTop = listEl.value.getBoundingClientRect().top
-    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id]')
+    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id], .message-item[data-msg-id]')
 
     for (const item of items) {
       const messageId = Number(item.dataset.msgId)
@@ -106,7 +123,9 @@ export function useChatScroll(
 
   function restoreAnchorPosition(anchor: ConversationScrollAnchor) {
     if (!listEl.value) return false
-    const item = listEl.value.querySelector<HTMLElement>(`.virtual-item[data-msg-id="${anchor.messageId}"]`)
+    const item = listEl.value.querySelector<HTMLElement>(
+      `.virtual-item[data-msg-id="${anchor.messageId}"], .message-item[data-msg-id="${anchor.messageId}"]`
+    )
     if (!item) return false
 
     const delta = item.getBoundingClientRect().top - listEl.value.getBoundingClientRect().top - anchor.offset
@@ -117,6 +136,13 @@ export function useChatScroll(
   async function restoreVisibleAnchor(anchor: ConversationScrollAnchor) {
     const index = chatStore.messages.findIndex((m) => m.id === anchor.messageId)
     if (index < 0) return false
+
+    if (!virtualized) {
+      await nextTick()
+      const restored = restoreAnchorPosition(anchor)
+      wasNearBottom = isNearBottom(80)
+      return restored
+    }
 
     virtualizer.value.scrollToIndex(index, { align: 'start', behavior: 'auto' })
     await nextFrame()
@@ -141,6 +167,7 @@ export function useChatScroll(
     wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
+    if (!virtualized) scheduleReadCheck()
 
     if (loading.value || !chatStore.hasMore || !loadMoreArmed) return
     if (scrollTop <= LOAD_MORE_TRIGGER_PX) {
@@ -154,6 +181,7 @@ export function useChatScroll(
     loading.value = true
     loadMoreError.value = ''
     isLoadingMore = true
+    const anchor = virtualized ? null : captureVisibleAnchor()
 
     try {
       const loaded = await chatStore.loadMessages('loadMore')
@@ -163,6 +191,7 @@ export function useChatScroll(
       }
 
       await nextTick()
+      if (anchor) restoreAnchorPosition(anchor)
     } finally {
       isLoadingMore = false
       loading.value = false
@@ -178,8 +207,31 @@ export function useChatScroll(
 
   function checkVisibleUnread() {
     if (!isDocumentVisible() || !chatStore.currentContact || !listEl.value) return
-    const v = virtualizer.value
-    const items = v.getVirtualItems()
+
+    if (!virtualized) {
+      const containerRect = listEl.value.getBoundingClientRect()
+      const items = Array.from(
+        listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
+      )
+
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i]
+        const index = Number(item.dataset.index)
+        if (!Number.isInteger(index)) continue
+
+        const rect = item.getBoundingClientRect()
+        if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) continue
+
+        const msg = chatStore.messages[index]
+        if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
+          sendReadReceipt()
+          return
+        }
+      }
+      return
+    }
+
+    const items = virtualizer.value.getVirtualItems()
     if (!items.length) return
 
     for (let i = items.length - 1; i >= 0; i--) {
@@ -232,6 +284,12 @@ export function useChatScroll(
     if (!isLoadingMore && addedCount > 0) {
       if (wasNearBottom) {
         newMessageCount.value = 0
+        if (!virtualized) {
+          const appended = chatStore.messages.slice(-addedCount)
+          if (appended.some((message) => message.senderId !== uid.value)) {
+            scrollToBottom(false)
+          }
+        }
       } else {
         newMessageCount.value += addedCount
       }
@@ -239,6 +297,7 @@ export function useChatScroll(
 
     prevMsgCount = currentMsgCount
     updateBottomButton()
+    if (!virtualized) scheduleReadCheck()
   }
 
   function onListReady(el: HTMLElement | null) {

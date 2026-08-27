@@ -42,13 +42,13 @@ function createMessage(id: number) {
   }
 }
 
-function mountScrollHarness() {
+function mountScrollHarness(virtualized = true) {
   let scroll!: ReturnType<typeof useChatScroll>
 
   const Harness = defineComponent({
     setup() {
       const listEl = ref<HTMLElement | null>(null)
-      scroll = useChatScroll(listEl, ref(99))
+      scroll = useChatScroll(listEl, ref(99), { virtualized })
       onMounted(() => scroll.onListReady(listEl.value))
       return { listEl }
     },
@@ -154,6 +154,67 @@ describe('useChatScroll chat mode', () => {
     await nextTick()
 
     expect(container.scrollTop).toBe(20)
+
+    wrapper.unmount()
+  })
+
+  it('preserves the visible message when native mobile history is prepended', async () => {
+    const chatStore = useChatStore()
+    chatStore.hasMore = true
+    chatStore.messages = [createMessage(1), createMessage(2)]
+
+    let prepended = false
+    vi.spyOn(chatStore, 'loadMessages').mockImplementation(async () => {
+      prepended = true
+      chatStore.messages = [createMessage(0), ...chatStore.messages]
+      return true
+    })
+
+    const { wrapper } = mountScrollHarness(false)
+    await nextTick()
+    await nextTick()
+
+    const optionsRef = virtualizerMock.options as { value: Record<string, unknown> }
+    expect(optionsRef.value.enabled).toBe(false)
+
+    const container = wrapper.element as HTMLElement
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    container.scrollTop = 20
+    container.getBoundingClientRect = () => ({
+      top: 0,
+      bottom: 400,
+      left: 0,
+      right: 320,
+      width: 320,
+      height: 400,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    const item = document.createElement('div')
+    item.className = 'message-item'
+    item.dataset.index = '0'
+    item.dataset.msgId = '1'
+    item.getBoundingClientRect = () => ({
+      top: prepended ? 82 : 10,
+      bottom: prepended ? 154 : 82,
+      left: 0,
+      right: 320,
+      width: 320,
+      height: 72,
+      x: 0,
+      y: prepended ? 82 : 10,
+      toJSON: () => ({}),
+    })
+    container.appendChild(item)
+
+    container.dispatchEvent(new Event('scroll'))
+    await vi.waitFor(() => expect(chatStore.loadMessages).toHaveBeenCalledWith('loadMore'))
+    await nextTick()
+
+    expect(container.scrollTop).toBe(92)
 
     wrapper.unmount()
   })
