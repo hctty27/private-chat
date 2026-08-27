@@ -47,7 +47,7 @@ private-chat/
 │   │   │   └── EmojiPicker.vue   # 表情选择器
 │   │   ├── stores/
 │   │   │   ├── chat.ts           # 聊天状态（消息、WebSocket、联系人）
-│   │   │   └── user.ts           # 用户状态（token、登录）
+│   │   │   └── user.ts           # 用户身份与会话状态（不保存 JWT）
 │   │   ├── api/index.ts          # HTTP 请求封装
 │   │   ├── types/index.ts        # TypeScript 类型定义
 │   │   ├── utils/time.ts         # 时间格式化工具
@@ -75,7 +75,7 @@ private-chat/
 
 连接: `ws://host/ws/chat`（生产环境使用 `wss://`）
 
-鉴权: WebSocket 握手只使用 `private_chat_session` HttpOnly Cookie；不要在 URL 中追加 JWT，查询参数和 `Authorization` Header 都不参与 WebSocket 鉴权。
+鉴权: HTTP API 和 WebSocket 都只使用 `private_chat_session` HttpOnly Cookie；浏览器端不要保存 JWT，也不要发送 Bearer Token。WebSocket 查询参数和 `Authorization` Header 都不参与鉴权。
 
 ### 客户端→服务端
 ```json
@@ -97,7 +97,7 @@ private-chat/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/auth/login | 登录（username/password → JWT） |
+| POST | /api/auth/login | 登录并设置 HttpOnly 会话 Cookie |
 | GET | /api/contacts | 联系人列表 |
 | GET | /api/messages/:targetId | 历史消息（游标分页） |
 | POST | /api/file/upload | 文件上传（multipart） |
