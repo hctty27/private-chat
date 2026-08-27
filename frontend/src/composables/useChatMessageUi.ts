@@ -21,10 +21,14 @@ export function useChatMessageUi(uid: Ref<number>) {
     )
   }
 
+  function isLastSelfMessage(index: number) {
+    return index === lastSelfMessageIndex.value
+  }
+
   function shouldShowMessageStatus(index: number) {
     const message = chatStore.messages[index]
     if (!message || message.senderId !== uid.value) return false
-    return !!message.localStatus || index === lastSelfMessageIndex.value
+    return !!message.localStatus || isLastSelfMessage(index)
   }
 
   function isPendingMediaMessage(message: Message) {
@@ -61,6 +65,7 @@ export function useChatMessageUi(uid: Ref<number>) {
 
   return {
     showTimeByIndex,
+    isLastSelfMessage,
     shouldShowMessageStatus,
     isPendingMediaMessage,
     pendingMediaText,
