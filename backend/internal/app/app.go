@@ -68,9 +68,11 @@ func NewApp() (*App, error) {
 	fileManager := newFileManager(
 		gormFileRepository{db: db},
 		minioFileStorage{
-			client: storageClient,
-			bucket: cfg.StorageBucket,
-			prefix: cfg.ObjectStoragePrefix,
+			client:    storageClient,
+			bucket:    cfg.StorageBucket,
+			prefix:    cfg.ObjectStoragePrefix,
+			accessKey: cfg.StorageAccessKey,
+			secretKey: cfg.StorageSecretKey,
 		},
 	)
 	presence := newPresenceService(
@@ -201,6 +203,7 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.GET("/messages/:targetId", a.requireContactParam("targetId"), a.messagesHandler)
 			protected.POST("/file/presign-upload", a.filePresignUploadHandler)
 			protected.POST("/files/:fileId/complete", a.fileCompleteHandler)
+			protected.POST("/files/:fileId/multipart/abort", a.fileMultipartAbortHandler)
 			protected.GET("/files/:fileId/content", a.fileContentHandler)
 			protected.GET("/files/:fileId/thumbnail", a.fileThumbnailHandler)
 
