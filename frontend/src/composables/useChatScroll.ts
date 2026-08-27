@@ -48,6 +48,7 @@ export function useChatScroll(
   let scrollHandler: (() => void) | null = null
   let wasNearBottom = true
   let messageObserver: IntersectionObserver | null = null
+  let bottomSettleFrame: number | null = null
   const observedMessageItems = new Set<HTMLElement>()
   const visibleMessageIds = new Set<number>()
 
@@ -135,9 +136,20 @@ export function useChatScroll(
 
   function scrollToBottom(smooth = false) {
     wasNearBottom = true
+    if (bottomSettleFrame !== null) {
+      cancelAnimationFrame(bottomSettleFrame)
+      bottomSettleFrame = null
+    }
+
     requestAnimationFrame(() => {
       if (virtualized) {
         virtualizer.value.scrollToEnd({ behavior: smooth ? 'smooth' : 'auto' })
+        if (!smooth) {
+          bottomSettleFrame = requestAnimationFrame(() => {
+            bottomSettleFrame = null
+            virtualizer.value.scrollToEnd({ behavior: 'auto' })
+          })
+        }
         return
       }
 
@@ -395,6 +407,7 @@ export function useChatScroll(
 
   function cleanup() {
     removeScrollListener()
+    if (bottomSettleFrame !== null) cancelAnimationFrame(bottomSettleFrame)
     if (readCheckTimer) clearTimeout(readCheckTimer)
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange)

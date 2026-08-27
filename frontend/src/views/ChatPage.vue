@@ -70,7 +70,7 @@
               :ref="scroll.measureItem"
               class="virtual-item"
               :data-index="vi.index"
-              :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start}px)` }"
+              :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vi.start - CHAT_SCROLL_MARGIN}px)` }"
               :data-msg-id="chatStore.messages[vi.index]?.id"
             >
               <div v-if="showTimeByIndex(vi.index)" class="time-bar">
@@ -222,7 +222,7 @@ import { ElMessage } from 'element-plus/es/components/message/index'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
-import { useChatScroll } from '../composables/useChatScroll'
+import { CHAT_SCROLL_MARGIN, useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
