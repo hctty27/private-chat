@@ -291,7 +291,8 @@ func conversationContainsUser(conversation string, userID int64) bool {
 func safeInlineContentType(contentType string) bool {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	switch contentType {
-	case "image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/avi":
+	case "image/jpeg", "image/png", "image/gif", "image/webp",
+		"video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/avi", "video/x-msvideo":
 		return true
 	default:
 		return false
@@ -303,6 +304,9 @@ func downloadMetadata(file model.File) (string, string) {
 	inline := false
 	if file.DetectedContentType != nil && safeInlineContentType(*file.DetectedContentType) {
 		contentType = strings.Split(*file.DetectedContentType, ";")[0]
+		inline = true
+	} else if safeInlineContentType(file.ClaimedContentType) {
+		contentType = strings.Split(file.ClaimedContentType, ";")[0]
 		inline = true
 	}
 	kind := "attachment"
