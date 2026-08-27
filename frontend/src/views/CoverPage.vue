@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-gray-100">
+  <div class="cover-page bg-gray-100">
     <!-- Header -->
     <header class="bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg sticky top-0 z-50">
       <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -191,5 +191,22 @@ html, body {
   margin: 0; padding: 0;
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
+}
+
+.cover-page {
+  width: 100%;
+  min-height: 100vh;
+}
+
+@media (pointer: coarse), (max-width: 767px) {
+  .cover-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y pinch-zoom;
+  }
 }
 </style>
