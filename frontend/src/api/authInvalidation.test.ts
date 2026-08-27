@@ -21,7 +21,7 @@ vi.mock('axios', () => ({
 }))
 
 import { useUserStore } from '../stores/user'
-import './index'
+import { handleApiError } from './index'
 
 describe('API auth invalidation', () => {
   beforeEach(() => {
@@ -33,14 +33,11 @@ describe('API auth invalidation', () => {
     const userStore = useUserStore()
     userStore.login('expired-token', 42, 'Expired User')
 
-    const rejectResponse = mocks.responseUse.mock.calls[0]?.[1] as ((error: unknown) => Promise<never>) | undefined
-    expect(rejectResponse).toBeTypeOf('function')
-
     const error = {
       config: { url: '/api/contacts' },
       response: { status: 401 },
     }
-    await expect(rejectResponse!(error)).rejects.toBe(error)
+    await expect(handleApiError(error)).rejects.toBe(error)
 
     expect(userStore.token).toBe('')
     expect(userStore.userId).toBe(0)
