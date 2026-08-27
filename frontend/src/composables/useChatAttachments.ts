@@ -12,7 +12,9 @@ export function useChatAttachments(options: {
   emojiOpen: Ref<boolean>
   scroll: AttachmentScrollController
   onWarning: (message: string) => void
-  maxBytes?: number
+  maxImageBytes?: number
+  maxVideoBytes?: number
+  maxFileBytes?: number
   maxFiles?: number
 }) {
   const chatStore = useChatStore()
@@ -30,7 +32,9 @@ export function useChatAttachments(options: {
   })
 
   const attachmentIngress = useAttachmentIngress({
-    maxBytes: options.maxBytes ?? 50 * 1024 * 1024,
+    maxImageBytes: options.maxImageBytes ?? 50 * 1024 * 1024,
+    maxVideoBytes: options.maxVideoBytes ?? 500 * 1024 * 1024,
+    maxFileBytes: options.maxFileBytes ?? 500 * 1024 * 1024,
     maxFiles: options.maxFiles ?? 9,
     getRecipient: currentRecipient,
     onStage: (files, recipient) => {
