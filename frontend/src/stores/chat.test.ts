@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { getMessages, uploadFile } from '../api'
 import { bindAttachmentRecipient } from '../utils/attachmentRecipient'
+import { chatUploadQueue } from '../utils/uploadQueue'
 import { useChatStore } from './chat'
 import { useUserStore } from './user'
 import type { Contact, Message } from '../types'
@@ -58,6 +59,7 @@ function message(id: number, senderId: number, receiverId: number, content: stri
 
 describe('chat store conversation loading state', () => {
   beforeEach(() => {
+    chatUploadQueue.clear()
     localStorage.clear()
     setActivePinia(createPinia())
     vi.clearAllMocks()
@@ -156,7 +158,110 @@ describe('chat store conversation loading state', () => {
 
     await chatStore.sendFile(file)
 
-    expect(uploadFile).toHaveBeenCalledWith(file, alice.userId, expect.any(Function))
+    expect(uploadFile).toHaveBeenCalledWith(file, alice.userId, expect.any(Function), expect.any(AbortSignal))
     expect(chatStore.messages).toHaveLength(0)
   })
+  it('keeps chat interactive while a file upload is still running', async () => {
+    const pendingUpload = deferred<any>()
+    vi.mocked(uploadFile).mockReturnValueOnce(pendingUpload.promise as ReturnType<typeof uploadFile>)
+
+    const chatStore = useChatStore()
+    chatStore.currentContact = contact(1, 'Alice')
+    const file = new File(['video'], 'clip.mp4', { type: 'video/mp4' })
+
+    chatStore.sendFile(file)
+
+    expect(chatStore.messages).toHaveLength(1)
+    expect(chatStore.messages[0].localStatus).toBe('uploading')
+    expect(uploadFile).toHaveBeenCalledTimes(1)
+
+    chatStore.sendMessage('upload should not block this')
+
+    expect(chatStore.messages).toHaveLength(2)
+    expect(chatStore.messages[1].content).toBe('upload should not block this')
+    expect(chatStore.messages[0].localStatus).toBe('uploading')
+
+    pendingUpload.resolve({
+      data: {
+        code: 200,
+        data: {
+          fileId: 11,
+          url: '/api/files/11/content',
+          fileName: file.name,
+          fileSize: file.size,
+        },
+      },
+    })
+    await pendingUpload.promise
+    await Promise.resolve()
+  })
+
+  it('continues an upload after switching away from its conversation', async () => {
+    const pendingUpload = deferred<any>()
+    vi.mocked(uploadFile).mockReturnValueOnce(pendingUpload.promise as ReturnType<typeof uploadFile>)
+
+    const chatStore = useChatStore()
+    chatStore.currentContact = contact(1, 'Alice')
+    const file = new File(['image'], 'photo.png', { type: 'image/png' })
+
+    chatStore.sendFile(file)
+    const localClientMsgId = chatStore.messages[0].clientMsgId
+
+    chatStore.currentContact = contact(2, 'Bob')
+    chatStore.messages = []
+
+    pendingUpload.resolve({
+      data: {
+        code: 200,
+        data: {
+          fileId: 12,
+          url: '/api/files/12/content',
+          fileName: file.name,
+          fileSize: file.size,
+        },
+      },
+    })
+    await pendingUpload.promise
+    await Promise.resolve()
+
+    vi.mocked(getMessages).mockResolvedValueOnce({
+      data: {
+        code: 200,
+        data: { messages: [], hasMore: false },
+      },
+    } as any)
+    chatStore.currentContact = contact(1, 'Alice')
+    await chatStore.loadMessages('init')
+
+    const restored = chatStore.messages.find((item) => item.clientMsgId === localClientMsgId)
+    expect(restored?.fileId).toBe(12)
+    expect(restored?.localStatus).toBe('queued')
+  })
+
+  it('can cancel an active upload without affecting the conversation', async () => {
+    vi.mocked(uploadFile).mockImplementationOnce((_file, _receiverId, _onProgress, signal) => (
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
+      }) as ReturnType<typeof uploadFile>
+    ))
+
+    const chatStore = useChatStore()
+    chatStore.currentContact = contact(1, 'Alice')
+    const file = new File(['video'], 'clip.mp4', { type: 'video/mp4' })
+
+    chatStore.sendFile(file)
+    const local = chatStore.messages[0]
+
+    expect(local.localStatus).toBe('uploading')
+    chatStore.cancelUpload(local.clientMsgId!)
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(local.localStatus).toBe('cancelled')
+
+    chatStore.sendMessage('still works')
+    expect(chatStore.messages.at(-1)?.content).toBe('still works')
+  })
+
 })
