@@ -157,8 +157,23 @@ export function useChatScroll(
   function captureVisibleAnchor(): ConversationScrollAnchor | null {
     if (!listEl.value) return null
     const containerTop = listEl.value.getBoundingClientRect().top
-    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id], .message-item[data-msg-id]')
 
+    if (!virtualized && messageObserver && visibleMessageIds.size > 0) {
+      const message = chatStore.messages.find((item) => visibleMessageIds.has(item.id))
+      if (message) {
+        const observedItem = listEl.value.querySelector<HTMLElement>(
+          `.message-item[data-msg-id="${message.id}"]`
+        )
+        if (observedItem) {
+          const rect = observedItem.getBoundingClientRect()
+          if (rect.bottom >= containerTop) {
+            return { messageId: message.id, offset: rect.top - containerTop }
+          }
+        }
+      }
+    }
+
+    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id], .message-item[data-msg-id]')
     for (const item of items) {
       const messageId = Number(item.dataset.msgId)
       if (!Number.isFinite(messageId)) continue
