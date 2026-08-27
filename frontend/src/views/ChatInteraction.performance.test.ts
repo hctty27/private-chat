@@ -58,6 +58,12 @@ describe('chat interaction performance guards', () => {
     expect(mobileChatSource).toContain('bottom: calc(var(--composer-height, 70px) + 12px)')
   })
 
+  it('positions desktop virtual rows relative to the configured scroll margin', () => {
+    expect(chatPageSource).toContain("import { CHAT_SCROLL_MARGIN, useChatScroll } from '../composables/useChatScroll'")
+    expect(chatPageSource).toContain('vi.start - CHAT_SCROLL_MARGIN')
+    expect(chatPageSource).not.toContain('translateY(${vi.start}px)')
+  })
+
   it('uses asynchronous visibility observation for native mobile message rows', () => {
     expect(chatScrollSource).toContain('new IntersectionObserver((entries) => {')
     expect(chatScrollSource).toContain('visibleMessageIds')
