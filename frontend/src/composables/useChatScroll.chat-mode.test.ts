@@ -98,7 +98,13 @@ describe('useChatScroll chat mode', () => {
     getScroll().scrollToBottom(false)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-    expect(virtualizerMock.scrollToEnd).toHaveBeenCalledWith({ behavior: 'auto' })
+    expect(virtualizerMock.scrollToEnd).toHaveBeenCalledTimes(1)
+    expect(virtualizerMock.scrollToEnd).toHaveBeenLastCalledWith({ behavior: 'auto' })
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+    expect(virtualizerMock.scrollToEnd).toHaveBeenCalledTimes(2)
+    expect(virtualizerMock.scrollToEnd).toHaveBeenLastCalledWith({ behavior: 'auto' })
     expect(scrollTo).not.toHaveBeenCalled()
 
     wrapper.unmount()
