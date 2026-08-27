@@ -31,9 +31,18 @@ var (
 )
 
 const (
-	fileDownloadExpiry    = 10 * time.Minute
-	filePrivateCacheValue = "private, max-age=300"
+	fileDownloadExpiry         = 10 * time.Minute
+	filePrivateCacheValue      = "private, max-age=300"
+	fileSingleUploadExpiry     = time.Hour
+	fileMultipartUploadExpiry  = 2 * time.Hour
 )
+
+func fileUploadExpiry(fileSize int64) time.Duration {
+	if shouldUseMultipartUpload(fileSize) {
+		return fileMultipartUploadExpiry
+	}
+	return fileSingleUploadExpiry
+}
 
 type fileRepository interface {
 	Create(context.Context, *model.File) error
@@ -510,7 +519,7 @@ func (a *App) filePresignUploadHandler(c *gin.Context) {
 		forbidden(c, "只能向联系人上传文件")
 		return
 	}
-	resp, err := a.files.CreatePending(c.Request.Context(), userID, req, time.Hour)
+	resp, err := a.files.CreatePending(c.Request.Context(), userID, req, fileUploadExpiry(req.FileSize))
 	if errors.Is(err, errFileTooLarge) {
 		respondError(c, http.StatusRequestEntityTooLarge, http.StatusRequestEntityTooLarge, "文件过大")
 		return
