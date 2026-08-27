@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import chatPageSource from './ChatPage.vue?raw'
 import mobileChatSource from './MobileChat.vue?raw'
 
-function imageMessageTemplate(source: string) {
-  const marker = 'msgType === 2 && chatStore.messages[vi.index].fileUrl'
+function imageMessageTemplate(source: string, messageRef: string) {
+  const marker = `msgType === 2 && ${messageRef}.fileUrl`
   const start = source.indexOf(marker)
   expect(start).toBeGreaterThanOrEqual(0)
   const end = source.indexOf('</template>', start)
@@ -11,14 +11,14 @@ function imageMessageTemplate(source: string) {
   return source.slice(start, end)
 }
 
-function expectThumbnailAndFallback(source: string) {
-  const template = imageMessageTemplate(source)
+function expectThumbnailAndFallback(source: string, messageRef: string) {
+  const template = imageMessageTemplate(source, messageRef)
   expect(template).toContain('/thumbnail')
   expect(template).toContain('.fileId')
   expect(template).toContain('decoding="async"')
   expect(template).toContain('class="pic-shell"')
   expect(template).toContain('@load="onImageLoaded"')
-  expect(template).toContain('@error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"')
+  expect(template).toContain(`@error="fallbackImageToOriginal($event, ${messageRef})"`)
   expect(source).toContain('aspect-ratio: 4 / 3')
   expect(source).toContain('object-fit: contain')
   expect(source).toContain('.pic.loaded { opacity: 1; }')
@@ -27,12 +27,12 @@ function expectThumbnailAndFallback(source: string) {
 
 describe('chat image loading', () => {
   it('reserves desktop image space while keeping lazy loading and protected fallback', () => {
-    const template = expectThumbnailAndFallback(chatPageSource)
+    const template = expectThumbnailAndFallback(chatPageSource, 'chatStore.messages[vi.index]')
     expect(template).toContain('loading="lazy"')
   })
 
-  it('reserves mobile image space without native lazy loading on the virtualized chat', () => {
-    const template = expectThumbnailAndFallback(mobileChatSource)
+  it('reserves mobile image space without native lazy loading on the native chat flow', () => {
+    const template = expectThumbnailAndFallback(mobileChatSource, 'message')
     expect(template).not.toContain('loading="lazy"')
   })
 })
