@@ -25,4 +25,11 @@ describe('CoverPage auth privacy', () => {
     expect(wrapper.text()).not.toContain('登录已过期')
     expect(wrapper.text()).not.toContain('账号已在其他设备登录')
   })
+
+  it('uses a dedicated cover root instead of viewport min-height utility', () => {
+    const wrapper = mount(CoverPage)
+    const cover = wrapper.get('.cover-page')
+
+    expect(cover.classes()).not.toContain('min-h-screen')
+  })
 })
