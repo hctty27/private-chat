@@ -42,13 +42,13 @@ function createMessage(id: number, overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mountScrollHarness() {
+function mountScrollHarness(virtualized = true) {
   let scroll!: ReturnType<typeof useChatScroll>
 
   const Harness = defineComponent({
     setup() {
       const listEl = ref<HTMLElement | null>(null)
-      scroll = useChatScroll(listEl, ref(99))
+      scroll = useChatScroll(listEl, ref(99), { virtualized })
       onMounted(() => scroll.onListReady(listEl.value))
       return { listEl }
     },
@@ -254,6 +254,80 @@ describe('useChatScroll visibility-aware read receipts', () => {
   afterEach(() => {
     vi.useRealTimers()
     if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility)
+  })
+
+  it('tracks native mobile visibility without scanning every message row', async () => {
+    const chatStore = useChatStore()
+    chatStore.currentContact = {
+      userId: 2,
+      nickname: 'Bob',
+      online: true,
+      lastSeenAt: null,
+      lastMessage: '',
+      lastMessageTime: '',
+      unreadCount: 1,
+    }
+    chatStore.messages = [createMessage(1, {
+      senderId: 2,
+      receiverId: 99,
+      isRead: 0,
+    })]
+    const send = vi.spyOn(chatStore, 'sendWsMessage')
+
+    let observerCallback: IntersectionObserverCallback | null = null
+    const observe = vi.fn()
+    const unobserve = vi.fn()
+    const disconnect = vi.fn()
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback
+      }
+      observe = observe
+      unobserve = unobserve
+      disconnect = disconnect
+    })
+
+    try {
+      setVisibility('visible')
+      const { wrapper, getScroll } = mountScrollHarness(false)
+      await settleScrollBinding()
+
+      const item = document.createElement('div')
+      item.className = 'message-item'
+      item.dataset.msgId = '1'
+      wrapper.element.appendChild(item)
+
+      getScroll().bindScrollListener()
+      await settleScrollBinding()
+      expect(observe).toHaveBeenCalledWith(item)
+
+      observerCallback?.([
+        {
+          target: item,
+          isIntersecting: false,
+          intersectionRatio: 0,
+        } as IntersectionObserverEntry,
+      ], {} as IntersectionObserver)
+      await vi.advanceTimersByTimeAsync(350)
+      expect(send).not.toHaveBeenCalled()
+
+      observerCallback?.([
+        {
+          target: item,
+          isIntersecting: true,
+          intersectionRatio: 1,
+        } as IntersectionObserverEntry,
+      ], {} as IntersectionObserver)
+      await vi.advanceTimersByTimeAsync(350)
+
+      expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
+      expect(chatStore.currentContact.unreadCount).toBe(0)
+
+      wrapper.unmount()
+      expect(disconnect).toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('does not send while hidden and retries when the document becomes visible', async () => {
