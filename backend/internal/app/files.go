@@ -544,11 +544,9 @@ func (a *App) fileCompleteHandler(c *gin.Context) {
 	}
 
 	var req model.FileMultipartCompleteRequest
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&req); err != nil {
-			respondError(c, http.StatusBadRequest, http.StatusBadRequest, "分片信息无效")
-			return
-		}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		respondError(c, http.StatusBadRequest, http.StatusBadRequest, "分片信息无效")
+		return
 	}
 	if req.UploadID != "" {
 		if err := a.files.CompleteMultipart(c.Request.Context(), userID, fileID, req.UploadID, req.Parts); err != nil {
