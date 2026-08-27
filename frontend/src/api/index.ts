@@ -18,15 +18,17 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+export function handleApiError(error: any) {
+  const isLoginRequest = error.config?.url === '/api/auth/login'
+  if (error.response?.status === 401 && !isLoginRequest) {
+    forceLogout('登录已过期，请重新进入')
+  }
+  return Promise.reject(error)
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const isLoginRequest = error.config?.url === '/api/auth/login'
-    if (error.response?.status === 401 && !isLoginRequest) {
-      forceLogout('登录已过期，请重新进入')
-    }
-    return Promise.reject(error)
-  }
+  handleApiError
 )
 
 export function login(username: string, password: string) {
