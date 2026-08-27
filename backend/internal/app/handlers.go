@@ -122,7 +122,7 @@ func (a *App) contactsHandler(c *gin.Context) {
 	lastMessages := make(map[string]model.Message, len(conversationIDs))
 	var lastMsgs []model.Message
 	if err := a.db.Raw(
-		"SELECT DISTINCT ON (conversation_id) * FROM t_message WHERE conversation_id IN ? ORDER BY conversation_id, created_at DESC",
+		"SELECT DISTINCT ON (conversation_id) * FROM t_message WHERE conversation_id IN ? ORDER BY conversation_id, created_at DESC, id DESC",
 		conversationIDs,
 	).Scan(&lastMsgs).Error; err != nil {
 		respondError(c, http.StatusOK, 500, err.Error())
@@ -215,14 +215,22 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 	convID := conversationID(userID, targetID)
 
 	if mode == "loadMore" && cursorStr != "" {
-		cursorMs, err := strconv.ParseInt(cursorStr, 10, 64)
+		cursor, err := parseMessageCursor(cursorStr, a.loc)
 		if err != nil {
-			return model.MessagePageDTO{}, fmt.Errorf("cursor invalid")
+			return model.MessagePageDTO{}, err
 		}
-		cutoff := time.UnixMilli(cursorMs).In(a.loc)
+
+		query := a.db.Where("conversation_id = ?", convID)
+		if cursor.HasID {
+			query = query.Where("(created_at, id) < (?, ?)", cursor.CreatedAt, cursor.ID)
+		} else {
+			// Compatibility with clients that still send the legacy millisecond timestamp cursor.
+			query = query.Where("created_at < ?", cursor.CreatedAt)
+		}
+
 		var messages []model.Message
-		if err := a.db.Where("conversation_id = ? AND created_at < ?", convID, cutoff).
-			Order("created_at desc").
+		if err := query.
+			Order("created_at desc, id desc").
 			Limit(size + 1).
 			Find(&messages).Error; err != nil {
 			return model.MessagePageDTO{}, err
@@ -232,12 +240,16 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 			messages = messages[:size]
 		}
 		reverseMessages(messages)
-		return model.MessagePageDTO{Messages: toMessageDTOs(messages, a.loc), HasMore: hasMore}, nil
+		return model.MessagePageDTO{
+			Messages:   toMessageDTOs(messages, a.loc),
+			HasMore:    hasMore,
+			NextCursor: nextMessageCursor(messages),
+		}, nil
 	}
 
 	var latest []model.Message
 	if err := a.db.Where("conversation_id = ?", convID).
-		Order("created_at desc").
+		Order("created_at desc, id desc").
 		Limit(size + 1).
 		Find(&latest).Error; err != nil {
 		return model.MessagePageDTO{}, err
@@ -249,7 +261,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 
 	var unread []model.Message
 	if err := a.db.Where("conversation_id = ? AND receiver_id = ? AND is_read = 0", convID, userID).
-		Order("created_at asc").
+		Order("created_at asc, id asc").
 		Limit(size).
 		Find(&unread).Error; err != nil {
 		return model.MessagePageDTO{}, err
@@ -267,7 +279,11 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 		}
 	}
 	sortMessages(merged)
-	return model.MessagePageDTO{Messages: toMessageDTOs(merged, a.loc), HasMore: hasMore}, nil
+	return model.MessagePageDTO{
+		Messages:   toMessageDTOs(merged, a.loc),
+		HasMore:    hasMore,
+		NextCursor: nextMessageCursor(merged),
+	}, nil
 }
 
 const maxFileUploadSize = 100 * 1024 * 1024
