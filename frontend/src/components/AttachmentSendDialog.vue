@@ -25,6 +25,11 @@
           <div v-else class="attachment-preview">
             <img v-if="singlePresentation === 'image' && previewUrls[0]" :src="previewUrls[0]" alt="待发送图片预览" />
             <video v-else-if="singlePresentation === 'video' && previewUrls[0]" :src="previewUrls[0]" controls muted playsinline preload="metadata" />
+            <div v-else-if="singlePresentation === 'video'" class="video-light-preview">
+              <span class="video-light-icon" aria-hidden="true">🎬</span>
+              <strong>视频已选择</strong>
+              <small>发送后后台生成预览</small>
+            </div>
             <div v-else class="file-placeholder" aria-hidden="true">📎</div>
           </div>
 
@@ -61,9 +66,11 @@ const props = withDefaults(defineProps<{
   files: File[]
   recipientName: string
   busy?: boolean
+  lightweightVideoPreview?: boolean
 }>(), {
   busy: false,
   files: () => [],
+  lightweightVideoPreview: false,
 })
 
 const emit = defineEmits<{
@@ -102,7 +109,11 @@ function refreshPreviews() {
   revokePreviews()
   if (!props.visible) return
   previewUrls.value = props.files.map((file) => {
-    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) return ''
+    const isImage = file.type.startsWith('image/')
+    const isVideo = file.type.startsWith('video/')
+    if (!isImage && !isVideo) return ''
+    if (isVideo && props.lightweightVideoPreview) return ''
+
     try {
       return URL.createObjectURL(file)
     } catch {
@@ -140,7 +151,11 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-watch([() => props.files, () => props.visible], refreshPreviews, { immediate: true })
+watch(
+  [() => props.files, () => props.visible, () => props.lightweightVideoPreview],
+  refreshPreviews,
+  { immediate: true },
+)
 
 watch(() => props.visible, async (visible, wasVisible) => {
   if (visible) {
@@ -235,6 +250,17 @@ onUnmounted(() => {
   text-align: center;
 }
 .file-placeholder { font-size: 52px; }
+.video-light-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: #374151;
+  text-align: center;
+}
+.video-light-icon { font-size: 52px; line-height: 1; }
+.video-light-preview strong { font-size: 15px; }
+.video-light-preview small { color: #9ca3af; font-size: 12px; }
 .attachment-meta,
 .recipient { display: flex; gap: 8px; padding: 0 16px 10px; color: #555; font-size: 14px; }
 .attachment-meta { justify-content: space-between; }
