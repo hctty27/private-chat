@@ -6,6 +6,7 @@
         :current-id="chatStore.currentContact?.userId ?? null"
         :ws-connected="chatStore.wsConnected"
         @select="pickContact"
+        @availability="availabilityVisible = true"
         @logout="logout"
       />
     </aside>
@@ -23,7 +24,7 @@
           <div class="ch-avatar">{{ chatStore.currentContact.nickname[0] }}</div>
           <div class="ch-info">
             <div class="ch-name">{{ chatStore.currentContact.nickname }}</div>
-            <div class="ch-status">{{ chatStore.currentContact.online ? '在线' : formatLastSeen(chatStore.currentContact.lastSeenAt) }}</div>
+            <div class="ch-status" :title="chatStore.currentContact.availabilityNote || undefined">{{ formatContactPresence(chatStore.currentContact) }}</div>
           </div>
         </div>
 
@@ -198,6 +199,11 @@
       @confirm="confirmAttachment"
     />
 
+    <AvailabilityDialog
+      :visible="availabilityVisible"
+      @close="availabilityVisible = false"
+    />
+
     <MessageActionMenu
       :visible="actionMenuVisible"
       :actions="actionMenuActions"
@@ -219,7 +225,8 @@ import { useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
-import { formatChatTime as fmtChatTime, formatLastSeen, formatFileSize as fmtSize } from '../utils/time'
+import { formatChatTime as fmtChatTime, formatFileSize as fmtSize } from '../utils/time'
+import { formatContactPresence } from '../utils/availability'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
@@ -230,6 +237,7 @@ import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import type { Message } from '../types'
 
 const chatStore = useChatStore()
@@ -246,6 +254,7 @@ const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
 const previewPosterUrl = ref('')
 const dragActive = ref(false)
+const availabilityVisible = ref(false)
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
 const actionMenuVisible = ref(false)

@@ -6,6 +6,7 @@
         :current-id="null"
         :ws-connected="chatStore.wsConnected"
         @select="openChat"
+        @availability="availabilityVisible = true"
         @logout="logout"
       />
     </div>
@@ -15,7 +16,7 @@
         <button class="back tap-target" type="button" aria-label="返回消息列表" @click="requestBack">‹</button>
         <div class="ch-info">
           <div class="ch-name">{{ chatStore.currentContact?.nickname }}</div>
-          <div class="ch-status">{{ chatStore.currentContact?.online ? '在线' : formatLastSeen(chatStore.currentContact?.lastSeenAt ?? null) }}</div>
+          <div class="ch-status" :title="chatStore.currentContact?.availabilityNote || undefined">{{ chatStore.currentContact ? formatContactPresence(chatStore.currentContact) : '' }}</div>
         </div>
         <div class="chat-head-spacer" aria-hidden="true"></div>
       </div>
@@ -200,6 +201,11 @@
         @close="closeMessageMenu"
       />
     </div>
+
+    <AvailabilityDialog
+      :visible="availabilityVisible"
+      @close="availabilityVisible = false"
+    />
   </div>
 </template>
 
@@ -215,7 +221,8 @@ import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
 import { useMobileChatHistory, type MobileChatUiState, type MobileOverlayKind } from '../composables/useMobileChatHistory'
 import { useLongPress } from '../composables/useLongPress'
-import { formatChatTime as fmtChatTime, formatLastSeen, formatFileSize as fmtSize } from '../utils/time'
+import { formatChatTime as fmtChatTime, formatFileSize as fmtSize } from '../utils/time'
+import { formatContactPresence } from '../utils/availability'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
@@ -226,6 +233,7 @@ import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import type { Message } from '../types'
 
 const chatStore = useChatStore()
@@ -248,6 +256,7 @@ const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
 const previewPosterUrl = ref('')
+const availabilityVisible = ref(false)
 
 const actionMenuVisible = ref(false)
 const actionMenuActions = ref<MessageAction[]>([])

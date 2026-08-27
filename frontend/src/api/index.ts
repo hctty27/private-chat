@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
+import type { ApiResponse, Availability, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
 import { forceLogout } from '../auth/session'
 
 const api = axios.create({
@@ -34,6 +34,18 @@ export function checkSession() {
 
 export function getContacts() {
   return api.get<ApiResponse<Contact[]>>('/api/contacts')
+}
+
+export function getAvailability() {
+  return api.get<ApiResponse<Availability | null>>('/api/availability')
+}
+
+export function setAvailability(payload: { startAt: string; endAt: string; note: string | null }) {
+  return api.put<ApiResponse<Availability>>('/api/availability', payload)
+}
+
+export function clearAvailability() {
+  return api.delete<ApiResponse<null>>('/api/availability')
 }
 
 export function getMessages(targetId: number, cursor?: string, size = 20, mode: 'init' | 'loadMore' = 'init') {

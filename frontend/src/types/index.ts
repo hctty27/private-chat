@@ -14,11 +14,20 @@ export interface SessionResponse {
   nickname: string
 }
 
+export interface Availability {
+  startAt: string
+  endAt: string
+  note: string | null
+}
+
 export interface Contact {
   userId: number
   nickname: string
   online: boolean
   lastSeenAt: string | null
+  availabilityStartAt?: string | null
+  availabilityEndAt?: string | null
+  availabilityNote?: string | null
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
@@ -83,6 +92,16 @@ export interface WsOnlineMessage {
   data: { userId: number; online: boolean; lastSeenAt?: string }
 }
 
+export interface WsAvailabilityMessage {
+  type: 'availability'
+  data: {
+    userId: number
+    startAt: string | null
+    endAt: string | null
+    note: string | null
+  }
+}
+
 export interface WsHeartbeatAck {
   type: 'heartbeat_ack'
   data: {}
@@ -93,7 +112,7 @@ export interface WsKickedMessage {
   data: { message: string }
 }
 
-export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsHeartbeatAck | WsKickedMessage
+export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsAvailabilityMessage | WsHeartbeatAck | WsKickedMessage
 
 export interface WsClientChat {
   type: 'chat'

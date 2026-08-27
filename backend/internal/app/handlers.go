@@ -89,6 +89,7 @@ func (a *App) contactsHandler(c *gin.Context) {
 	}
 
 	result := make([]model.ContactDTO, 0, len(relations))
+	now := time.Now().UTC()
 	for _, relation := range relations {
 		targetID := relation.TargetID
 		targetUser, ok := userMap[targetID]
@@ -104,14 +105,25 @@ func (a *App) contactsHandler(c *gin.Context) {
 			formatted := formatLocalTime(msg.CreatedAt, a.loc)
 			lastMessageTime = &formatted
 		}
+		var availabilityStartAt *string
+		var availabilityEndAt *string
+		var availabilityNote *string
+		if availability := availabilityDTOForUser(targetUser, now, a.loc); availability != nil {
+			availabilityStartAt = &availability.StartAt
+			availabilityEndAt = &availability.EndAt
+			availabilityNote = availability.Note
+		}
 		result = append(result, model.ContactDTO{
-			UserID:        targetID,
-			Nickname:      targetUser.Nickname,
-			Online:        onlineMap[targetID],
-			LastSeenAt:    optionalPresenceTime(targetUser.LastSeenAt),
-			LastMessage:   lastMessage,
-			LastMessageAt: lastMessageTime,
-			UnreadCount:   unreadCounts[convID],
+			UserID:              targetID,
+			Nickname:            targetUser.Nickname,
+			Online:              onlineMap[targetID],
+			LastSeenAt:          optionalPresenceTime(targetUser.LastSeenAt),
+			AvailabilityStartAt: availabilityStartAt,
+			AvailabilityEndAt:   availabilityEndAt,
+			AvailabilityNote:    availabilityNote,
+			LastMessage:         lastMessage,
+			LastMessageAt:       lastMessageTime,
+			UnreadCount:         unreadCounts[convID],
 		})
 	}
 

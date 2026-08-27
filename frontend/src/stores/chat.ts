@@ -587,6 +587,17 @@ export const useChatStore = defineStore('chat', () => {
         }
         break
       }
+      case 'availability': {
+        const applyAvailability = (contact: Contact | null) => {
+          if (!contact || contact.userId !== data.data.userId) return
+          contact.availabilityStartAt = data.data.startAt
+          contact.availabilityEndAt = data.data.endAt
+          contact.availabilityNote = data.data.note
+        }
+        applyAvailability(contacts.value.find((c) => c.userId === data.data.userId) ?? null)
+        applyAvailability(currentContact.value)
+        break
+      }
     }
   }
 
