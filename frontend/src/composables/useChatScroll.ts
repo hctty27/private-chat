@@ -123,7 +123,9 @@ export function useChatScroll(
 
   function restoreAnchorPosition(anchor: ConversationScrollAnchor) {
     if (!listEl.value) return false
-    const item = listEl.value.querySelector<HTMLElement>(`.virtual-item[data-msg-id="${anchor.messageId}"]`)
+    const item = listEl.value.querySelector<HTMLElement>(
+      `.virtual-item[data-msg-id="${anchor.messageId}"], .message-item[data-msg-id="${anchor.messageId}"]`
+    )
     if (!item) return false
 
     const delta = item.getBoundingClientRect().top - listEl.value.getBoundingClientRect().top - anchor.offset
