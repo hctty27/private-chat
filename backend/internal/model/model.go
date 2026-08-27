@@ -55,8 +55,9 @@ type MessageDTO struct {
 }
 
 type MessagePageDTO struct {
-	Messages []MessageDTO `json:"messages"`
-	HasMore  bool         `json:"hasMore"`
+	Messages   []MessageDTO `json:"messages"`
+	HasMore    bool         `json:"hasMore"`
+	NextCursor string       `json:"nextCursor,omitempty"`
 }
 
 type FileUploadDTO struct {

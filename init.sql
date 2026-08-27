@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS t_message (
 CREATE INDEX IF NOT EXISTS idx_message_conversation
     ON t_message (conversation_id, created_at);
 
+CREATE INDEX IF NOT EXISTS idx_message_conversation_cursor
+    ON t_message (conversation_id, created_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS idx_message_receiver_unread
     ON t_message (receiver_id, is_read, created_at);
 
