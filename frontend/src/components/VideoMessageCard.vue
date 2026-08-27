@@ -3,7 +3,7 @@
     class="video-card"
     type="button"
     :aria-label="`播放视频 ${fileName || ''}`.trim()"
-    @click="$emit('open')"
+    @click="$emit('open', $event)"
   >
     <span class="video-poster">
       <img
@@ -36,7 +36,7 @@ const props = defineProps<{
   fileSizeText?: string | null
 }>()
 
-defineEmits<{ open: [] }>()
+defineEmits<{ open: [event: MouseEvent] }>()
 
 const posterError = ref(false)
 
