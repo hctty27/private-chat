@@ -5,21 +5,27 @@ import { describe, expect, it } from 'vitest'
 const chatPageSource = readFileSync(resolve(process.cwd(), 'src/views/ChatPage.vue'), 'utf8')
 const mobileChatSource = readFileSync(resolve(process.cwd(), 'src/views/MobileChat.vue'), 'utf8')
 const chatScrollSource = readFileSync(resolve(process.cwd(), 'src/composables/useChatScroll.ts'), 'utf8')
+const messageUiSource = readFileSync(resolve(process.cwd(), 'src/composables/useChatMessageUi.ts'), 'utf8')
+const attachmentsSource = readFileSync(resolve(process.cwd(), 'src/composables/useChatAttachments.ts'), 'utf8')
 
 describe('chat interaction performance guards', () => {
-  it('computes the last self message once instead of scanning the tail for every row', () => {
+  it('computes the last self message once in shared message presentation logic', () => {
+    expect(messageUiSource).toContain('const lastSelfMessageIndex = computed(() => {')
+    expect(messageUiSource).toContain('index === lastSelfMessageIndex.value')
     for (const source of [chatPageSource, mobileChatSource]) {
-      expect(source).toContain('const lastSelfMessageIndex = computed(() => {')
-      expect(source).toContain('return index === lastSelfMessageIndex.value')
+      expect(source).toContain('useChatMessageUi(uid)')
       expect(source).not.toContain('chatStore.messages.slice(index + 1).some')
+      expect(source).not.toContain('const lastSelfMessageIndex = computed(() => {')
     }
   })
 
-  it('stops batch uploads from repeatedly smooth-scrolling the conversation', () => {
+  it('shares batch upload follow behavior between desktop and mobile', () => {
+    expect(attachmentsSource).toContain('let followBatch = options.scroll.isNearBottom(160)')
+    expect(attachmentsSource).toContain('if (followBatch) options.scroll.scrollToBottomAndClear(false)')
+    expect(attachmentsSource).toContain('if (followBatch && !options.scroll.isNearBottom(320)) followBatch = false')
     for (const source of [chatPageSource, mobileChatSource]) {
-      expect(source).toContain('let followBatch = scroll.isNearBottom(160)')
-      expect(source).toContain('if (followBatch) scroll.scrollToBottomAndClear(false)')
-      expect(source).toContain('if (followBatch && !scroll.isNearBottom(320)) followBatch = false')
+      expect(source).toContain('useChatAttachments({')
+      expect(source).not.toContain('let followBatch = scroll.isNearBottom(160)')
     }
   })
 
@@ -38,7 +44,7 @@ describe('chat interaction performance guards', () => {
   it('positions the mobile new-message control from the measured composer height', () => {
     expect(mobileChatSource).toContain('const composerHeight = ref(70)')
     expect(mobileChatSource).toContain('new ResizeObserver(syncComposerHeight)')
-    expect(mobileChatSource).toContain("'--composer-height': \`${composerHeight.value}px\`")
+    expect(mobileChatSource).toContain("'--composer-height': `${composerHeight.value}px`")
     expect(mobileChatSource).toContain(':visible="scroll.showBottomButton.value && !emojiOpen"')
     expect(mobileChatSource).toContain('bottom: calc(var(--composer-height, 70px) + 12px)')
   })
