@@ -68,11 +68,9 @@ func NewApp() (*App, error) {
 	fileManager := newFileManager(
 		gormFileRepository{db: db},
 		minioFileStorage{
-			client:    storageClient,
-			bucket:    cfg.StorageBucket,
-			prefix:    cfg.ObjectStoragePrefix,
-			accessKey: cfg.StorageAccessKey,
-			secretKey: cfg.StorageSecretKey,
+			client: storageClient,
+			bucket: cfg.StorageBucket,
+			prefix: cfg.ObjectStoragePrefix,
 		},
 	)
 	presence := newPresenceService(
