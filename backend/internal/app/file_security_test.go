@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +71,10 @@ type fakeFileStorage struct {
 	lastGetType     string
 	lastDisposition string
 	lastGetExpiry   time.Duration
+	multipartID     string
+	multipartKey    string
+	completedParts  []model.FileMultipartCompletedPart
+	abortedUploadID string
 }
 
 func (s *fakeFileStorage) PresignPut(_ context.Context, objectKey, contentType string, _ time.Duration) (string, error) {
@@ -79,6 +84,28 @@ func (s *fakeFileStorage) PresignPut(_ context.Context, objectKey, contentType s
 		return "https://r2.example/upload", nil
 	}
 	return s.putURL, nil
+}
+
+func (s *fakeFileStorage) BeginMultipart(_ context.Context, objectKey, _ string) (string, error) {
+	s.multipartKey = objectKey
+	if s.multipartID == "" {
+		s.multipartID = "upload-1"
+	}
+	return s.multipartID, nil
+}
+
+func (s *fakeFileStorage) PresignMultipartPart(_ context.Context, _ string, uploadID string, partNumber int, _ time.Duration) (string, error) {
+	return "https://r2.example/multipart/" + uploadID + "/" + strconv.Itoa(partNumber), nil
+}
+
+func (s *fakeFileStorage) CompleteMultipart(_ context.Context, _ string, _ string, parts []model.FileMultipartCompletedPart) error {
+	s.completedParts = append([]model.FileMultipartCompletedPart(nil), parts...)
+	return nil
+}
+
+func (s *fakeFileStorage) AbortMultipart(_ context.Context, _ string, uploadID string) error {
+	s.abortedUploadID = uploadID
+	return nil
 }
 
 func (s *fakeFileStorage) Stat(_ context.Context, _ string) (int64, error) {
@@ -137,15 +164,39 @@ func TestCreatePendingFileBindsOwnerConversationAndContentType(t *testing.T) {
 	}
 }
 
-func TestCreatePendingFileRejectsOversizedFile(t *testing.T) {
+func TestCreatePendingFileRejectsOversizedImage(t *testing.T) {
 	manager := newFileManager(newFakeFileRepository(), &fakeFileStorage{})
 	_, err := manager.CreatePending(context.Background(), 1, model.FilePresignUploadRequest{
-		ReceiverID: 2,
-		FileName:   "large.mp4",
-		FileSize:   maxFileUploadSize + 1,
+		ReceiverID:  2,
+		FileName:    "large.jpg",
+		ContentType: "image/jpeg",
+		FileSize:    maxImageUploadSize + 1,
 	}, time.Hour)
 	if err == nil || !errors.Is(err, errFileTooLarge) {
 		t.Fatalf("expected file-too-large error, got %v", err)
+	}
+}
+
+func TestCreatePendingFileUsesMultipartForLargeVideo(t *testing.T) {
+	storage := &fakeFileStorage{}
+	manager := newFileManager(newFakeFileRepository(), storage)
+	resp, err := manager.CreatePending(context.Background(), 1, model.FilePresignUploadRequest{
+		ReceiverID:  2,
+		FileName:    "large.mp4",
+		ContentType: "video/mp4",
+		FileSize:    multipartUploadThreshold + 1,
+	}, time.Hour)
+	if err != nil {
+		t.Fatalf("create multipart pending file: %v", err)
+	}
+	if resp.UploadMode != "multipart" || resp.UploadID == "" {
+		t.Fatalf("expected multipart upload response, got mode=%q id=%q", resp.UploadMode, resp.UploadID)
+	}
+	if resp.PartSize != multipartUploadPartSize || len(resp.Parts) == 0 {
+		t.Fatalf("unexpected multipart plan: partSize=%d parts=%d", resp.PartSize, len(resp.Parts))
+	}
+	if storage.multipartKey == "" {
+		t.Fatal("expected multipart upload to be initialized")
 	}
 }
 
