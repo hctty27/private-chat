@@ -10,7 +10,7 @@
 
 - **伪装保护** - 外观模拟微博，点击 3 次进入登录页
 - **实时聊天** - WebSocket 双向通信，消息即时送达
-- **文件分享** - 支持图片、视频、文件直传 Cloudflare R2；图片最大 50 MiB，视频/普通文件最大 500 MiB
+- **文件分享** - 支持图片、视频、文件后台直传 Cloudflare R2；图片最大 50 MiB，视频/普通文件最大 500 MiB
 - **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
 - **自动数据库迁移** - Docker Compose 部署时先执行未应用的版本化 PostgreSQL migration，成功后才启动后端
 - **已读状态** - 消息已读/未读实时反馈
@@ -98,6 +98,8 @@ R2 Presigned URL 是临时 bearer credential。Bucket 应保持私有，不要�
 - 100 MiB 及以下使用单次 Presigned PUT。
 - 超过 100 MiB 自动使用 R2 Multipart Upload，分片大小 16 MiB，浏览器最多 3 路并发。
 - 单个分片失败最多重试 3 次；最终失败时客户端会尽力调用 abort 接口清理未完成的 multipart upload。
+- 附件确认后立即加入后台上传队列，不阻塞文字聊天、切换联系人或继续选择附件；每条消息独立显示等待、进度、取消和重试状态。
+- 上传调度使用 2 个容量单位：小文件占 1 个单位，最多同时 2 个；超过 100 MiB 的大文件占满 2 个单位，避免和其他文件竞争带宽，其内部仍使用 3 路 multipart 并发。
 - Multipart 完成后仍走原有 `/complete` 校验：服务端核对 R2 实际大小并检测文件 MIME，确认成功后才允许发送附件消息。
 
 5. 构建并启动：
@@ -286,7 +288,7 @@ go vet ./...
 
 cd ../frontend
 npm ci
-npm run test -- src/api/imageUpload.test.ts src/composables/useAttachmentIngress.test.ts
+npm run test -- src/api/imageUpload.test.ts src/composables/useAttachmentIngress.test.ts src/utils/uploadQueue.test.ts src/stores/chat.test.ts src/components/MessageStatusIndicator.test.ts
 npm run build
 ```
 
