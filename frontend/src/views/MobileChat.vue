@@ -213,7 +213,6 @@ import { useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
-import { useConversationScrollMemory } from '../composables/useConversationScrollMemory'
 import { useMobileChatHistory, type MobileChatUiState, type MobileOverlayKind } from '../composables/useMobileChatHistory'
 import { useLongPress } from '../composables/useLongPress'
 import { formatChatTime as fmtChatTime, formatLastSeen, formatFileSize as fmtSize } from '../utils/time'
@@ -233,7 +232,6 @@ const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
-const scrollMemory = useConversationScrollMemory()
 const mobileHistory = useMobileChatHistory(router)
 
 const chatting = ref(false)
@@ -357,7 +355,6 @@ onUnmounted(() => {
   unsubscribeHistory?.()
   longPress.cancel()
   drafts.clearAll()
-  scrollMemory.clearAll()
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
   if (vvHandler && window.visualViewport) {
@@ -414,17 +411,9 @@ function requestBack() {
   mobileHistory.back()
 }
 
-function rememberCurrentScroll() {
-  const contactId = chatStore.currentContact?.userId
-  if (contactId) scrollMemory.remember(contactId, scroll.captureVisibleAnchor())
-}
-
-async function restoreContactScroll(contactId: number) {
+async function enterContactAtLatest() {
   await nextTick()
-  scroll.onContactChange({ scrollToBottom: false })
-  const anchor = scrollMemory.get(contactId)
-  const restored = anchor ? await scroll.restoreVisibleAnchor(anchor) : false
-  if (!restored) scroll.scrollToBottomAndClear(false)
+  scroll.onContactChange({ scrollToBottom: true })
   grow()
 }
 
@@ -433,7 +422,7 @@ async function openChat(id: number) {
   await chatStore.selectContact(id)
   if (seq !== historySyncSeq) return
   chatting.value = true
-  await restoreContactScroll(id)
+  await enterContactAtLatest()
   await mobileHistory.pushChat(id)
 }
 
@@ -441,12 +430,11 @@ async function ensureChat(contactId: number, seq: number) {
   const previousId = chatStore.currentContact?.userId
   const contactChanged = previousId !== contactId
   if (contactChanged) {
-    if (previousId) scrollMemory.remember(previousId, scroll.captureVisibleAnchor())
     await chatStore.selectContact(contactId)
     if (seq !== historySyncSeq) return false
   }
   chatting.value = true
-  if (contactChanged) await restoreContactScroll(contactId)
+  if (contactChanged) await enterContactAtLatest()
   else {
     await nextTick()
     grow()
@@ -460,7 +448,6 @@ async function applyHistoryState(state: MobileChatUiState) {
   longPress.cancel()
 
   if (state.kind === 'list') {
-    rememberCurrentScroll()
     emojiOpen.value = false
     previewVisible.value = false
     attachmentComposer.cancel()
