@@ -20,7 +20,7 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mobileChatSource).toContain('const viewportTop = ref(0)')
     expect(mobileChatSource).toContain('viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0')
     expect(mobileChatSource).not.toContain('vv.pageTop - window.scrollY')
-    expect(mobileChatSource).toContain('transform: `translateY(${viewportTop.value}px)`')
+    expect(mobileChatSource).toContain('style.transform = `translateY(${viewportTop.value}px)`')
   })
 
   it('keeps viewport events geometry-only instead of repeatedly scrolling the conversation', () => {
