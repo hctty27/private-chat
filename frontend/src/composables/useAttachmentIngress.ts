@@ -1,7 +1,9 @@
 import type { AttachmentRecipient } from './useAttachmentComposer'
 
 export interface AttachmentIngressOptions {
-  maxBytes: number
+  maxImageBytes: number
+  maxVideoBytes: number
+  maxFileBytes: number
   maxFiles: number
   getRecipient: () => AttachmentRecipient | null
   onStage: (files: File[], recipient: AttachmentRecipient) => void
@@ -32,8 +34,19 @@ export function useAttachmentIngress(options: AttachmentIngressOptions): Attachm
     const recipient = options.getRecipient()
     if (!recipient) return false
 
-    if (files.some(file => file.size > options.maxBytes)) {
-      options.onWarning('文件最大支持 50MB')
+    for (const file of files) {
+      const isImage = file.type.startsWith('image/')
+      const isVideo = file.type.startsWith('video/')
+      const limit = isImage
+        ? options.maxImageBytes
+        : isVideo
+          ? options.maxVideoBytes
+          : options.maxFileBytes
+      if (file.size <= limit) continue
+
+      const label = isImage ? '图片' : isVideo ? '视频' : '文件'
+      const megabytes = Math.round(limit / (1024 * 1024))
+      options.onWarning(`${label}最大支持 ${megabytes}MB`)
       return false
     }
 
