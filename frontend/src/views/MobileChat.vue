@@ -20,12 +20,14 @@
         <div class="chat-head-spacer" aria-hidden="true"></div>
       </div>
 
-      <ConnectionNotice
-        :status="chatStore.wsStatus"
-        :recovered-notice="chatStore.recoveredNotice"
-        :pending-count="chatStore.pendingChatCount"
-        @reconnect="chatStore.reconnectNow"
-      />
+      <div class="connection-notice-layer">
+        <ConnectionNotice
+          :status="chatStore.wsStatus"
+          :recovered-notice="chatStore.recoveredNotice"
+          :pending-count="chatStore.pendingChatCount"
+          @reconnect="chatStore.reconnectNow"
+        />
+      </div>
 
       <div ref="listEl" class="msg-scroll" @click="collapseInput">
         <div class="load-more">
@@ -138,7 +140,7 @@
 
       <NewMessageButton
         class="new-message-entry"
-        :visible="scroll.showBottomButton.value"
+        :visible="scroll.showBottomButton.value && !emojiOpen"
         :count="scroll.newMessageCount.value"
         @click="scroll.scrollToBottomAndClear(true)"
       />
@@ -160,7 +162,7 @@
         </div>
       </div>
 
-      <div class="input-bar">
+      <div ref="inputBarEl" class="input-bar">
         <div v-if="progress > 0 && progress < 100" class="prog">
           <div class="prog-fill" :style="{ width: progress + '%' }"></div>
         </div>
@@ -240,6 +242,7 @@ const mobileHistory = useMobileChatHistory(router)
 const chatting = ref(false)
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+const inputBarEl = ref<HTMLElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const emojiOpen = ref(false)
 const progress = ref(0)
@@ -247,6 +250,7 @@ const uploadBusy = ref(false)
 const inputFocused = ref(false)
 const viewportHeight = ref(0)
 const viewportTop = ref(0)
+const composerHeight = ref(70)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
@@ -298,12 +302,19 @@ const attachmentIngress = useAttachmentIngress({
 
 const scroll = useChatScroll(listEl, uid, { virtualized: false })
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-const chatPageStyle = computed(() => viewportHeight.value ? {
-  height: `${viewportHeight.value}px`,
-  transform: `translateY(${viewportTop.value}px)`,
-} : undefined)
+const chatPageStyle = computed(() => {
+  const style: Record<string, string> = {
+    '--composer-height': `${composerHeight.value}px`,
+  }
+  if (viewportHeight.value) {
+    style.height = `${viewportHeight.value}px`
+    style.transform = `translateY(${viewportTop.value}px)`
+  }
+  return style
+})
 
 let vvHandler: (() => void) | null = null
+let composerResizeObserver: ResizeObserver | null = null
 let unsubscribeHistory: (() => void) | null = null
 let pinnedEndFrame: number | null = null
 let focusStartedAtEnd = false
@@ -327,12 +338,30 @@ onMounted(async () => {
   })
 })
 
+watch(inputBarEl, (el) => {
+  composerResizeObserver?.disconnect()
+  composerResizeObserver = null
+  if (!el) return
+
+  const syncComposerHeight = () => {
+    composerHeight.value = el.getBoundingClientRect().height
+  }
+  syncComposerHeight()
+
+  if (typeof ResizeObserver !== 'undefined') {
+    composerResizeObserver = new ResizeObserver(syncComposerHeight)
+    composerResizeObserver.observe(el)
+  }
+})
+
 onUnmounted(() => {
   historySyncSeq += 1
   unsubscribeHistory?.()
   longPress.cancel()
   drafts.clearAll()
   scrollMemory.clearAll()
+  composerResizeObserver?.disconnect()
+  composerResizeObserver = null
   if (vvHandler && window.visualViewport) {
     window.visualViewport.removeEventListener('resize', vvHandler)
     window.visualViewport.removeEventListener('scroll', vvHandler)
@@ -790,7 +819,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .ch-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; color: #111; }
 .ch-status { margin-top: 3px; font-size: 11px; color: #8e8e93; }
 .chat-head-spacer { width: 44px; height: 44px; }
-:deep(.connection-notice) { margin: 8px 12px 0; flex-shrink: 0; }
+.connection-notice-layer { position: relative; height: 0; flex: 0 0 0; z-index: 25; pointer-events: none; }
+.connection-notice-layer :deep(.connection-notice) { position: absolute; top: 8px; left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); margin: 0 !important; pointer-events: auto; }
 .msg-scroll { flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; padding: 12px; background: #ededed; touch-action: pan-y; overflow-anchor: none; }
 .message-list, .message-item { width: 100%; }
 .load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -816,7 +846,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
 .media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
 .read-tag { margin-top: 2px; padding-right: 4px; }
-.new-message-entry { position: absolute; right: 16px; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 20; }
+.new-message-entry { position: absolute; right: 16px; bottom: calc(var(--composer-height, 70px) + 12px); z-index: 20; }
 .empty-tip { display: flex; align-items: center; justify-content: center; height: 100%; color: #999; font-size: 14px; }
 .emoji-box { background: #f7f7f8; border-top: 1px solid rgba(0,0,0,0.08); flex-shrink: 0; height: min(36dvh, 300px); max-height: 300px; min-height: 190px; animation: slideUp .18s ease-out; }
 @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
