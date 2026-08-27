@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useUserStore } from '../stores/user'
 
@@ -18,7 +18,12 @@ describe('session recovery', () => {
     setActivePinia(createPinia())
     mocks.checkSession.mockReset()
     mocks.checkSession.mockResolvedValue({ data: { code: 200, data: { userId: 7 } } })
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
     useUserStore().login('valid-token', 7, 'User')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('checks the server session immediately and again after pageshow', async () => {
