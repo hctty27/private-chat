@@ -16,69 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-	"golang.org/x/crypto/bcrypt"
 )
-
-func (a *App) loginHandler(c *gin.Context) {
-	var req model.LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusOK, 500, "请求参数错误")
-		return
-	}
-
-	username := strings.TrimSpace(req.Username)
-	var user model.User
-	if err := a.db.Where("username = ?", username).First(&user).Error; err != nil {
-		respondError(c, http.StatusOK, 500, "用户名或密码错误")
-		return
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		respondError(c, http.StatusOK, 500, "用户名或密码错误")
-		return
-	}
-
-	token, err := a.jwt.Generate(user.ID, user.Nickname)
-	if err != nil {
-		respondError(c, http.StatusOK, 500, "登录失败")
-		return
-	}
-	if err := a.redis.Set(c.Request.Context(), userTokenKey(user.ID), token, a.cfg.JWTExpiration).Err(); err != nil {
-		respondError(c, http.StatusOK, 500, "登录失败")
-		return
-	}
-
-	a.kickUser(user.ID, "您的账号在其他地方登录")
-	respondSuccess(c, model.LoginResponse{
-		Token:    token,
-		UserID:   user.ID,
-		Nickname: user.Nickname,
-	})
-}
-
-func (a *App) authMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		token := bearerToken(c.GetHeader("Authorization"))
-		if token == "" {
-			unauthorized(c)
-			return
-		}
-
-		userID, _, err := a.jwt.Parse(token)
-		if err != nil {
-			unauthorized(c)
-			return
-		}
-
-		stored, err := a.redis.Get(c.Request.Context(), userTokenKey(userID)).Result()
-		if err != nil || stored != token {
-			unauthorized(c)
-			return
-		}
-
-		c.Set("userID", userID)
-		c.Next()
-	}
-}
 
 func (a *App) contactsHandler(c *gin.Context) {
 	userID, ok := getUserID(c)
