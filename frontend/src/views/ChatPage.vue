@@ -87,14 +87,17 @@
                   <template v-if="chatStore.messages[vi.index].msgType === 1">{{ chatStore.messages[vi.index].content }}</template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 4"><span class="emoji-big">{{ chatStore.messages[vi.index].content }}</span></template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 2 && chatStore.messages[vi.index].fileUrl">
-                    <img
-                      :src="chatStore.messages[vi.index].fileId ? `/api/files/${chatStore.messages[vi.index].fileId}/thumbnail` : chatStore.messages[vi.index].fileUrl ?? undefined"
-                      loading="lazy"
-                      decoding="async"
-                      class="pic"
-                      @error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"
-                      @click="openPreview(chatStore.messages[vi.index].fileUrl!, 'image')"
-                    />
+                    <div class="pic-shell">
+                      <img
+                        :src="chatStore.messages[vi.index].fileId ? `/api/files/${chatStore.messages[vi.index].fileId}/thumbnail` : chatStore.messages[vi.index].fileUrl ?? undefined"
+                        loading="lazy"
+                        decoding="async"
+                        class="pic"
+                        @load="onImageLoaded"
+                        @error="fallbackImageToOriginal($event, chatStore.messages[vi.index])"
+                        @click="openPreview(chatStore.messages[vi.index].fileUrl!, 'image')"
+                      />
+                    </div>
                   </template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
                     <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
@@ -358,6 +361,11 @@ function bubbleType(message: { msgType: number; senderId: number }) {
   return message.senderId === uid.value ? 'mine' : 'his'
 }
 
+function onImageLoaded(event: Event) {
+  const image = event.currentTarget
+  if (image instanceof HTMLImageElement) image.classList.add('loaded')
+}
+
 function fallbackImageToOriginal(event: Event, message: Message) {
   const image = event.currentTarget
   if (!(image instanceof HTMLImageElement) || !message.fileId || !message.fileUrl) return
@@ -583,7 +591,9 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 3px; }
 .bubble.emoji { background: transparent; padding: 2px 4px; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
-.pic { max-width: 200px; max-height: 260px; border-radius: 8px; display: block; cursor: pointer; }
+.pic-shell { width: 200px; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 8px; background: #f2f2f2; }
+.pic { width: 100%; height: 100%; border-radius: inherit; display: block; object-fit: contain; opacity: 0; transition: opacity 120ms ease; cursor: pointer; }
+.pic.loaded { opacity: 1; }
 .video-link, .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .video-link small, .file-link small { display: block; color: #999; font-size: 12px; }
 .media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
