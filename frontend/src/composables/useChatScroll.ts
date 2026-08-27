@@ -167,6 +167,7 @@ export function useChatScroll(
     wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
+    if (!virtualized) scheduleReadCheck()
 
     if (loading.value || !chatStore.hasMore || !loadMoreArmed) return
     if (scrollTop <= LOAD_MORE_TRIGGER_PX) {
@@ -283,6 +284,12 @@ export function useChatScroll(
     if (!isLoadingMore && addedCount > 0) {
       if (wasNearBottom) {
         newMessageCount.value = 0
+        if (!virtualized) {
+          const appended = chatStore.messages.slice(-addedCount)
+          if (appended.some((message) => message.senderId !== uid.value)) {
+            scrollToBottom(false)
+          }
+        }
       } else {
         newMessageCount.value += addedCount
       }
@@ -290,6 +297,7 @@ export function useChatScroll(
 
     prevMsgCount = currentMsgCount
     updateBottomButton()
+    if (!virtualized) scheduleReadCheck()
   }
 
   function onListReady(el: HTMLElement | null) {
