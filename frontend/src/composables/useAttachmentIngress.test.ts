@@ -29,7 +29,9 @@ function setup(recipient: { id: number; nickname: string } | null = { id: 7, nic
   const onStage = vi.fn()
   const onWarning = vi.fn()
   const ingress = useAttachmentIngress({
-    maxBytes: 50 * 1024 * 1024,
+    maxImageBytes: 50 * 1024 * 1024,
+    maxVideoBytes: 500 * 1024 * 1024,
+    maxFileBytes: 500 * 1024 * 1024,
     maxFiles: 9,
     getRecipient: () => recipient,
     onStage,
@@ -102,12 +104,27 @@ describe('useAttachmentIngress', () => {
     expect(onStage).toHaveBeenCalledWith([file], { id: 7, nickname: 'Bob' })
   })
 
-  it('rejects a file larger than 50 MB', () => {
+  it('rejects an image larger than 50 MB', () => {
     const { ingress, onStage, onWarning } = setup()
 
     expect(ingress.acceptFiles([makeFile('large.png', 50 * 1024 * 1024 + 1)])).toBe(false)
-    expect(onWarning).toHaveBeenCalledWith('文件最大支持 50MB')
+    expect(onWarning).toHaveBeenCalledWith('图片最大支持 50MB')
     expect(onStage).not.toHaveBeenCalled()
+  })
+
+  it('allows video and files up to 500 MB', () => {
+    const { ingress, onStage } = setup()
+
+    expect(ingress.acceptFiles([makeFile('clip.mp4', 500 * 1024 * 1024, 'video/mp4')])).toBe(true)
+    expect(ingress.acceptFiles([makeFile('archive.zip', 500 * 1024 * 1024, 'application/zip')])).toBe(true)
+    expect(onStage).toHaveBeenCalledTimes(2)
+  })
+
+  it('rejects video larger than 500 MB', () => {
+    const { ingress, onWarning } = setup()
+
+    expect(ingress.acceptFiles([makeFile('clip.mp4', 500 * 1024 * 1024 + 1, 'video/mp4')])).toBe(false)
+    expect(onWarning).toHaveBeenCalledWith('视频最大支持 500MB')
   })
 
   it('does not stage when there is no active recipient', () => {

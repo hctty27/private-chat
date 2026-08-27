@@ -11,6 +11,7 @@ describe('contact list logout confirmation', () => {
     expect(source).toContain("confirmButtonText: '退出'")
     expect(source).toContain("cancelButtonText: '取消'")
     expect(source).toContain("customClass: 'logout-confirm-box'")
-    expect(source).not.toMatch(/\b(?:window\.)?confirm\s*\(/)
+    expect(source).not.toContain('window.confirm(')
+    expect(source).not.toMatch(/(^|[^.\w])confirm\s*\(/m)
   })
 })

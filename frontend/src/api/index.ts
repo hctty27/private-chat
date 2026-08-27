@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, Availability, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
+import type { ApiResponse, Availability, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse, FileMultipartCompletedPart } from '../types'
 import { forceLogout } from '../auth/session'
 
 const api = axios.create({
@@ -164,6 +164,137 @@ async function createMediaThumbnail(file: File): Promise<Blob | null> {
   return null
 }
 
+const uploadTimeoutMs = 600000
+const multipartConcurrency = 3
+const multipartMaxAttempts = 3
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+}
+
+function responseEtag(headers: any) {
+  const value = typeof headers?.get === 'function'
+    ? headers.get('etag')
+    : headers?.etag ?? headers?.ETag
+  return typeof value === 'string' ? value.replace(/^"|"$/g, '') : ''
+}
+
+async function uploadSingle(
+  uploadUrl: string,
+  file: File,
+  headers: Record<string, string> | undefined,
+  contentType: string,
+  onProgress?: (p: number) => void,
+) {
+  await axios.put(uploadUrl, file, {
+    headers: headers || { 'Content-Type': contentType },
+    timeout: uploadTimeoutMs,
+    onUploadProgress: (event) => {
+      if (!event.total || !onProgress) return
+      onProgress(Math.round((event.loaded * 100) / event.total))
+    },
+  })
+}
+
+async function uploadMultipart(
+  file: File,
+  plan: FilePresignUploadResponse,
+  onProgress?: (p: number) => void,
+): Promise<FileMultipartCompletedPart[]> {
+  const uploadId = plan.uploadId
+  const partSize = plan.partSize
+  const parts = plan.parts
+  if (!uploadId || !partSize || !parts?.length) {
+    throw new Error('invalid multipart upload plan')
+  }
+
+  const loadedByPart = new Map<number, number>()
+  const completed = new Map<number, FileMultipartCompletedPart>()
+  const controller = new AbortController()
+  let nextIndex = 0
+
+  const reportProgress = () => {
+    if (!onProgress || file.size <= 0) return
+    let loaded = 0
+    for (const value of loadedByPart.values()) loaded += value
+    onProgress(Math.min(99, Math.round((loaded * 100) / file.size)))
+  }
+
+  const uploadPart = async (index: number) => {
+    const target = parts[index]
+    const start = index * partSize
+    const end = Math.min(file.size, start + partSize)
+    const blob = file.slice(start, end)
+
+    let lastError: unknown
+    for (let attempt = 1; attempt <= multipartMaxAttempts; attempt++) {
+      if (controller.signal.aborted) throw lastError ?? new Error('upload aborted')
+      loadedByPart.set(target.partNumber, 0)
+      reportProgress()
+
+      try {
+        const response = await axios.put(target.uploadUrl, blob, {
+          timeout: uploadTimeoutMs,
+          signal: controller.signal,
+          onUploadProgress: (event) => {
+            loadedByPart.set(target.partNumber, Math.min(blob.size, event.loaded))
+            reportProgress()
+          },
+        })
+        const etag = responseEtag(response.headers)
+        if (!etag) throw new Error('multipart upload response missing ETag')
+
+        loadedByPart.set(target.partNumber, blob.size)
+        completed.set(target.partNumber, { partNumber: target.partNumber, etag })
+        reportProgress()
+        return
+      } catch (error) {
+        lastError = error
+        if (controller.signal.aborted || attempt === multipartMaxAttempts) throw error
+        await delay(500 * 2 ** (attempt - 1))
+      }
+    }
+    throw lastError
+  }
+
+  const worker = async () => {
+    while (!controller.signal.aborted) {
+      const index = nextIndex++
+      if (index >= parts.length) return
+      await uploadPart(index)
+    }
+  }
+
+  try {
+    const workerCount = Math.min(multipartConcurrency, parts.length)
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  } catch (error) {
+    controller.abort()
+    throw error
+  }
+
+  return Array.from(completed.values()).sort((a, b) => a.partNumber - b.partNumber)
+}
+
+async function uploadThumbnail(
+  thumbnailPromise: Promise<Blob | null>,
+  uploadUrl?: string,
+  headers?: Record<string, string>,
+) {
+  if (!uploadUrl) return
+  const thumbnail = await thumbnailPromise
+  if (!thumbnail) return
+
+  try {
+    await axios.put(uploadUrl, thumbnail, {
+      headers: headers || { 'Content-Type': 'image/jpeg' },
+      timeout: uploadTimeoutMs,
+    })
+  } catch {
+    // Thumbnail upload is an optimization. The original file remains usable.
+  }
+}
+
 export async function uploadFile(file: File, receiverId: number, onProgress?: (p: number) => void) {
   const contentType = file.type || 'application/octet-stream'
   const presignRes = await api.post<ApiResponse<FilePresignUploadResponse>>('/api/file/presign-upload', {
@@ -176,32 +307,44 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
     return presignRes
   }
 
-  const { fileId, uploadUrl, headers, thumbnailUploadUrl, thumbnailHeaders } = presignRes.data.data
+  const plan = presignRes.data.data
+  const {
+    fileId,
+    uploadMode,
+    uploadUrl,
+    uploadId,
+    headers,
+    thumbnailUploadUrl,
+    thumbnailHeaders,
+  } = plan
   const thumbnailPromise = thumbnailUploadUrl ? createMediaThumbnail(file) : Promise.resolve(null)
 
-  await axios.put(uploadUrl, file, {
-    headers: headers || { 'Content-Type': contentType },
-    timeout: 600000,
-    onUploadProgress: (e) => {
-      if (e.total && onProgress) {
-        onProgress(Math.round((e.loaded * 100) / e.total))
-      }
-    },
-  })
-
-  const thumbnail = await thumbnailPromise
-  if (thumbnail && thumbnailUploadUrl) {
-    try {
-      await axios.put(thumbnailUploadUrl, thumbnail, {
-        headers: thumbnailHeaders || { 'Content-Type': 'image/jpeg' },
-        timeout: 600000,
-      })
-    } catch {
-      // Thumbnail upload is an optimization. The original file remains usable.
+  try {
+    let completedParts: FileMultipartCompletedPart[] | undefined
+    if (uploadMode === 'multipart') {
+      completedParts = await uploadMultipart(file, plan, onProgress)
+    } else {
+      if (!uploadUrl) throw new Error('missing upload URL')
+      await uploadSingle(uploadUrl, file, headers, contentType, onProgress)
     }
-  }
 
-  return api.post<ApiResponse<FileUploadResponse>>(`/api/files/${fileId}/complete`)
+    await uploadThumbnail(thumbnailPromise, thumbnailUploadUrl, thumbnailHeaders)
+
+    const completePayload = uploadMode === 'multipart'
+      ? { uploadId, parts: completedParts }
+      : undefined
+    const response = await api.post<ApiResponse<FileUploadResponse>>(
+      `/api/files/${fileId}/complete`,
+      completePayload,
+    )
+    if (response.data.code === 200) onProgress?.(100)
+    return response
+  } catch (error) {
+    if (uploadMode === 'multipart' && uploadId) {
+      void api.post(`/api/files/${fileId}/multipart/abort`, { uploadId }).catch(() => undefined)
+    }
+    throw error
+  }
 }
 
 export default api

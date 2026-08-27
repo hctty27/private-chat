@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,9 +31,18 @@ var (
 )
 
 const (
-	fileDownloadExpiry    = 10 * time.Minute
-	filePrivateCacheValue = "private, max-age=300"
+	fileDownloadExpiry        = 10 * time.Minute
+	filePrivateCacheValue     = "private, max-age=300"
+	fileSingleUploadExpiry    = time.Hour
+	fileMultipartUploadExpiry = 2 * time.Hour
 )
+
+func fileUploadExpiry(fileSize int64) time.Duration {
+	if shouldUseMultipartUpload(fileSize) {
+		return fileMultipartUploadExpiry
+	}
+	return fileSingleUploadExpiry
+}
 
 type fileRepository interface {
 	Create(context.Context, *model.File) error
@@ -67,6 +77,10 @@ func (r gormFileRepository) MarkReady(ctx context.Context, id, actualSize int64,
 
 type fileObjectStorage interface {
 	PresignPut(context.Context, string, string, time.Duration) (string, error)
+	BeginMultipart(context.Context, string, string) (string, error)
+	PresignMultipartPart(context.Context, string, string, int, time.Duration) (string, error)
+	CompleteMultipart(context.Context, string, string, []model.FileMultipartCompletedPart) error
+	AbortMultipart(context.Context, string, string) error
 	Stat(context.Context, string) (int64, error)
 	ReadPrefix(context.Context, string, int64) ([]byte, error)
 	PresignGet(context.Context, string, string, string, time.Duration) (string, error)
@@ -90,6 +104,48 @@ func (s minioFileStorage) PresignPut(ctx context.Context, objectKey, contentType
 		return "", err
 	}
 	return u.String(), nil
+}
+
+func (s minioFileStorage) BeginMultipart(ctx context.Context, objectKey, contentType string) (string, error) {
+	core := minio.Core{Client: s.client}
+	return core.NewMultipartUpload(ctx, s.bucket, s.key(objectKey), minio.PutObjectOptions{ContentType: contentType})
+}
+
+func (s minioFileStorage) PresignMultipartPart(ctx context.Context, objectKey, uploadID string, partNumber int, expiry time.Duration) (string, error) {
+	if strings.TrimSpace(uploadID) == "" || partNumber <= 0 {
+		return "", fmt.Errorf("invalid multipart request")
+	}
+
+	params := url.Values{}
+	params.Set("partNumber", strconv.Itoa(partNumber))
+	params.Set("uploadId", uploadID)
+	u, err := s.client.Presign(ctx, http.MethodPut, s.bucket, s.key(objectKey), expiry, params)
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
+}
+
+func (s minioFileStorage) CompleteMultipart(ctx context.Context, objectKey, uploadID string, parts []model.FileMultipartCompletedPart) error {
+	completed := make([]minio.CompletePart, 0, len(parts))
+	for _, part := range parts {
+		completed = append(completed, minio.CompletePart{
+			PartNumber: part.PartNumber,
+			ETag:       strings.Trim(strings.TrimSpace(part.ETag), "\""),
+		})
+	}
+	sort.Slice(completed, func(i, j int) bool {
+		return completed[i].PartNumber < completed[j].PartNumber
+	})
+
+	core := minio.Core{Client: s.client}
+	_, err := core.CompleteMultipartUpload(ctx, s.bucket, s.key(objectKey), uploadID, completed, minio.PutObjectOptions{})
+	return err
+}
+
+func (s minioFileStorage) AbortMultipart(ctx context.Context, objectKey, uploadID string) error {
+	core := minio.Core{Client: s.client}
+	return core.AbortMultipartUpload(ctx, s.bucket, s.key(objectKey), uploadID)
 }
 
 func (s minioFileStorage) Stat(ctx context.Context, objectKey string) (int64, error) {
@@ -188,10 +244,12 @@ func (m *fileManager) CreatePending(ctx context.Context, ownerID int64, req mode
 	if ownerID <= 0 || req.ReceiverID <= 0 || ownerID == req.ReceiverID || fileName == "" || req.FileSize < 0 {
 		return model.FilePresignUploadDTO{}, fmt.Errorf("invalid file request")
 	}
-	if req.FileSize > maxFileUploadSize {
+
+	contentType := normalizeUploadContentType(fileName, req.ContentType)
+	if req.FileSize > maxUploadSizeFor(contentType) {
 		return model.FilePresignUploadDTO{}, errFileTooLarge
 	}
-	contentType := normalizeUploadContentType(fileName, req.ContentType)
+
 	file := model.File{
 		ObjectKey:          generatedObjectKey(fileName),
 		OwnerID:            ownerID,
@@ -204,19 +262,47 @@ func (m *fileManager) CreatePending(ctx context.Context, ownerID int64, req mode
 	if err := m.repo.Create(ctx, &file); err != nil {
 		return model.FilePresignUploadDTO{}, err
 	}
-	uploadURL, err := m.storage.PresignPut(ctx, file.ObjectKey, contentType, expiry)
-	if err != nil {
-		return model.FilePresignUploadDTO{}, err
-	}
 
 	resp := model.FilePresignUploadDTO{
-		FileID:    file.ID,
-		UploadURL: uploadURL,
-		URL:       stableFileURL(file.ID),
-		FileName:  file.OriginalName,
-		FileSize:  file.ExpectedSize,
-		Headers:   map[string]string{"Content-Type": contentType},
+		FileID:     file.ID,
+		UploadMode: "single",
+		URL:        stableFileURL(file.ID),
+		FileName:   file.OriginalName,
+		FileSize:   file.ExpectedSize,
 	}
+
+	if shouldUseMultipartUpload(file.ExpectedSize) {
+		uploadID, err := m.storage.BeginMultipart(ctx, file.ObjectKey, contentType)
+		if err != nil {
+			return model.FilePresignUploadDTO{}, err
+		}
+
+		partCount := int((file.ExpectedSize + multipartUploadPartSize - 1) / multipartUploadPartSize)
+		parts := make([]model.FileMultipartUploadPartDTO, 0, partCount)
+		for partNumber := 1; partNumber <= partCount; partNumber++ {
+			uploadURL, err := m.storage.PresignMultipartPart(ctx, file.ObjectKey, uploadID, partNumber, expiry)
+			if err != nil {
+				_ = m.storage.AbortMultipart(ctx, file.ObjectKey, uploadID)
+				return model.FilePresignUploadDTO{}, err
+			}
+			parts = append(parts, model.FileMultipartUploadPartDTO{
+				PartNumber: partNumber,
+				UploadURL:  uploadURL,
+			})
+		}
+		resp.UploadMode = "multipart"
+		resp.UploadID = uploadID
+		resp.PartSize = multipartUploadPartSize
+		resp.Parts = parts
+	} else {
+		uploadURL, err := m.storage.PresignPut(ctx, file.ObjectKey, contentType, expiry)
+		if err != nil {
+			return model.FilePresignUploadDTO{}, err
+		}
+		resp.UploadURL = uploadURL
+		resp.Headers = map[string]string{"Content-Type": contentType}
+	}
+
 	if supportsThumbnailUpload(contentType) {
 		thumbnailURL, thumbnailErr := m.storage.PresignPut(ctx, thumbnailObjectKey(file.ObjectKey), "image/jpeg", expiry)
 		if thumbnailErr == nil {
@@ -225,6 +311,55 @@ func (m *fileManager) CreatePending(ctx context.Context, ownerID int64, req mode
 		}
 	}
 	return resp, nil
+}
+
+func (m *fileManager) CompleteMultipart(ctx context.Context, userID, fileID int64, uploadID string, parts []model.FileMultipartCompletedPart) error {
+	file, err := m.repo.FindByID(ctx, fileID)
+	if err != nil {
+		return err
+	}
+	if file.OwnerID != userID {
+		return errFileForbidden
+	}
+	if file.Status != model.FileStatusPending {
+		return errFileNotReady
+	}
+	if strings.TrimSpace(uploadID) == "" || !shouldUseMultipartUpload(file.ExpectedSize) {
+		return fmt.Errorf("invalid multipart completion")
+	}
+
+	expectedParts := int((file.ExpectedSize + multipartUploadPartSize - 1) / multipartUploadPartSize)
+	if len(parts) != expectedParts {
+		return fmt.Errorf("invalid multipart part count")
+	}
+	seen := make(map[int]struct{}, len(parts))
+	for _, part := range parts {
+		if part.PartNumber <= 0 || part.PartNumber > expectedParts || strings.Trim(strings.TrimSpace(part.ETag), "\"") == "" {
+			return fmt.Errorf("invalid multipart part")
+		}
+		if _, exists := seen[part.PartNumber]; exists {
+			return fmt.Errorf("duplicate multipart part")
+		}
+		seen[part.PartNumber] = struct{}{}
+	}
+	return m.storage.CompleteMultipart(ctx, file.ObjectKey, uploadID, parts)
+}
+
+func (m *fileManager) AbortMultipart(ctx context.Context, userID, fileID int64, uploadID string) error {
+	file, err := m.repo.FindByID(ctx, fileID)
+	if err != nil {
+		return err
+	}
+	if file.OwnerID != userID {
+		return errFileForbidden
+	}
+	if file.Status != model.FileStatusPending {
+		return nil
+	}
+	if strings.TrimSpace(uploadID) == "" {
+		return fmt.Errorf("invalid upload id")
+	}
+	return m.storage.AbortMultipart(ctx, file.ObjectKey, uploadID)
 }
 
 func (m *fileManager) Confirm(ctx context.Context, userID, fileID int64) (model.FileUploadDTO, error) {
@@ -249,7 +384,7 @@ func (m *fileManager) Confirm(ctx context.Context, userID, fileID int64) (model.
 	if err != nil {
 		return model.FileUploadDTO{}, err
 	}
-	if actualSize != file.ExpectedSize || actualSize > maxFileUploadSize {
+	if actualSize != file.ExpectedSize || actualSize > maxUploadSizeFor(file.ClaimedContentType) {
 		return model.FileUploadDTO{}, errFileSizeMismatch
 	}
 	prefix, err := m.storage.ReadPrefix(ctx, file.ObjectKey, 512)
@@ -384,7 +519,7 @@ func (a *App) filePresignUploadHandler(c *gin.Context) {
 		forbidden(c, "只能向联系人上传文件")
 		return
 	}
-	resp, err := a.files.CreatePending(c.Request.Context(), userID, req, time.Hour)
+	resp, err := a.files.CreatePending(c.Request.Context(), userID, req, fileUploadExpiry(req.FileSize))
 	if errors.Is(err, errFileTooLarge) {
 		respondError(c, http.StatusRequestEntityTooLarge, http.StatusRequestEntityTooLarge, "文件过大")
 		return
@@ -407,6 +542,26 @@ func (a *App) fileCompleteHandler(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, http.StatusBadRequest, "文件无效")
 		return
 	}
+
+	var req model.FileMultipartCompleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		respondError(c, http.StatusBadRequest, http.StatusBadRequest, "分片信息无效")
+		return
+	}
+	if req.UploadID != "" {
+		if err := a.files.CompleteMultipart(c.Request.Context(), userID, fileID, req.UploadID, req.Parts); err != nil {
+			switch {
+			case errors.Is(err, errFileForbidden):
+				forbidden(c, "无权确认该文件")
+			case errors.Is(err, gorm.ErrRecordNotFound):
+				c.Status(http.StatusNotFound)
+			default:
+				respondError(c, http.StatusBadRequest, http.StatusBadRequest, "合并分片失败")
+			}
+			return
+		}
+	}
+
 	resp, err := a.files.Confirm(c.Request.Context(), userID, fileID)
 	switch {
 	case errors.Is(err, errFileForbidden):
@@ -420,6 +575,37 @@ func (a *App) fileCompleteHandler(c *gin.Context) {
 	default:
 		respondSuccess(c, resp)
 	}
+}
+
+func (a *App) fileMultipartAbortHandler(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		unauthorized(c)
+		return
+	}
+	fileID, err := strconv.ParseInt(c.Param("fileId"), 10, 64)
+	if err != nil || fileID <= 0 {
+		respondError(c, http.StatusBadRequest, http.StatusBadRequest, "文件无效")
+		return
+	}
+
+	var req model.FileMultipartAbortRequest
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.UploadID) == "" {
+		respondError(c, http.StatusBadRequest, http.StatusBadRequest, "上传会话无效")
+		return
+	}
+	if err := a.files.AbortMultipart(c.Request.Context(), userID, fileID, req.UploadID); err != nil {
+		switch {
+		case errors.Is(err, errFileForbidden):
+			forbidden(c, "无权取消该上传")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.Status(http.StatusNotFound)
+		default:
+			respondError(c, http.StatusBadGateway, http.StatusBadGateway, "取消上传失败")
+		}
+		return
+	}
+	respondSuccess(c, gin.H{"aborted": true})
 }
 
 func (a *App) fileContentHandler(c *gin.Context) {

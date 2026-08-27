@@ -69,9 +69,23 @@ export interface FileUploadResponse {
   fileSize: number
 }
 
-export interface FilePresignUploadResponse extends FileUploadResponse {
+export interface FileMultipartUploadPart {
+  partNumber: number
   uploadUrl: string
-  headers: Record<string, string>
+}
+
+export interface FileMultipartCompletedPart {
+  partNumber: number
+  etag: string
+}
+
+export interface FilePresignUploadResponse extends FileUploadResponse {
+  uploadMode: 'single' | 'multipart'
+  uploadUrl?: string
+  uploadId?: string
+  partSize?: number
+  parts?: FileMultipartUploadPart[]
+  headers?: Record<string, string>
   thumbnailUploadUrl?: string
   thumbnailHeaders?: Record<string, string>
 }

@@ -48,6 +48,7 @@ describe('uploadFile image optimization', () => {
           code: 200,
           data: {
             fileId: 7,
+            uploadMode: 'single',
             uploadUrl: 'https://r2.example/original',
             thumbnailUploadUrl: 'https://r2.example/thumbnail',
             url: '/api/files/7/content',
@@ -68,5 +69,48 @@ describe('uploadFile image optimization', () => {
     expect(mocks.put.mock.calls[0][0]).toBe('https://r2.example/original')
     expect(mocks.put.mock.calls[1][0]).toBe('https://r2.example/thumbnail')
     expect(mocks.put.mock.calls[1][1]).toBeInstanceOf(Blob)
+  })
+
+  it('uploads multipart files in parallel and completes with part ETags', async () => {
+    mocks.apiPost
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            fileId: 9,
+            uploadMode: 'multipart',
+            uploadId: 'upload-9',
+            partSize: 3,
+            parts: [
+              { partNumber: 1, uploadUrl: 'https://r2.example/part-1' },
+              { partNumber: 2, uploadUrl: 'https://r2.example/part-2' },
+            ],
+            url: '/api/files/9/content',
+            fileName: 'archive.zip',
+            fileSize: 6,
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { code: 200, data: { fileId: 9 } } })
+
+    mocks.put
+      .mockResolvedValueOnce({ status: 200, headers: { etag: '"etag-1"' } })
+      .mockResolvedValueOnce({ status: 200, headers: { etag: '"etag-2"' } })
+
+    const file = new File(['abcdef'], 'archive.zip', { type: 'application/zip' })
+    await uploadFile(file, 2)
+
+    expect(mocks.put).toHaveBeenCalledTimes(2)
+    expect(mocks.put.mock.calls.map(call => call[0])).toEqual([
+      'https://r2.example/part-1',
+      'https://r2.example/part-2',
+    ])
+    expect(mocks.apiPost).toHaveBeenLastCalledWith('/api/files/9/complete', {
+      uploadId: 'upload-9',
+      parts: [
+        { partNumber: 1, etag: 'etag-1' },
+        { partNumber: 2, etag: 'etag-2' },
+      ],
+    })
   })
 })
