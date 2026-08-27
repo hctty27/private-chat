@@ -21,11 +21,9 @@ func TestPresignMultipartPartTargetsR2UploadPart(t *testing.T) {
 	}
 
 	storage := minioFileStorage{
-		client:    client,
-		bucket:    "us-r2",
-		prefix:    "private-chat",
-		accessKey: "access-key",
-		secretKey: "secret-key",
+		client: client,
+		bucket: "us-r2",
+		prefix: "private-chat",
 	}
 	url, err := storage.PresignMultipartPart(context.Background(), "clip.mp4", "upload-123", 7, time.Hour)
 	if err != nil {
