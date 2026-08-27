@@ -186,6 +186,7 @@
         :visible="!!attachmentComposer.staged.value"
         :files="attachmentComposer.staged.value?.files ?? []"
         :recipient-name="attachmentComposer.staged.value?.recipient.nickname ?? ''"
+        :lightweight-video-preview="isIOS"
         @cancel="closeOverlay('attachment')"
         @confirm="confirmAttachment"
       />
@@ -222,6 +223,7 @@ import { useLongPress } from '../composables/useLongPress'
 import { formatChatTime as fmtChatTime, formatFileSize as fmtSize } from '../utils/time'
 import { formatContactPresence } from '../utils/availability'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
+import { isIOSDevice } from '../utils/platform'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import VideoMessageCard from '../components/VideoMessageCard.vue'
@@ -291,7 +293,7 @@ const {
   videoPosterUrl,
 } = useChatMessageUi(uid)
 
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+const isIOS = isIOSDevice()
 const chatPageStyle = computed(() => {
   const style: Record<string, string> = {
     '--composer-height': `${composerHeight.value}px`,
