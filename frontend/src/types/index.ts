@@ -46,6 +46,7 @@ export interface Message {
 export interface MessagesResponse {
   messages: Message[]
   hasMore: boolean
+  nextCursor?: string
 }
 
 export interface FileUploadResponse {
