@@ -226,7 +226,6 @@ import { useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
-import { useConversationScrollMemory } from '../composables/useConversationScrollMemory'
 import { formatChatTime as fmtChatTime, formatLastSeen, formatFileSize as fmtSize } from '../utils/time'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
@@ -244,7 +243,6 @@ const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
-const scrollMemory = useConversationScrollMemory()
 
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -297,7 +295,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  scrollMemory.clearAll()
   dragActive.value = false
   dragDepth = 0
 })
@@ -312,20 +309,12 @@ watch(() => chatStore.messages, closeMessageMenu)
 
 async function pickContact(id: number) {
   const seq = ++selectionSeq
-  const previousId = chatStore.currentContact?.userId
-  if (previousId) scrollMemory.remember(previousId, scroll.captureVisibleAnchor())
-
   await chatStore.selectContact(id)
   if (seq !== selectionSeq || chatStore.currentContact?.userId !== id) return
 
   await nextTick()
   if (seq !== selectionSeq) return
-  scroll.onContactChange({ scrollToBottom: false })
-
-  const anchor = scrollMemory.get(id)
-  const restored = anchor ? await scroll.restoreVisibleAnchor(anchor) : false
-  if (seq !== selectionSeq) return
-  if (!restored) scroll.scrollToBottomAndClear(false)
+  scroll.onContactChange({ scrollToBottom: true })
 }
 
 async function retryInitialMessages() {
@@ -342,7 +331,6 @@ function openPreview(url: string, type: 'image' | 'video', posterUrl = '') {
 
 function logout() {
   drafts.clearAll()
-  scrollMemory.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
   chatStore.disconnectWs()
