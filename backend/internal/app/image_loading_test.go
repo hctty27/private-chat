@@ -132,6 +132,22 @@ func TestFileContentHandlerUsesPrivateFiveMinuteCache(t *testing.T) {
 	}
 }
 
+func TestDownloadMetadataUsesSafeClaimedVideoTypeWhenDetectionIsGeneric(t *testing.T) {
+	detected := "application/octet-stream"
+	contentType, disposition := downloadMetadata(model.File{
+		OriginalName:        "iphone.mov",
+		ClaimedContentType:  "video/quicktime",
+		DetectedContentType: &detected,
+	})
+
+	if contentType != "video/quicktime" {
+		t.Fatalf("expected quicktime content type, got %q", contentType)
+	}
+	if disposition != `inline; filename="iphone.mov"` {
+		t.Fatalf("expected inline disposition, got %q", disposition)
+	}
+}
+
 func TestPresignedGetOverridesObjectCacheControl(t *testing.T) {
 	client, err := minio.New("r2.example", &minio.Options{
 		Creds:  credentials.NewStaticV4("access", "secret", ""),
