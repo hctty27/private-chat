@@ -226,6 +226,7 @@ import { useChatMessageUi } from '../composables/useChatMessageUi'
 import { formatChatTime as fmtChatTime, formatFileSize as fmtSize } from '../utils/time'
 import { formatContactPresence } from '../utils/availability'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
+import { isIOSDevice } from '../utils/platform'
 import ContactList from '../components/ContactList.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
@@ -253,7 +254,7 @@ const previewType = ref<'image' | 'video'>('image')
 const previewPosterUrl = ref('')
 const dragActive = ref(false)
 const availabilityVisible = ref(false)
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+const isIOS = isIOSDevice()
 
 const actionMenuVisible = ref(false)
 const actionMenuActions = ref<MessageAction[]>([])
