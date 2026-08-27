@@ -194,5 +194,7 @@ jobs:
           assert.equal(formatLastSeen('2026-08-08T11:30:00Z', now), '最后上线 08-08 19:30')
           assert.equal(formatLastSeen('2025-12-31T01:15:00Z', now), '最后上线 2025-12-31 09:15')
           NODE
+      - name: Test upload flows
+        run: npm run test -- src/api/imageUpload.test.ts src/composables/useAttachmentIngress.test.ts
       - name: Type-check and build
         run: npm run build
