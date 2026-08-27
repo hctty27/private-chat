@@ -262,6 +262,7 @@ const lastSelfMessageIndex = computed(() => {
   }
   return -1
 })
+let selectionSeq = 0
 let dragDepth = 0
 
 const text = computed({
@@ -318,15 +319,20 @@ watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
 watch(() => chatStore.messages, closeMessageMenu)
 
 async function pickContact(id: number) {
+  const seq = ++selectionSeq
   const previousId = chatStore.currentContact?.userId
   if (previousId) scrollMemory.remember(previousId, scroll.captureVisibleAnchor())
 
   await chatStore.selectContact(id)
+  if (seq !== selectionSeq || chatStore.currentContact?.userId !== id) return
+
   await nextTick()
+  if (seq !== selectionSeq) return
   scroll.onContactChange({ scrollToBottom: false })
 
   const anchor = scrollMemory.get(id)
   const restored = anchor ? await scroll.restoreVisibleAnchor(anchor) : false
+  if (seq !== selectionSeq) return
   if (!restored) scroll.scrollToBottomAndClear(false)
 }
 
