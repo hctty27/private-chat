@@ -61,7 +61,7 @@ describe('chat store conversation loading state', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    useUserStore().login('test-token', 99, 'Me')
+    useUserStore().login(99, 'Me')
   })
 
   it('transitions initial load from loading to loaded', async () => {

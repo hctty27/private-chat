@@ -174,7 +174,7 @@ private-chat/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/login` | 登录，返回 JWT，并设置 HttpOnly 会话 Cookie |
+| POST | `/api/auth/login` | 登录，设置 HttpOnly 会话 Cookie；响应只返回用户身份信息 |
 | POST | `/api/auth/logout` | 注销当前会话并关闭当前 WebSocket |
 
 ### 联系人与消息
@@ -201,7 +201,7 @@ private-chat/
 
 ### WebSocket
 
-连接地址：`ws://host/ws/chat`（生产环境使用 `wss://`）。WebSocket 握手只使用浏览器自动携带的 `private_chat_session` HttpOnly Cookie 鉴权；查询参数 `?token=<JWT>` 和 `Authorization` Header 不参与 WebSocket 鉴权。
+HTTP API 和 WebSocket 都只使用浏览器自动携带的 `private_chat_session` HttpOnly Cookie 鉴权。浏览器不会把 JWT 保存到 `localStorage`，HTTP `Authorization: Bearer ...`、WebSocket 查询参数 `?token=<JWT>` 和 WebSocket `Authorization` Header 都不参与会话鉴权。连接地址：`ws://host/ws/chat`（生产环境使用 `wss://`）。
 
 **客户端消息类型**
 

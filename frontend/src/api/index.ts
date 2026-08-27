@@ -1,22 +1,15 @@
 import axios from 'axios'
-import type { ApiResponse, LoginResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
+import type { ApiResponse, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
 import { forceLogout } from '../auth/session'
 
 const api = axios.create({
   baseURL: '/',
   timeout: 30000,
+  withCredentials: true,
 })
 
 const thumbnailMaxEdge = 640
 const thumbnailQuality = 0.8
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
-  return config
-})
 
 export function handleApiError(error: any) {
   const isLoginRequest = error.config?.url === '/api/auth/login'
@@ -36,7 +29,7 @@ export function login(username: string, password: string) {
 }
 
 export function checkSession() {
-  return api.get<ApiResponse<{ userId: number }>>('/api/auth/session')
+  return api.get<ApiResponse<SessionResponse>>('/api/auth/session')
 }
 
 export function getContacts() {

@@ -43,7 +43,6 @@ func (a *App) secureLoginHandler(c *gin.Context) {
 	http.SetCookie(c.Writer, newAuthCookie(token, a.cfg.JWTExpiration, a.cfg.AuthCookieSecure))
 	a.kickUser(user.ID, "您的账号在其他地方登录")
 	respondSuccess(c, model.LoginResponse{
-		Token:    token,
 		UserID:   user.ID,
 		Nickname: user.Nickname,
 	})
@@ -57,7 +56,7 @@ func (a *App) secureAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userID, _, err := a.jwt.Parse(token)
+		userID, nickname, err := a.jwt.Parse(token)
 		if err != nil {
 			unauthorized(c)
 			return
@@ -70,6 +69,7 @@ func (a *App) secureAuthMiddleware() gin.HandlerFunc {
 		}
 
 		c.Set("userID", userID)
+		c.Set("nickname", nickname)
 		c.Next()
 	}
 }

@@ -187,7 +187,11 @@ func (a *App) routes() (*gin.Engine, error) {
 					unauthorized(c)
 					return
 				}
-				respondSuccess(c, gin.H{"userId": userID})
+				nickname, _ := c.Get("nickname")
+				respondSuccess(c, gin.H{
+					"userId":   userID,
+					"nickname": nickname,
+				})
 			})
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)

@@ -55,10 +55,10 @@ export const useChatStore = defineStore('chat', () => {
   async function loadContacts() {
     const generation = storeGeneration
     const userStore = useUserStore()
-    const token = userStore.token
+    const sessionUserId = userStore.userId
     try {
       const res = await getContacts()
-      if (generation !== storeGeneration || token !== userStore.token) return
+      if (generation !== storeGeneration || sessionUserId !== userStore.userId) return
       if (res.data.code === 200) {
         contacts.value = res.data.data
       }
@@ -272,14 +272,13 @@ export const useChatStore = defineStore('chat', () => {
   function isUploadSessionCurrent(options: {
     generation: number
     userId: number
-    token: string
     local: Message
   }) {
     const userStore = useUserStore()
     return (
       storeGeneration === options.generation &&
       userStore.userId === options.userId &&
-      userStore.token === options.token &&
+      userStore.isLoggedIn() &&
       !!options.local.clientMsgId &&
       pendingLocalMessages.get(options.local.clientMsgId) === options.local
     )
@@ -416,7 +415,6 @@ export const useChatStore = defineStore('chat', () => {
     if (!userId || !receiverId) return
 
     const generation = storeGeneration
-    const token = userStore.token
     const clientMsgId = createClientMsgId()
     const isImage = file.type.startsWith('image/')
     const isVideo = file.type.startsWith('video/')
@@ -440,11 +438,11 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const res = await uploadFile(file, receiverId, p => {
-        if (!isUploadSessionCurrent({ generation, userId, token, local: tracked })) return
+        if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
         tracked.uploadProgress = p
         onProgress?.(p)
       })
-      if (!isUploadSessionCurrent({ generation, userId, token, local: tracked })) return
+      if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
       if (res.data.code !== 200) {
         tracked.localStatus = 'failed'
         tracked.localError = res.data.message || '上传失败，点击重试'
@@ -470,7 +468,7 @@ export const useChatStore = defineStore('chat', () => {
         clientMsgId,
       })
     } catch (e) {
-      if (!isUploadSessionCurrent({ generation, userId, token, local: tracked })) return
+      if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
       console.error('File upload failed', e)
       tracked.localStatus = 'failed'
       tracked.localError = '上传失败，点击重试'
@@ -482,7 +480,6 @@ export const useChatStore = defineStore('chat', () => {
     if (!local.clientMsgId || !local.localFile || !currentContact.value || !userStore.userId) return
     const generation = storeGeneration
     const userId = userStore.userId
-    const token = userStore.token
     const receiverId = local.receiverId
     trackLocalMessage(local)
     local.localStatus = 'uploading'
@@ -491,10 +488,10 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const res = await uploadFile(local.localFile, receiverId, p => {
-        if (!isUploadSessionCurrent({ generation, userId, token, local })) return
+        if (!isUploadSessionCurrent({ generation, userId, local })) return
         local.uploadProgress = p
       })
-      if (!isUploadSessionCurrent({ generation, userId, token, local })) return
+      if (!isUploadSessionCurrent({ generation, userId, local })) return
       if (res.data.code !== 200) {
         local.localStatus = 'failed'
         local.localError = res.data.message || '上传失败，点击重试'
@@ -520,7 +517,7 @@ export const useChatStore = defineStore('chat', () => {
         clientMsgId: local.clientMsgId,
       })
     } catch (e) {
-      if (!isUploadSessionCurrent({ generation, userId, token, local })) return
+      if (!isUploadSessionCurrent({ generation, userId, local })) return
       console.error('File upload retry failed', e)
       local.localStatus = 'failed'
       local.localError = '上传失败，点击重试'
@@ -596,7 +593,7 @@ export const useChatStore = defineStore('chat', () => {
   function scheduleReconnect() {
     if (intentionalClose || reconnecting || reconnectTimer) return
     const userStore = useUserStore()
-    if (!userStore.token) {
+    if (!userStore.isLoggedIn()) {
       clearState()
       forceLogout()
       return
@@ -670,7 +667,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function connectWs() {
     const userStore = useUserStore()
-    if (!userStore.token) return
+    if (!userStore.isLoggedIn()) return
 
     clearConnectTimer()
     if (reconnectTimer) {
@@ -828,7 +825,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function tryReconnect() {
     const userStore = useUserStore()
-    if (!userStore.token || reconnecting || reconnectTimer) return
+    if (!userStore.isLoggedIn() || reconnecting || reconnectTimer) return
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
       try {
         wsConnected.value = false

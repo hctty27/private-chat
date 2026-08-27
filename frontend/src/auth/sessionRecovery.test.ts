@@ -17,9 +17,9 @@ describe('session recovery', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     mocks.checkSession.mockReset()
-    mocks.checkSession.mockResolvedValue({ data: { code: 200, data: { userId: 7 } } })
+    mocks.checkSession.mockResolvedValue({ data: { code: 200, data: { userId: 7, nickname: 'User' } } })
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
-    useUserStore().login('valid-token', 7, 'User')
+    useUserStore().login(7, 'User')
   })
 
   afterEach(() => {

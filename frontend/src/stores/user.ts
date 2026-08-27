@@ -2,34 +2,26 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref(localStorage.getItem('token') || '')
-  const userId = ref(Number(localStorage.getItem('userId')) || 0)
-  const nickname = ref(localStorage.getItem('nickname') || '')
+  const userId = ref(0)
+  const nickname = ref('')
+  const authenticated = ref(false)
 
-  function login(t: string, id: number, name: string) {
-    token.value = t
+  function login(id: number, name: string) {
     userId.value = id
     nickname.value = name
-    localStorage.setItem('token', t)
-    localStorage.setItem('userId', String(id))
-    localStorage.setItem('nickname', name)
+    authenticated.value = id > 0
   }
 
   function clearSession() {
-    token.value = ''
     userId.value = 0
     nickname.value = ''
-    localStorage.removeItem('token')
-    localStorage.removeItem('userId')
-    localStorage.removeItem('nickname')
+    authenticated.value = false
   }
 
   function logout() {
-    const currentToken = token.value
-    if (currentToken && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       void fetch('/api/auth/logout', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${currentToken}` },
         credentials: 'same-origin',
         keepalive: true,
       }).catch(() => undefined)
@@ -38,7 +30,15 @@ export const useUserStore = defineStore('user', () => {
     clearSession()
   }
 
-  const isLoggedIn = () => !!token.value
+  const isLoggedIn = () => authenticated.value && userId.value > 0
 
-  return { token, userId, nickname, login, logout, clearSession, isLoggedIn }
+  return {
+    userId,
+    nickname,
+    authenticated,
+    login,
+    logout,
+    clearSession,
+    isLoggedIn,
+  }
 })
