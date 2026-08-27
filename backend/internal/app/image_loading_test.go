@@ -78,6 +78,30 @@ func TestImageUploadPresignsOriginalAndThumbnail(t *testing.T) {
 	}
 }
 
+func TestVideoUploadPresignsOriginalAndThumbnail(t *testing.T) {
+	storage := &countingFileStorage{fakeFileStorage: &fakeFileStorage{}}
+	manager := newFileManager(newFakeFileRepository(), storage)
+
+	_, err := manager.CreatePending(context.Background(), 1, model.FilePresignUploadRequest{
+		ReceiverID:  2,
+		FileName:    "clip.mp4",
+		ContentType: "video/mp4",
+		FileSize:    2048,
+	}, time.Hour)
+	if err != nil {
+		t.Fatalf("create pending video: %v", err)
+	}
+	if len(storage.putKeys) != 2 {
+		t.Fatalf("expected original and thumbnail presigns, got %d calls", len(storage.putKeys))
+	}
+	if storage.putTypes[1] != "image/jpeg" {
+		t.Fatalf("expected jpeg thumbnail upload, got %q", storage.putTypes[1])
+	}
+	if storage.putKeys[1] != storage.putKeys[0]+".thumb.jpg" {
+		t.Fatalf("unexpected thumbnail key %q for original %q", storage.putKeys[1], storage.putKeys[0])
+	}
+}
+
 func TestFileContentHandlerUsesPrivateFiveMinuteCache(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	contentType := "image/jpeg"
