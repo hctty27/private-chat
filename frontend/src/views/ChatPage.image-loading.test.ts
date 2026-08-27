@@ -27,7 +27,7 @@ function expectThumbnailAndFallback(source: string, messageRef: string) {
 
 describe('chat image loading', () => {
   it('reserves desktop image space while keeping lazy loading and protected fallback', () => {
-    const template = expectThumbnailAndFallback(chatPageSource, 'chatStore.messages[vi.index]')
+    const template = expectThumbnailAndFallback(chatPageSource, 'message')
     expect(template).toContain('loading="lazy"')
   })
 
