@@ -1,51 +1,53 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-orange-100 to-pink-100 flex items-center justify-center p-4">
-    <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
-      <div class="text-center mb-8">
-        <h1 class="text-2xl font-bold text-gray-800">登录</h1>
-        <p class="mt-2 text-sm text-gray-500">欢迎回来，请登录您的账号</p>
-      </div>
-
-      <div
-        v-if="loginNotice"
-        role="status"
-        class="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700"
-      >
-        {{ loginNotice }}
-      </div>
-
-      <el-form @submit.prevent="handleLogin" class="space-y-5">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
-          <el-input
-            v-model="username"
-            placeholder="请输入用户名"
-            size="large"
-            clearable
-          />
+  <div class="h-full min-h-0 overflow-y-auto bg-gradient-to-br from-orange-100 to-pink-100">
+    <div class="min-h-full flex items-center justify-center p-4">
+      <div class="w-full max-w-sm bg-white rounded-2xl shadow-xl p-8">
+        <div class="text-center mb-8">
+          <h1 class="text-2xl font-bold text-gray-800">登录</h1>
+          <p class="mt-2 text-sm text-gray-500">欢迎回来，请登录您的账号</p>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
-          <el-input
-            v-model="password"
-            type="password"
-            placeholder="请输入密码"
-            size="large"
-            show-password
-            @keyup.enter="handleLogin"
-          />
-        </div>
-        <el-button
-          type="primary"
-          size="large"
-          class="w-full"
-          :loading="loading"
-          @click="handleLogin"
-          style="width: 100%; background: linear-gradient(135deg, #f97316, #ec4899); border: none;"
+
+        <div
+          v-if="loginNotice"
+          role="status"
+          class="mb-5 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700"
         >
-          登录
-        </el-button>
-      </el-form>
+          {{ loginNotice }}
+        </div>
+
+        <el-form @submit.prevent="handleLogin" class="space-y-5">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+            <el-input
+              v-model="username"
+              placeholder="请输入用户名"
+              size="large"
+              clearable
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+            <el-input
+              v-model="password"
+              type="password"
+              placeholder="请输入密码"
+              size="large"
+              show-password
+              @keyup.enter="handleLogin"
+            />
+          </div>
+          <el-button
+            type="primary"
+            size="large"
+            class="w-full"
+            :loading="loading"
+            @click="handleLogin"
+            style="width: 100%; background: linear-gradient(135deg, #f97316, #ec4899); border: none;"
+          >
+            登录
+          </el-button>
+        </el-form>
+      </div>
     </div>
   </div>
 </template>

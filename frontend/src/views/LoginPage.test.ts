@@ -48,6 +48,25 @@ describe('LoginPage session notice', () => {
     vi.clearAllMocks()
   })
 
+  it('keeps the login card centered in the dynamic app viewport', () => {
+    const wrapper = mountLogin()
+    const viewport = wrapper.get('div')
+    const centeringLayer = viewport.get('div')
+
+    expect(viewport.classes()).toEqual(expect.arrayContaining([
+      'h-full',
+      'min-h-0',
+      'overflow-y-auto',
+    ]))
+    expect(viewport.classes()).not.toContain('min-h-screen')
+    expect(centeringLayer.classes()).toEqual(expect.arrayContaining([
+      'min-h-full',
+      'flex',
+      'items-center',
+      'justify-center',
+    ]))
+  })
+
   it('shows and consumes a session-expired notice after the hidden entry is opened', async () => {
     window.sessionStorage.setItem('loginNotice', '登录已过期，请重新进入')
 
