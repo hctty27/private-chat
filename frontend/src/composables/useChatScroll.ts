@@ -47,12 +47,61 @@ export function useChatScroll(
   let loadMoreArmed = true
   let scrollHandler: (() => void) | null = null
   let wasNearBottom = true
+  let messageObserver: IntersectionObserver | null = null
+  const observedMessageItems = new Set<HTMLElement>()
+  const visibleMessageIds = new Set<number>()
+
+  function disconnectMessageObserver() {
+    messageObserver?.disconnect()
+    messageObserver = null
+    observedMessageItems.clear()
+    visibleMessageIds.clear()
+  }
+
+  function syncMessageObserver() {
+    if (virtualized || !listEl.value || typeof IntersectionObserver === 'undefined') return
+
+    if (!messageObserver) {
+      messageObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          const target = entry.target as HTMLElement
+          const messageId = Number(target.dataset.msgId)
+          if (!Number.isFinite(messageId)) continue
+          if (entry.isIntersecting && entry.intersectionRatio > 0) visibleMessageIds.add(messageId)
+          else visibleMessageIds.delete(messageId)
+        }
+        scheduleReadCheck()
+      }, {
+        root: listEl.value,
+        threshold: 0.01,
+      })
+    }
+
+    const currentItems = new Set(
+      listEl.value.querySelectorAll<HTMLElement>('.message-item[data-msg-id]')
+    )
+
+    for (const item of observedMessageItems) {
+      if (currentItems.has(item)) continue
+      const messageId = Number(item.dataset.msgId)
+      if (Number.isFinite(messageId)) visibleMessageIds.delete(messageId)
+      messageObserver.unobserve(item)
+      observedMessageItems.delete(item)
+    }
+
+    for (const item of currentItems) {
+      if (observedMessageItems.has(item)) continue
+      observedMessageItems.add(item)
+      messageObserver.observe(item)
+    }
+  }
 
   function removeScrollListener() {
     if (listEl.value && scrollHandler) {
       listEl.value.removeEventListener('scroll', scrollHandler)
       scrollHandler = null
     }
+    disconnectMessageObserver()
   }
 
   function bindScrollListener() {
@@ -63,6 +112,7 @@ export function useChatScroll(
         scrollHandler = onScroll
         listEl.value.addEventListener('scroll', scrollHandler, { passive: true })
         wasNearBottom = isNearBottom(80)
+        syncMessageObserver()
       }
     })
   }
@@ -167,7 +217,7 @@ export function useChatScroll(
     wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
-    if (!virtualized) scheduleReadCheck()
+    if (!virtualized && !messageObserver) scheduleReadCheck()
 
     if (loading.value || !chatStore.hasMore || !loadMoreArmed) return
     if (scrollTop <= LOAD_MORE_TRIGGER_PX) {
@@ -192,6 +242,7 @@ export function useChatScroll(
 
       await nextTick()
       if (anchor) restoreAnchorPosition(anchor)
+      if (!virtualized) syncMessageObserver()
     } finally {
       isLoadingMore = false
       loading.value = false
@@ -209,6 +260,21 @@ export function useChatScroll(
     if (!isDocumentVisible() || !chatStore.currentContact || !listEl.value) return
 
     if (!virtualized) {
+      if (messageObserver) {
+        for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+          const msg = chatStore.messages[i]
+          if (
+            visibleMessageIds.has(msg.id) &&
+            msg.senderId !== uid.value &&
+            msg.isRead !== 1
+          ) {
+            sendReadReceipt()
+            return
+          }
+        }
+        return
+      }
+
       const containerRect = listEl.value.getBoundingClientRect()
       const items = Array.from(
         listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
@@ -297,7 +363,10 @@ export function useChatScroll(
 
     prevMsgCount = currentMsgCount
     updateBottomButton()
-    if (!virtualized) scheduleReadCheck()
+    if (!virtualized) {
+      nextTick(syncMessageObserver)
+      if (!messageObserver) scheduleReadCheck()
+    }
   }
 
   function onListReady(el: HTMLElement | null) {
