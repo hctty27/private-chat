@@ -681,7 +681,6 @@ async function handleMessageAction(action: MessageAction) {
 function logout() {
   historySyncSeq += 1
   drafts.clearAll()
-  scrollMemory.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
   chatStore.disconnectWs()
