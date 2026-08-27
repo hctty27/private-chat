@@ -799,7 +799,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
 .bubble.emoji { background: transparent; padding: 2px 4px; box-shadow: none; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
-.pic-shell { width: min(68vw, 240px, calc(42dvh * 4 / 3)); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 12px; background: #f2f2f2; }
+.pic-shell { width: min(68vw, 240px, 56dvh); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 12px; background: #f2f2f2; }
 .pic { width: 100%; height: 100%; border-radius: inherit; display: block; object-fit: contain; opacity: 0; transition: opacity 120ms ease; cursor: pointer; }
 .pic.loaded { opacity: 1; }
 .video-link, .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
