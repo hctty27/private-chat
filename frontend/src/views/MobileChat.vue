@@ -163,9 +163,6 @@
       </div>
 
       <div ref="inputBarEl" class="input-bar">
-        <div v-if="progress > 0 && progress < 100" class="prog">
-          <div class="prog-fill" :style="{ width: progress + '%' }"></div>
-        </div>
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" aria-label="表情" @click="toggleEmoji">😊</button>
           <button class="ibtn tap-target" type="button" aria-label="添加附件" @click="fileEl?.click()">＋</button>
@@ -189,7 +186,7 @@
         :visible="!!attachmentComposer.staged.value"
         :files="attachmentComposer.staged.value?.files ?? []"
         :recipient-name="attachmentComposer.staged.value?.recipient.nickname ?? ''"
-          @cancel="closeOverlay('attachment')"
+        @cancel="closeOverlay('attachment')"
         @confirm="confirmAttachment"
       />
 
