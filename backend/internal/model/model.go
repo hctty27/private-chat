@@ -88,15 +88,38 @@ type FilePresignUploadRequest struct {
 	FileSize    int64  `json:"fileSize"`
 }
 
+type FileMultipartUploadPartDTO struct {
+	PartNumber int    `json:"partNumber"`
+	UploadURL  string `json:"uploadUrl"`
+}
+
+type FileMultipartCompletedPart struct {
+	PartNumber int    `json:"partNumber"`
+	ETag       string `json:"etag"`
+}
+
+type FileMultipartCompleteRequest struct {
+	UploadID string                       `json:"uploadId"`
+	Parts    []FileMultipartCompletedPart `json:"parts"`
+}
+
+type FileMultipartAbortRequest struct {
+	UploadID string `json:"uploadId"`
+}
+
 type FilePresignUploadDTO struct {
-	FileID             int64             `json:"fileId"`
-	UploadURL          string            `json:"uploadUrl"`
-	URL                string            `json:"url"`
-	FileName           string            `json:"fileName"`
-	FileSize           int64             `json:"fileSize"`
-	Headers            map[string]string `json:"headers"`
-	ThumbnailUploadURL string            `json:"thumbnailUploadUrl,omitempty"`
-	ThumbnailHeaders   map[string]string `json:"thumbnailHeaders,omitempty"`
+	FileID             int64                        `json:"fileId"`
+	UploadMode         string                       `json:"uploadMode"`
+	UploadURL          string                       `json:"uploadUrl,omitempty"`
+	UploadID           string                       `json:"uploadId,omitempty"`
+	PartSize           int64                        `json:"partSize,omitempty"`
+	Parts              []FileMultipartUploadPartDTO `json:"parts,omitempty"`
+	URL                string                       `json:"url"`
+	FileName           string                       `json:"fileName"`
+	FileSize           int64                        `json:"fileSize"`
+	Headers            map[string]string            `json:"headers,omitempty"`
+	ThumbnailUploadURL string                       `json:"thumbnailUploadUrl,omitempty"`
+	ThumbnailHeaders   map[string]string            `json:"thumbnailHeaders,omitempty"`
 }
 
 type User struct {
