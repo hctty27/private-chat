@@ -79,7 +79,7 @@ func TestConfigureWebSocketReadLimitUses64KiB(t *testing.T) {
 	}
 }
 
-func TestAuthTokenFallsBackToHttpOnlyCookie(t *testing.T) {
+func TestAuthTokenUsesHttpOnlyCookie(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/api/file/download/example.txt", nil)
 	request.AddCookie(&http.Cookie{Name: authCookieName, Value: "cookie-token"})
 
@@ -88,12 +88,22 @@ func TestAuthTokenFallsBackToHttpOnlyCookie(t *testing.T) {
 	}
 }
 
-func TestAuthTokenFromRequestStillAcceptsBearerForHTTP(t *testing.T) {
+func TestAuthTokenFromRequestIgnoresBearerForHTTP(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/api/contacts", nil)
 	request.Header.Set("Authorization", "Bearer http-token")
 
-	if token := authTokenFromRequest(request); token != "http-token" {
-		t.Fatalf("expected bearer token, got %q", token)
+	if token := authTokenFromRequest(request); token != "" {
+		t.Fatalf("expected bearer token to be ignored, got %q", token)
+	}
+}
+
+func TestAuthTokenFromRequestPrefersCookieWhenBearerIsPresent(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "https://chat.example.com/api/contacts", nil)
+	request.Header.Set("Authorization", "Bearer header-token")
+	request.AddCookie(&http.Cookie{Name: authCookieName, Value: "cookie-token"})
+
+	if token := authTokenFromRequest(request); token != "cookie-token" {
+		t.Fatalf("expected cookie token, got %q", token)
 	}
 }
 
