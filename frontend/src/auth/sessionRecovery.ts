@@ -5,12 +5,22 @@ const CHECK_INTERVAL_MS = 60_000
 let inFlightCheck: Promise<void> | null = null
 let cleanupRecovery: (() => void) | null = null
 
+function shouldVerifyCurrentSession() {
+  if (typeof window === 'undefined') return false
+  if (useUserStore().isLoggedIn()) return true
+  return window.location.pathname === '/chat' || window.location.pathname === '/m/chat'
+}
+
 export function verifyCurrentSession(): Promise<void> {
-  if (!useUserStore().token) return Promise.resolve()
+  if (!shouldVerifyCurrentSession()) return Promise.resolve()
   if (inFlightCheck) return inFlightCheck
 
   inFlightCheck = checkSession()
-    .then(() => undefined)
+    .then((res) => {
+      if (res.data.code !== 200) return
+      const { userId, nickname } = res.data.data
+      useUserStore().login(userId, nickname)
+    })
     .catch(() => undefined)
     .finally(() => {
       inFlightCheck = null
