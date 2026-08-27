@@ -46,4 +46,18 @@ describe('planned online presence', () => {
     expect(hasPlannedAvailability(value, now)).toBe(false)
     expect(formatContactPresence(value, now)).toBe('离线')
   })
+
+  it('can hide last seen while keeping online and planned states', () => {
+    const offline = contact({
+      lastSeenAt: new Date(2026, 7, 27, 17, 30, 0).toISOString(),
+    })
+    expect(formatContactPresence(offline, now, false)).toBe('离线')
+
+    const planned = contact({
+      lastSeenAt: new Date(2026, 7, 27, 17, 30, 0).toISOString(),
+      availabilityStartAt: new Date(2026, 7, 27, 21, 30, 0).toISOString(),
+      availabilityEndAt: new Date(2026, 7, 27, 22, 30, 0).toISOString(),
+    })
+    expect(formatContactPresence(planned, now, false)).toBe('今天 21:30 上线')
+  })
 })
