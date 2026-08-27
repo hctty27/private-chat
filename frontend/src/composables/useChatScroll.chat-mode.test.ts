@@ -9,6 +9,8 @@ const virtualizerMock = vi.hoisted(() => ({
   options: null as unknown,
   scrollToEnd: vi.fn(),
   scrollToIndex: vi.fn(),
+  scrollToOffset: vi.fn(),
+  measure: vi.fn(),
 }))
 
 vi.mock('@tanstack/vue-virtual', async () => {
@@ -21,6 +23,8 @@ vi.mock('@tanstack/vue-virtual', async () => {
         measureElement: vi.fn(),
         scrollToEnd: virtualizerMock.scrollToEnd,
         scrollToIndex: virtualizerMock.scrollToIndex,
+        scrollToOffset: virtualizerMock.scrollToOffset,
+        measure: virtualizerMock.measure,
       })
     },
   }
@@ -65,6 +69,8 @@ describe('useChatScroll chat mode', () => {
     virtualizerMock.options = null
     virtualizerMock.scrollToEnd.mockReset()
     virtualizerMock.scrollToIndex.mockReset()
+    virtualizerMock.scrollToOffset.mockReset()
+    virtualizerMock.measure.mockReset()
   })
 
   it('configures end anchoring and accounts for the history status row', async () => {
@@ -95,6 +101,10 @@ describe('useChatScroll chat mode', () => {
     const scrollTo = vi.fn()
     Object.defineProperty(container, 'scrollTo', { configurable: true, value: scrollTo })
 
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1200 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    container.scrollTop = 0
+
     getScroll().scrollToBottom(false)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
@@ -103,9 +113,26 @@ describe('useChatScroll chat mode', () => {
 
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-    expect(virtualizerMock.scrollToEnd).toHaveBeenCalledTimes(2)
-    expect(virtualizerMock.scrollToEnd).toHaveBeenLastCalledWith({ behavior: 'auto' })
+    expect(container.scrollTop).toBe(800)
     expect(scrollTo).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
+  it('resets stale virtualizer state before opening another conversation', async () => {
+    const chatStore = useChatStore()
+    chatStore.messages = [createMessage(1), createMessage(2)]
+    const { wrapper, getScroll } = mountScrollHarness()
+    await nextTick()
+
+    const container = wrapper.element as HTMLElement
+    container.scrollTop = 640
+
+    getScroll().onContactChange({ scrollToBottom: false })
+
+    expect(virtualizerMock.scrollToOffset).toHaveBeenCalledWith(0, { behavior: 'auto' })
+    expect(virtualizerMock.measure).toHaveBeenCalledTimes(1)
+    expect(container.scrollTop).toBe(0)
 
     wrapper.unmount()
   })
