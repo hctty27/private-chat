@@ -10,7 +10,7 @@ vi.mock('../api', () => ({
   checkSession: mocks.checkSession,
 }))
 
-import { installSessionRecovery } from './sessionRecovery'
+import { installSessionRecovery, verifyCurrentSession } from './sessionRecovery'
 
 describe('session recovery', () => {
   beforeEach(() => {
@@ -28,15 +28,13 @@ describe('session recovery', () => {
 
   it('checks the server session immediately and again after pageshow', async () => {
     const cleanup = installSessionRecovery()
-    await Promise.resolve()
-    await Promise.resolve()
+    await verifyCurrentSession()
 
     expect(mocks.checkSession).toHaveBeenCalledTimes(1)
     mocks.checkSession.mockClear()
 
     window.dispatchEvent(new Event('pageshow'))
-    await Promise.resolve()
-    await Promise.resolve()
+    await verifyCurrentSession()
 
     expect(mocks.checkSession).toHaveBeenCalledTimes(1)
     cleanup?.()
