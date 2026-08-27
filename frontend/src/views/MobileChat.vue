@@ -129,6 +129,7 @@
                   :error="message.localError"
                   :show-read-state="!message.localStatus && isLastSelfMessage(index)"
                   @retry="retryMessageByClientId(message?.clientMsgId)"
+                  @cancel="cancelUploadByClientId(message?.clientMsgId)"
                 />
               </div>
             </div>
@@ -167,7 +168,7 @@
         </div>
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" aria-label="表情" @click="toggleEmoji">😊</button>
-          <button class="ibtn tap-target" type="button" aria-label="添加附件" :disabled="uploadBusy" @click="fileEl?.click()">＋</button>
+          <button class="ibtn tap-target" type="button" aria-label="添加附件" @click="fileEl?.click()">＋</button>
           <input ref="fileEl" type="file" multiple hidden @change="onFile" />
           <textarea
             ref="inputEl"
@@ -188,8 +189,7 @@
         :visible="!!attachmentComposer.staged.value"
         :files="attachmentComposer.staged.value?.files ?? []"
         :recipient-name="attachmentComposer.staged.value?.recipient.nickname ?? ''"
-        :busy="uploadBusy"
-        @cancel="closeOverlay('attachment')"
+          @cancel="closeOverlay('attachment')"
         @confirm="confirmAttachment"
       />
 
@@ -281,7 +281,7 @@ const attachments = useChatAttachments({
   scroll,
   onWarning: (message) => ElMessage.warning(message),
 })
-const { attachmentComposer, attachmentIngress, progress, uploadBusy } = attachments
+const { attachmentComposer, attachmentIngress } = attachments
 const {
   showTimeByIndex,
   isLastSelfMessage,
@@ -517,7 +517,7 @@ async function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const files = input.files ? Array.from(input.files) : []
   input.value = ''
-  if (files.length === 0 || uploadBusy.value) return
+  if (files.length === 0) return
   const contactId = chatStore.currentContact?.userId
   if (!contactId || !attachmentIngress.acceptFiles(files)) return
   await mobileHistory.pushOverlay(contactId, 'attachment')
@@ -585,6 +585,11 @@ function retryMessageByClientId(clientMsgId?: string) {
   if (!clientMsgId) return
   chatStore.retryMessage(clientMsgId)
   scroll.scrollToBottomAndClear(true)
+}
+
+function cancelUploadByClientId(clientMsgId?: string) {
+  if (!clientMsgId) return
+  chatStore.cancelUpload(clientMsgId)
 }
 
 function guardNativeMessageClick(event: MouseEvent) {
