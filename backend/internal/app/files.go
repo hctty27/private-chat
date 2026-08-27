@@ -31,10 +31,10 @@ var (
 )
 
 const (
-	fileDownloadExpiry         = 10 * time.Minute
-	filePrivateCacheValue      = "private, max-age=300"
-	fileSingleUploadExpiry     = time.Hour
-	fileMultipartUploadExpiry  = 2 * time.Hour
+	fileDownloadExpiry        = 10 * time.Minute
+	filePrivateCacheValue     = "private, max-age=300"
+	fileSingleUploadExpiry    = time.Hour
+	fileMultipartUploadExpiry = 2 * time.Hour
 )
 
 func fileUploadExpiry(fileSize int64) time.Duration {
