@@ -19,7 +19,7 @@ afterEach(() => {
   revokeObjectURL.mockClear()
 })
 
-function mountDialog(options: { busy?: boolean; files?: File[] } = {}) {
+function mountDialog(options: { busy?: boolean; files?: File[]; lightweightVideoPreview?: boolean } = {}) {
   const files = options.files ?? [new File(['hello'], 'photo.png', { type: 'image/png' })]
   const wrapper = mount(AttachmentSendDialog, {
     props: {
@@ -27,6 +27,7 @@ function mountDialog(options: { busy?: boolean; files?: File[] } = {}) {
       files,
       recipientName: 'Alice',
       busy: options.busy ?? false,
+      lightweightVideoPreview: options.lightweightVideoPreview ?? false,
     },
     global: { stubs: { teleport: true } },
   })
@@ -43,6 +44,27 @@ describe('AttachmentSendDialog', () => {
     expect(wrapper.text()).toContain('photo.png')
     expect(wrapper.text()).toContain('5 B')
     expect(wrapper.get('img').attributes('src')).toBe('blob:preview-1')
+  })
+
+  it('skips local video object URLs in lightweight preview mode', () => {
+    const wrapper = mountDialog({
+      files: [new File(['video'], 'clip.mov', { type: 'video/quicktime' })],
+      lightweightVideoPreview: true,
+    })
+
+    expect(wrapper.find('video').exists()).toBe(false)
+    expect(wrapper.text()).toContain('视频已选择')
+    expect(wrapper.text()).toContain('发送后后台生成预览')
+    expect(createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('keeps normal video preview outside lightweight mode', () => {
+    const wrapper = mountDialog({
+      files: [new File(['video'], 'clip.mp4', { type: 'video/mp4' })],
+    })
+
+    expect(wrapper.get('video').attributes('src')).toBe('blob:preview-1')
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
   })
 
   it('shows every image in a batch and the batch count', () => {
