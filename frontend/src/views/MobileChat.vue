@@ -257,6 +257,13 @@ const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
 
+const lastSelfMessageIndex = computed(() => {
+  for (let index = chatStore.messages.length - 1; index >= 0; index--) {
+    if (chatStore.messages[index].senderId === uid.value) return index
+  }
+  return -1
+})
+
 const text = computed({
   get() {
     const contactId = chatStore.currentContact?.userId
@@ -520,15 +527,21 @@ async function confirmAttachment() {
 
 async function doUpload(files: File[]) {
   const fileProgress = Array.from({ length: files.length }, () => 0)
+  let followBatch = scroll.isNearBottom(160)
   progress.value = 0
   try {
     for (let index = 0; index < files.length; index++) {
-      await chatStore.sendFile(files[index], (p) => {
+      const sendPromise = chatStore.sendFile(files[index], (p) => {
         fileProgress[index] = p
         progress.value = Math.round(fileProgress.reduce((sum, value) => sum + value, 0) / files.length)
       })
+
       await nextTick()
-      scroll.scrollToBottomAndClear(true)
+      if (followBatch) scroll.scrollToBottomAndClear(false)
+
+      await sendPromise
+      await nextTick()
+      if (followBatch && !scroll.isNearBottom(320)) followBatch = false
     }
   } finally {
     progress.value = 0
@@ -607,9 +620,7 @@ function showTimeByIndex(i: number) {
 }
 
 function isLastSelfMessage(index: number) {
-  const message = chatStore.messages[index]
-  if (!message || message.senderId !== uid.value) return false
-  return !chatStore.messages.slice(index + 1).some(m => m.senderId === uid.value)
+  return index === lastSelfMessageIndex.value
 }
 
 function shouldShowMessageStatus(index: number) {
