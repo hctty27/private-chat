@@ -13,6 +13,7 @@ export const useChatStore = defineStore('chat', () => {
   const currentContact = ref<Contact | null>(null)
   const messages = ref<Message[]>([])
   const hasMore = ref(false)
+  const messageCursor = ref('')
   const messageLoadState = ref<MessageLoadState>('idle')
   const messageLoadError = ref('')
   const ws = ref<WebSocket | null>(null)
@@ -79,6 +80,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value = []
     hasMore.value = false
+    messageCursor.value = ''
     messageLoadState.value = 'idle'
     messageLoadError.value = ''
     const loaded = await loadMessages('init')
@@ -101,12 +103,15 @@ export const useChatStore = defineStore('chat', () => {
     try {
       let cursor: string | undefined
       if (mode === 'loadMore' && messages.value.length > 0) {
-        const d = new Date(messages.value[0].createdAt)
-        cursor = String(d.getTime())  // 传毫秒时间戳
+        cursor = messageCursor.value
+        if (!cursor) {
+          // Rolling-deploy fallback for an older backend that does not return nextCursor yet.
+          cursor = String(new Date(messages.value[0].createdAt).getTime())
+        }
       }
       const res = await getMessages(targetId, cursor, 20, mode)
       if (res.data.code === 200) {
-        const { messages: msgs, hasMore: more } = res.data.data
+        const { messages: msgs, hasMore: more, nextCursor } = res.data.data
         const isLatest = mode === 'init'
           ? requestSeq === initLoadSeq
           : requestSeq === loadMoreSeq
@@ -123,6 +128,9 @@ export const useChatStore = defineStore('chat', () => {
           confirmServerMessagesFromHistory(msgs)
         }
         hasMore.value = more
+        messageCursor.value = nextCursor || (
+          msgs.length > 0 ? String(new Date(msgs[0].createdAt).getTime()) : ''
+        )
         if (mode === 'init') {
           messageLoadState.value = 'loaded'
           messageLoadError.value = ''
@@ -813,6 +821,7 @@ export const useChatStore = defineStore('chat', () => {
     currentContact.value = null
     messages.value = []
     hasMore.value = false
+    messageCursor.value = ''
     messageLoadState.value = 'idle'
     messageLoadError.value = ''
   }
