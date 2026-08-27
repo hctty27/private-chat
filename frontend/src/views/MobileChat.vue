@@ -210,13 +210,13 @@ import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
-import { useChatDrafts } from '../composables/useChatDrafts'
-import { useAttachmentComposer } from '../composables/useAttachmentComposer'
-import { useAttachmentIngress } from '../composables/useAttachmentIngress'
+import { useChatComposer } from '../composables/useChatComposer'
+import { useChatAttachments } from '../composables/useChatAttachments'
+import { useChatMessageUi } from '../composables/useChatMessageUi'
 import { useConversationScrollMemory } from '../composables/useConversationScrollMemory'
 import { useMobileChatHistory, type MobileChatUiState, type MobileOverlayKind } from '../composables/useMobileChatHistory'
 import { useLongPress } from '../composables/useLongPress'
-import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator, formatFileSize as fmtSize } from '../utils/time'
+import { formatChatTime as fmtChatTime, formatLastSeen, formatFileSize as fmtSize } from '../utils/time'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
@@ -233,7 +233,6 @@ const chatStore = useChatStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
-const drafts = useChatDrafts()
 const scrollMemory = useConversationScrollMemory()
 const mobileHistory = useMobileChatHistory(router)
 
@@ -243,8 +242,6 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 const inputBarEl = ref<HTMLElement | null>(null)
 const fileEl = ref<HTMLInputElement | null>(null)
 const emojiOpen = ref(false)
-const progress = ref(0)
-const uploadBusy = ref(false)
 const inputFocused = ref(false)
 const viewportHeight = ref(0)
 const viewportTop = ref(0)
@@ -260,46 +257,35 @@ const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
 
-const lastSelfMessageIndex = computed(() => {
-  for (let index = chatStore.messages.length - 1; index >= 0; index--) {
-    if (chatStore.messages[index].senderId === uid.value) return index
-  }
-  return -1
-})
-
-const text = computed({
-  get() {
-    const contactId = chatStore.currentContact?.userId
-    return contactId ? drafts.get(contactId) : ''
-  },
-  set(value: string) {
-    const contactId = chatStore.currentContact?.userId
-    if (contactId) drafts.set(contactId, value)
+const scroll = useChatScroll(listEl, uid, { virtualized: false })
+const composer = useChatComposer({
+  inputEl,
+  emojiOpen,
+  maxHeight: 108,
+  scroll,
+  closeEmoji: () => {
+    if (emojiOpen.value) closeOverlay('emoji')
   },
 })
-
-function currentRecipient() {
-  const contact = chatStore.currentContact
-  return contact ? { id: contact.userId, nickname: contact.nickname } : null
-}
-
-const attachmentComposer = useAttachmentComposer({
-  getCurrentRecipient: currentRecipient,
-  onRecipientMismatch: () => ElMessage.warning('联系人已切换，请重新选择文件'),
-})
-
-const attachmentIngress = useAttachmentIngress({
-  maxBytes: 50 * 1024 * 1024,
-  maxFiles: 9,
-  getRecipient: currentRecipient,
-  onStage: (files, recipient) => {
-    emojiOpen.value = false
-    attachmentComposer.stage(files, recipient)
-  },
+const { drafts, text, grow, addEmoji, send } = composer
+const attachments = useChatAttachments({
+  emojiOpen,
+  scroll,
   onWarning: (message) => ElMessage.warning(message),
 })
+const { attachmentComposer, attachmentIngress, progress, uploadBusy } = attachments
+const {
+  showTimeByIndex,
+  isLastSelfMessage,
+  shouldShowMessageStatus,
+  isPendingMediaMessage,
+  pendingMediaText,
+  bubbleType,
+  onImageLoaded,
+  fallbackImageToOriginal,
+  videoPosterUrl,
+} = useChatMessageUi(uid)
 
-const scroll = useChatScroll(listEl, uid, { virtualized: false })
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 const chatPageStyle = computed(() => {
   const style: Record<string, string> = {
@@ -517,19 +503,6 @@ async function retryInitialMessages() {
   if (loaded) scroll.scrollToBottomAndClear(false)
 }
 
-async function send() {
-  const contactId = chatStore.currentContact?.userId
-  const value = text.value.trim()
-  if (!contactId || !value) return
-  if (emojiOpen.value) closeOverlay('emoji')
-  const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(value)
-  chatStore.sendMessage(value, isEmoji ? 4 : 1)
-  drafts.clear(contactId)
-  await nextTick()
-  if (inputEl.value) inputEl.value.style.height = 'auto'
-  scroll.scrollToBottomAndClear(true)
-}
-
 async function onFile(event: Event) {
   const input = event.target as HTMLInputElement
   const files = input.files ? Array.from(input.files) : []
@@ -541,45 +514,10 @@ async function onFile(event: Event) {
 }
 
 async function confirmAttachment() {
-  const files = attachmentComposer.takeConfirmed()
-  if (!files?.length || uploadBusy.value) return
-  const state = mobileHistory.read()
-  if (state.kind === 'overlay' && state.overlay === 'attachment') requestBack()
-  uploadBusy.value = true
-  try {
-    await doUpload(files)
-  } finally {
-    uploadBusy.value = false
-  }
-}
-
-async function doUpload(files: File[]) {
-  const fileProgress = Array.from({ length: files.length }, () => 0)
-  let followBatch = scroll.isNearBottom(160)
-  progress.value = 0
-  try {
-    for (let index = 0; index < files.length; index++) {
-      const sendPromise = chatStore.sendFile(files[index], (p) => {
-        fileProgress[index] = p
-        progress.value = Math.round(fileProgress.reduce((sum, value) => sum + value, 0) / files.length)
-      })
-
-      await nextTick()
-      if (followBatch) scroll.scrollToBottomAndClear(false)
-
-      await sendPromise
-      await nextTick()
-      if (followBatch && !scroll.isNearBottom(320)) followBatch = false
-    }
-  } finally {
-    progress.value = 0
-  }
-}
-
-function addEmoji(emoji: string) {
-  text.value += emoji
-  inputEl.value?.focus()
-  nextTick(grow)
+  await attachments.uploadConfirmed(() => {
+    const state = mobileHistory.read()
+    if (state.kind === 'overlay' && state.overlay === 'attachment') requestBack()
+  })
 }
 
 async function toggleEmoji() {
@@ -611,15 +549,6 @@ function closeOverlay(kind: MobileOverlayKind) {
   if (kind === 'attachment') attachmentComposer.cancel()
 }
 
-function grow() {
-  if (!inputEl.value) return
-  inputEl.value.style.height = 'auto'
-  const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight
-  const contentHeight = inputEl.value.scrollHeight + borderHeight
-  inputEl.value.style.height = Math.min(contentHeight, 108) + 'px'
-  inputEl.value.style.overflowY = contentHeight > 108 ? 'auto' : 'hidden'
-}
-
 function onFocus() {
   focusStartedAtEnd = scroll.isNearBottom(120)
   inputFocused.value = true
@@ -642,53 +571,10 @@ function collapseInput() {
   cancelPinnedEndSync()
 }
 
-function showTimeByIndex(i: number) {
-  if (i === 0) return true
-  return shouldShowTimeSeparator(chatStore.messages[i].createdAt, chatStore.messages[i - 1].createdAt)
-}
-
-function isLastSelfMessage(index: number) {
-  return index === lastSelfMessageIndex.value
-}
-
-function shouldShowMessageStatus(index: number) {
-  const message = chatStore.messages[index]
-  if (!message || message.senderId !== uid.value) return false
-  return !!message.localStatus || isLastSelfMessage(index)
-}
-
-function isPendingMediaMessage(message: Message) {
-  return (message.msgType === 2 || message.msgType === 3 || message.msgType === 5) && !message.fileUrl
-}
-
-function pendingMediaText(message: Message) {
-  if (message.msgType === 2) return '📷 图片准备中'
-  if (message.msgType === 5) return '🎬 视频准备中'
-  return `📎 ${message.fileName || '文件准备中'}`
-}
-
 function retryMessageByClientId(clientMsgId?: string) {
   if (!clientMsgId) return
   chatStore.retryMessage(clientMsgId)
   scroll.scrollToBottomAndClear(true)
-}
-
-function bubbleType(message: { msgType: number; senderId: number }) {
-  if (message.msgType === 4) return 'emoji'
-  return message.senderId === uid.value ? 'mine' : 'his'
-}
-
-function onImageLoaded(event: Event) {
-  const image = event.currentTarget
-  if (image instanceof HTMLImageElement) image.classList.add('loaded')
-}
-
-function fallbackImageToOriginal(event: Event, message: Message) {
-  const image = event.currentTarget
-  if (!(image instanceof HTMLImageElement) || !message.fileId || !message.fileUrl) return
-  if (image.dataset.originalFallback === '1') return
-  image.dataset.originalFallback = '1'
-  image.src = message.fileUrl
 }
 
 function guardNativeMessageClick(event: MouseEvent) {
@@ -696,10 +582,6 @@ function guardNativeMessageClick(event: MouseEvent) {
   suppressNativeClickUntil = 0
   event.preventDefault()
   event.stopPropagation()
-}
-
-function videoPosterUrl(message: Pick<Message, 'fileId'>) {
-  return message.fileId ? `/api/files/${message.fileId}/thumbnail` : ''
 }
 
 function openPreviewFromBubble(

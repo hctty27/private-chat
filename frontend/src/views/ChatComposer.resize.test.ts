@@ -4,17 +4,19 @@ import { describe, expect, it } from 'vitest'
 
 const chatPageSource = readFileSync(resolve(process.cwd(), 'src/views/ChatPage.vue'), 'utf8')
 const mobileChatSource = readFileSync(resolve(process.cwd(), 'src/views/MobileChat.vue'), 'utf8')
+const composerSource = readFileSync(resolve(process.cwd(), 'src/composables/useChatComposer.ts'), 'utf8')
 
 describe('chat composer textarea resizing', () => {
-  it('accounts for textarea borders when assigning scrollHeight to a border-box height', () => {
-    for (const source of [chatPageSource, mobileChatSource]) {
-      expect(source).toContain('const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight')
-      expect(source).toContain('const contentHeight = inputEl.value.scrollHeight + borderHeight')
-    }
+  it('shares the border-box resize implementation between desktop and mobile', () => {
+    expect(composerSource).toContain('const borderHeight = input.offsetHeight - input.clientHeight')
+    expect(composerSource).toContain('const contentHeight = input.scrollHeight + borderHeight')
+    expect(chatPageSource).toContain('maxHeight: 100')
+    expect(mobileChatSource).toContain('maxHeight: 108')
   })
 
-  it('only enables vertical scrolling after the composer reaches its max height', () => {
-    expect(chatPageSource).toContain("inputEl.value.style.overflowY = contentHeight > 100 ? 'auto' : 'hidden'")
-    expect(mobileChatSource).toContain("inputEl.value.style.overflowY = contentHeight > 108 ? 'auto' : 'hidden'")
+  it('only enables vertical scrolling after the configured composer max height', () => {
+    expect(composerSource).toContain("input.style.overflowY = contentHeight > options.maxHeight ? 'auto' : 'hidden'")
+    expect(chatPageSource).not.toContain('const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight')
+    expect(mobileChatSource).not.toContain('const borderHeight = inputEl.value.offsetHeight - inputEl.value.clientHeight')
   })
 })
