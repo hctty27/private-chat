@@ -14,20 +14,9 @@ import (
 
 const authCookieName = "private_chat_session"
 
-func bearerToken(header string) string {
-	header = strings.TrimSpace(header)
-	if strings.HasPrefix(header, "Bearer ") {
-		return strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-	}
-	return ""
-}
-
 func authTokenFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
-	}
-	if token := bearerToken(r.Header.Get("Authorization")); token != "" {
-		return token
 	}
 	cookie, err := r.Cookie(authCookieName)
 	if err != nil {
@@ -37,14 +26,7 @@ func authTokenFromRequest(r *http.Request) string {
 }
 
 func websocketAuthTokenFromRequest(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	cookie, err := r.Cookie(authCookieName)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(cookie.Value)
+	return authTokenFromRequest(r)
 }
 
 func newAuthCookie(token string, expiry time.Duration, secure bool) *http.Cookie {
