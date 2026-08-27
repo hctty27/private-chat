@@ -170,7 +170,7 @@ function handleLogout() {
 .c-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .c-name { font-size: 15px; font-weight: 500; color: #111; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-name-mark { padding: 0; background: #fef3c7; color: inherit; border-radius: 2px; }
-.c-status { flex-shrink: 0; font-size: 11px; color: #aaa; }
+.c-status { flex-shrink: 1; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #aaa; }
 .c-status.on { color: #22c55e; }
 .c-status.planned { color: #576b95; }
 .c-time { font-size: 12px; color: #999; flex-shrink: 0; }
