@@ -44,9 +44,13 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mobileChatSource).toContain('if (keepAtEnd) scroll.scrollToBottom(false)')
   })
 
-  it('subtracts the fixed history status row from virtual item positioning', () => {
-    expect(mobileChatSource).toContain('CHAT_SCROLL_MARGIN')
-    expect(mobileChatSource).toContain('vi.start - CHAT_SCROLL_MARGIN')
+  it('uses native DOM flow for mobile history instead of virtual item positioning', () => {
+    expect(mobileChatSource).toContain('v-for="(message, index) in chatStore.messages"')
+    expect(mobileChatSource).toContain('class="message-item"')
+    expect(mobileChatSource).toContain('useChatScroll(listEl, uid, { virtualized: false })')
+    expect(mobileChatSource).toContain('overflow-anchor: none')
+    expect(mobileChatSource).not.toContain('scroll.virtualizer.value.getVirtualItems()')
+    expect(mobileChatSource).not.toContain('CHAT_SCROLL_MARGIN')
   })
 })
 
