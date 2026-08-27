@@ -10,7 +10,7 @@
 
 - **伪装保护** - 外观模拟微博，点击 3 次进入登录页
 - **实时聊天** - WebSocket 双向通信，消息即时送达
-- **文件分享** - 支持图片、视频、文件直传 Cloudflare R2
+- **文件分享** - 支持图片、视频、文件直传 Cloudflare R2；图片最大 50 MiB，视频/普通文件最大 500 MiB
 - **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
 - **自动数据库迁移** - Docker Compose 部署时先执行未应用的版本化 PostgreSQL migration，成功后才启动后端
 - **已读状态** - 消息已读/未读实时反馈
@@ -92,6 +92,13 @@ psql "$DATABASE_URL" -f init.sql
 ```
 
 R2 Presigned URL 是临时 bearer credential。Bucket 应保持私有，不要把 Presigned URL 写入数据库或聊天消息；应用只保存 `fileId` 和服务端拥有的对象元数据。
+
+上传策略：
+- 图片最大 50 MiB；视频和普通文件最大 500 MiB。
+- 100 MiB 及以下使用单次 Presigned PUT。
+- 超过 100 MiB 自动使用 R2 Multipart Upload，分片大小 16 MiB，浏览器最多 3 路并发。
+- 单个分片失败最多重试 3 次；最终失败时客户端会尽力调用 abort 接口清理未完成的 multipart upload。
+- Multipart 完成后仍走原有 `/complete` 校验：服务端核对 R2 实际大小并检测文件 MIME，确认成功后才允许发送附件消息。
 
 5. 构建并启动：
 
@@ -188,8 +195,9 @@ private-chat/
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/file/presign-upload` | 创建 pending 文件记录并获取 1 小时 R2 Presigned PUT；请求必须包含 `receiverId` |
-| POST | `/api/files/:fileId/complete` | 上传后由服务端校验 R2 实际大小并读取前 512 字节识别 MIME，成功后标记 ready |
+| POST | `/api/file/presign-upload` | 创建 pending 文件记录并返回单次 PUT 或 multipart 分片上传计划；请求必须包含 `receiverId` |
+| POST | `/api/files/:fileId/complete` | 单次上传直接确认；multipart 上传先提交各分片 ETag 完成合并，再校验 R2 实际大小和 MIME，成功后标记 ready |
+| POST | `/api/files/:fileId/multipart/abort` | 取消 multipart 上传并清理 R2 未完成上传 |
 | GET | `/api/files/:fileId/content` | 校验当前用户属于文件会话后，302 到 10 分钟 Presigned GET |
 | GET | `/api/file/download/:objectName` | 仅用于迁移前历史链接；仍执行文件会话授权，后续兼容窗口结束后删除 |
 
@@ -278,6 +286,7 @@ go vet ./...
 
 cd ../frontend
 npm ci
+npm run test -- src/api/imageUpload.test.ts src/composables/useAttachmentIngress.test.ts
 npm run build
 ```
 
