@@ -3,6 +3,7 @@
     <div class="cl-header">
       <h2>消息</h2>
       <div class="cl-header-right">
+        <button class="plan-btn tap-target" type="button" @click="emit('availability')">计划上线</button>
         <span class="ws-dot" :class="{ on: wsConnected }"></span>
         <button class="logout-btn tap-target" type="button" @click="handleLogout">退出</button>
       </div>
@@ -47,7 +48,11 @@
                 </template>
                 <template v-else>{{ c.nickname }}</template>
               </span>
-              <span class="c-status" :class="{ on: c.online }">{{ c.online ? '在线' : '离线' }}</span>
+              <span
+                class="c-status"
+                :class="{ on: c.online, planned: !c.online && hasPlannedAvailability(c) }"
+                :title="c.availabilityNote || undefined"
+              >{{ formatContactPresence(c) }}</span>
             </div>
             <span class="c-time" v-if="c.lastMessageTime">{{ fmtTime(c.lastMessageTime) }}</span>
           </div>
@@ -67,6 +72,7 @@
 import { ref, computed } from 'vue'
 import type { Contact } from '../types'
 import { formatTime as fmtTime } from '../utils/time'
+import { formatContactPresence, hasPlannedAvailability } from '../utils/availability'
 
 const props = defineProps<{
   contacts: Contact[]
@@ -76,6 +82,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: number]
+  availability: []
   logout: []
 }>()
 
@@ -142,6 +149,8 @@ function handleLogout() {
 .cl-header { padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #f0f0f0; padding-top: calc(16px + env(safe-area-inset-top)); flex-shrink: 0; }
 .cl-header h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .cl-header-right { display: flex; align-items: center; gap: 10px; }
+.plan-btn { font-size: 12px; color: #576b95; background: #f4f6fb; border: 1px solid #e3e8f2; border-radius: 7px; padding: 4px 9px; cursor: pointer; white-space: nowrap; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.plan-btn:active { background: #e9edf6; }
 .logout-btn { font-size: 13px; color: #999; background: none; border: 1px solid #ddd; border-radius: 6px; padding: 2px 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 .logout-btn:active { background: #f0f0f0; }
 .ws-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
@@ -163,6 +172,7 @@ function handleLogout() {
 .c-name-mark { padding: 0; background: #fef3c7; color: inherit; border-radius: 2px; }
 .c-status { flex-shrink: 0; font-size: 11px; color: #aaa; }
 .c-status.on { color: #22c55e; }
+.c-status.planned { color: #576b95; }
 .c-time { font-size: 12px; color: #999; flex-shrink: 0; }
 .c-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
 .c-msg { font-size: 13px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 8px; }
