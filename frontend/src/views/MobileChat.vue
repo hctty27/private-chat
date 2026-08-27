@@ -306,13 +306,25 @@ let focusStartedAtEnd = false
 let historySyncSeq = 0
 let historyBackPending = false
 let suppressNativeClickUntil = 0
+const mobileViewportClass = 'mobile-chat-viewport'
 
 const longPress = useLongPress<Message>((message, event) => {
   suppressNativeClickUntil = Date.now() + 600
   openMessageMenuAt(event.clientX, event.clientY, message)
 })
 
+function lockMobileViewport() {
+  document.documentElement.classList.add(mobileViewportClass)
+  document.body.classList.add(mobileViewportClass)
+}
+
+function unlockMobileViewport() {
+  document.documentElement.classList.remove(mobileViewportClass)
+  document.body.classList.remove(mobileViewportClass)
+}
+
 onMounted(async () => {
+  lockMobileViewport()
   installViewportHandler()
   await chatStore.loadContacts()
   chatStore.connectWs()
@@ -340,6 +352,7 @@ watch(inputBarEl, (el) => {
 })
 
 onUnmounted(() => {
+  unlockMobileViewport()
   historySyncSeq += 1
   unsubscribeHistory?.()
   longPress.cancel()
@@ -700,7 +713,17 @@ const emojiList = [
 </script>
 
 <style>
-html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; position: fixed; -webkit-text-size-adjust: 100%; }
+html.mobile-chat-viewport,
+body.mobile-chat-viewport,
+body.mobile-chat-viewport #app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+html.mobile-chat-viewport { -webkit-text-size-adjust: 100%; }
+body.mobile-chat-viewport { position: fixed; inset: 0; }
 </style>
 
 <style scoped>
