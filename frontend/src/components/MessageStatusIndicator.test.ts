@@ -5,10 +5,12 @@ import type { LocalMessageStatus } from '../types'
 
 describe('MessageStatusIndicator', () => {
   it.each<[LocalMessageStatus, string]>([
+    ['upload_queued', '等待上传'],
     ['uploading', '上传中'],
     ['queued', '排队中'],
     ['sending', '发送中'],
     ['failed', '发送失败'],
+    ['cancelled', '已取消'],
   ])('renders %s status', (status, text) => {
     const wrapper = mount(MessageStatusIndicator, {
       props: {
@@ -29,6 +31,16 @@ describe('MessageStatusIndicator', () => {
     await wrapper.get('button').trigger('click')
 
     expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('emits cancel while an upload is queued or running', async () => {
+    const wrapper = mount(MessageStatusIndicator, {
+      props: { status: 'uploading', isRead: false, progress: 42 },
+    })
+
+    await wrapper.get('.status-cancel').trigger('click')
+
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
   })
 
   it('shows read state when showReadState is true and no local status exists', () => {

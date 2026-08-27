@@ -168,8 +168,25 @@ const uploadTimeoutMs = 600000
 const multipartConcurrency = 3
 const multipartMaxAttempts = 3
 
-function delay(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+function delay(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('upload aborted'))
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      cleanup()
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      window.clearTimeout(timer)
+      cleanup()
+      reject(new Error('upload aborted'))
+    }
+    const cleanup = () => signal?.removeEventListener('abort', onAbort)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 function responseEtag(headers: any) {
@@ -185,10 +202,12 @@ async function uploadSingle(
   headers: Record<string, string> | undefined,
   contentType: string,
   onProgress?: (p: number) => void,
+  signal?: AbortSignal,
 ) {
   await axios.put(uploadUrl, file, {
     headers: headers || { 'Content-Type': contentType },
     timeout: uploadTimeoutMs,
+    signal,
     onUploadProgress: (event) => {
       if (!event.total || !onProgress) return
       onProgress(Math.round((event.loaded * 100) / event.total))
@@ -200,6 +219,7 @@ async function uploadMultipart(
   file: File,
   plan: FilePresignUploadResponse,
   onProgress?: (p: number) => void,
+  signal?: AbortSignal,
 ): Promise<FileMultipartCompletedPart[]> {
   const uploadId = plan.uploadId
   const partSize = plan.partSize
@@ -211,6 +231,9 @@ async function uploadMultipart(
   const loadedByPart = new Map<number, number>()
   const completed = new Map<number, FileMultipartCompletedPart>()
   const controller = new AbortController()
+  const abortFromParent = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener('abort', abortFromParent, { once: true })
   let nextIndex = 0
 
   const reportProgress = () => {
@@ -251,7 +274,7 @@ async function uploadMultipart(
       } catch (error) {
         lastError = error
         if (controller.signal.aborted || attempt === multipartMaxAttempts) throw error
-        await delay(500 * 2 ** (attempt - 1))
+        await delay(500 * 2 ** (attempt - 1), controller.signal)
       }
     }
     throw lastError
@@ -268,41 +291,49 @@ async function uploadMultipart(
   try {
     const workerCount = Math.min(multipartConcurrency, parts.length)
     await Promise.all(Array.from({ length: workerCount }, () => worker()))
+    return Array.from(completed.values()).sort((a, b) => a.partNumber - b.partNumber)
   } catch (error) {
     controller.abort()
     throw error
+  } finally {
+    signal?.removeEventListener('abort', abortFromParent)
   }
-
-  return Array.from(completed.values()).sort((a, b) => a.partNumber - b.partNumber)
 }
 
 async function uploadThumbnail(
   thumbnailPromise: Promise<Blob | null>,
   uploadUrl?: string,
   headers?: Record<string, string>,
+  signal?: AbortSignal,
 ) {
-  if (!uploadUrl) return
+  if (!uploadUrl || signal?.aborted) return
   const thumbnail = await thumbnailPromise
-  if (!thumbnail) return
+  if (!thumbnail || signal?.aborted) return
 
   try {
     await axios.put(uploadUrl, thumbnail, {
       headers: headers || { 'Content-Type': 'image/jpeg' },
       timeout: uploadTimeoutMs,
+      signal,
     })
   } catch {
     // Thumbnail upload is an optimization. The original file remains usable.
   }
 }
 
-export async function uploadFile(file: File, receiverId: number, onProgress?: (p: number) => void) {
+export async function uploadFile(
+  file: File,
+  receiverId: number,
+  onProgress?: (p: number) => void,
+  signal?: AbortSignal,
+) {
   const contentType = file.type || 'application/octet-stream'
   const presignRes = await api.post<ApiResponse<FilePresignUploadResponse>>('/api/file/presign-upload', {
     receiverId,
     fileName: file.name,
     contentType,
     fileSize: file.size,
-  })
+  }, { signal })
   if (presignRes.data.code !== 200) {
     return presignRes
   }
@@ -322,13 +353,13 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
   try {
     let completedParts: FileMultipartCompletedPart[] | undefined
     if (uploadMode === 'multipart') {
-      completedParts = await uploadMultipart(file, plan, onProgress)
+      completedParts = await uploadMultipart(file, plan, onProgress, signal)
     } else {
       if (!uploadUrl) throw new Error('missing upload URL')
-      await uploadSingle(uploadUrl, file, headers, contentType, onProgress)
+      await uploadSingle(uploadUrl, file, headers, contentType, onProgress, signal)
     }
 
-    await uploadThumbnail(thumbnailPromise, thumbnailUploadUrl, thumbnailHeaders)
+    await uploadThumbnail(thumbnailPromise, thumbnailUploadUrl, thumbnailHeaders, signal)
 
     const completePayload = uploadMode === 'multipart'
       ? { uploadId, parts: completedParts }
@@ -336,6 +367,7 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
     const response = await api.post<ApiResponse<FileUploadResponse>>(
       `/api/files/${fileId}/complete`,
       completePayload,
+      { signal },
     )
     if (response.data.code === 200) onProgress?.(100)
     return response

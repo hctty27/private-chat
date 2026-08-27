@@ -19,13 +19,16 @@ describe('chat interaction performance guards', () => {
     }
   })
 
-  it('shares batch upload follow behavior between desktop and mobile', () => {
-    expect(attachmentsSource).toContain('let followBatch = options.scroll.isNearBottom(160)')
+  it('shares non-blocking background upload behavior between desktop and mobile', () => {
+    expect(attachmentsSource).toContain('for (const file of files)')
+    expect(attachmentsSource).toContain('chatStore.sendFile(file)')
+    expect(attachmentsSource).not.toContain('await chatStore.sendFile')
+    expect(attachmentsSource).not.toContain('uploadBusy')
     expect(attachmentsSource).toContain('if (followBatch) options.scroll.scrollToBottomAndClear(false)')
-    expect(attachmentsSource).toContain('if (followBatch && !options.scroll.isNearBottom(320)) followBatch = false')
     for (const source of [chatPageSource, mobileChatSource]) {
       expect(source).toContain('useChatAttachments({')
-      expect(source).not.toContain('let followBatch = scroll.isNearBottom(160)')
+      expect(source).not.toContain(':disabled="uploadBusy"')
+      expect(source).not.toContain('v-if="progress > 0 && progress < 100"')
     }
   })
 

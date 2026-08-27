@@ -5,9 +5,20 @@
       <button class="status-retry" type="button" @click="emit('retry')">重试</button>
     </template>
 
+    <template v-else-if="props.status === 'cancelled'">
+      <span>已取消</span>
+      <button class="status-retry" type="button" @click="emit('retry')">重试</button>
+    </template>
+
+    <template v-else-if="props.status === 'upload_queued'">
+      <span>等待上传</span>
+      <button class="status-cancel" type="button" @click="emit('cancel')">取消</button>
+    </template>
+
     <template v-else-if="props.status === 'uploading'">
       <span>上传中</span>
       <span class="status-progress">{{ normalizedProgress }}%</span>
+      <button class="status-cancel" type="button" @click="emit('cancel')">取消</button>
     </template>
 
     <template v-else-if="props.status === 'queued'">排队中</template>
@@ -32,6 +43,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   retry: []
+  cancel: []
 }>()
 
 const normalizedProgress = computed(() => {
@@ -41,8 +53,9 @@ const normalizedProgress = computed(() => {
 
 const statusClass = computed(() => ({
   'is-failed': props.status === 'failed',
-  'is-uploading': props.status === 'uploading',
+  'is-uploading': props.status === 'upload_queued' || props.status === 'uploading',
   'is-pending': props.status === 'queued' || props.status === 'sending',
+  'is-cancelled': props.status === 'cancelled',
   'is-read': !props.status && props.showReadState && props.isRead,
 }))
 </script>
@@ -61,6 +74,7 @@ const statusClass = computed(() => ({
 .is-pending,
 .is-uploading { color: #d97706; }
 .is-failed { color: #dc2626; }
+.is-cancelled { color: #9ca3af; }
 .status-progress {
   min-width: 30px;
   font-variant-numeric: tabular-nums;
@@ -70,15 +84,23 @@ const statusClass = computed(() => ({
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.status-retry {
+.status-retry,
+.status-cancel {
   border: 0;
   border-radius: 999px;
   padding: 1px 6px;
-  background: #fee2e2;
-  color: #dc2626;
   font-size: 11px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.status-retry:active { transform: scale(0.96); }
+.status-retry {
+  background: #fee2e2;
+  color: #dc2626;
+}
+.status-cancel {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.status-retry:active,
+.status-cancel:active { transform: scale(0.96); }
 </style>

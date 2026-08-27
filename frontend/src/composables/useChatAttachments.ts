@@ -1,4 +1,4 @@
-import { nextTick, ref, type Ref } from 'vue'
+import { nextTick, type Ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useAttachmentComposer } from './useAttachmentComposer'
 import { useAttachmentIngress } from './useAttachmentIngress'
@@ -18,9 +18,6 @@ export function useChatAttachments(options: {
   maxFiles?: number
 }) {
   const chatStore = useChatStore()
-  const progress = ref(0)
-  const uploadBusy = ref(false)
-
   function currentRecipient() {
     const contact = chatStore.currentContact
     return contact ? { id: contact.userId, nickname: contact.nickname } : null
@@ -45,50 +42,29 @@ export function useChatAttachments(options: {
   })
 
   async function uploadFiles(files: File[]) {
-    const fileProgress = Array.from({ length: files.length }, () => 0)
-    let followBatch = options.scroll.isNearBottom(160)
-    progress.value = 0
+    if (files.length === 0) return
 
-    try {
-      for (let index = 0; index < files.length; index++) {
-        const sendPromise = chatStore.sendFile(files[index], (value) => {
-          fileProgress[index] = value
-          progress.value = Math.round(
-            fileProgress.reduce((sum, item) => sum + item, 0) / files.length,
-          )
-        })
-
-        await nextTick()
-        if (followBatch) options.scroll.scrollToBottomAndClear(false)
-
-        await sendPromise
-        await nextTick()
-        if (followBatch && !options.scroll.isNearBottom(320)) followBatch = false
-      }
-    } finally {
-      progress.value = 0
+    const followBatch = options.scroll.isNearBottom(160)
+    for (const file of files) {
+      chatStore.sendFile(file)
     }
+
+    await nextTick()
+    if (followBatch) options.scroll.scrollToBottomAndClear(false)
   }
 
   async function uploadConfirmed(beforeUpload?: () => void) {
     const files = attachmentComposer.takeConfirmed()
-    if (!files?.length || uploadBusy.value) return false
+    if (!files?.length) return false
 
     beforeUpload?.()
-    uploadBusy.value = true
-    try {
-      await uploadFiles(files)
-      return true
-    } finally {
-      uploadBusy.value = false
-    }
+    await uploadFiles(files)
+    return true
   }
 
   return {
     attachmentComposer,
     attachmentIngress,
-    progress,
-    uploadBusy,
     uploadFiles,
     uploadConfirmed,
   }

@@ -111,6 +111,6 @@ describe('uploadFile image optimization', () => {
         { partNumber: 1, etag: 'etag-1' },
         { partNumber: 2, etag: 'etag-2' },
       ],
-    })
+    }, { signal: undefined })
   })
 })
