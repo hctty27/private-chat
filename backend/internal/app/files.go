@@ -144,9 +144,9 @@ func thumbnailObjectKey(objectKey string) string {
 	return objectKey + ".thumb.jpg"
 }
 
-func isImageUploadContentType(contentType string) bool {
+func supportsThumbnailUpload(contentType string) bool {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	return strings.HasPrefix(contentType, "image/")
+	return strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/")
 }
 
 func normalizeUploadContentType(fileName, contentType string) string {
@@ -217,7 +217,7 @@ func (m *fileManager) CreatePending(ctx context.Context, ownerID int64, req mode
 		FileSize:  file.ExpectedSize,
 		Headers:   map[string]string{"Content-Type": contentType},
 	}
-	if isImageUploadContentType(contentType) {
+	if supportsThumbnailUpload(contentType) {
 		thumbnailURL, thumbnailErr := m.storage.PresignPut(ctx, thumbnailObjectKey(file.ObjectKey), "image/jpeg", expiry)
 		if thumbnailErr == nil {
 			resp.ThumbnailUploadURL = thumbnailURL
