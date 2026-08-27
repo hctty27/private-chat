@@ -33,7 +33,7 @@ export interface Contact {
   unreadCount: number
 }
 
-export type LocalMessageStatus = 'sending' | 'sent' | 'failed' | 'queued' | 'uploading'
+export type LocalMessageStatus = 'sending' | 'sent' | 'failed' | 'queued' | 'upload_queued' | 'uploading' | 'cancelled'
 export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
 export interface Message {
