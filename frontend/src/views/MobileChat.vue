@@ -5,6 +5,7 @@
         :contacts="chatStore.sortedContacts"
         :current-id="null"
         :ws-connected="chatStore.wsConnected"
+        :show-last-seen="true"
         @select="openChat"
         @availability="availabilityVisible = true"
         @logout="logout"

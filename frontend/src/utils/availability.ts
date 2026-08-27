@@ -39,8 +39,13 @@ export function hasPlannedAvailability(contact: Contact, now = new Date()): bool
   return formatPlannedOnline(contact.availabilityStartAt, contact.availabilityEndAt, now) !== null
 }
 
-export function formatContactPresence(contact: Contact, now = new Date()): string {
+export function formatContactPresence(
+  contact: Contact,
+  now = new Date(),
+  includeLastSeen = true,
+): string {
   if (contact.online) return '在线'
-  return formatPlannedOnline(contact.availabilityStartAt, contact.availabilityEndAt, now)
-    ?? formatLastSeen(contact.lastSeenAt, now)
+  const planned = formatPlannedOnline(contact.availabilityStartAt, contact.availabilityEndAt, now)
+  if (planned) return planned
+  return includeLastSeen ? formatLastSeen(contact.lastSeenAt, now) : '离线'
 }
