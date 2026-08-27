@@ -7,6 +7,7 @@ import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
 import { getAttachmentRecipientId } from '../utils/attachmentRecipient'
 import { isDocumentVisible, shouldIncrementUnread } from '../utils/chatVisibility'
+import { chatUploadQueue } from '../utils/uploadQueue'
 
 export const useChatStore = defineStore('chat', () => {
   const contacts = ref<Contact[]>([])
@@ -49,7 +50,12 @@ export const useChatStore = defineStore('chat', () => {
   )
 
   const pendingChatCount = computed(() =>
-    messages.value.filter((m) => m.localStatus === 'queued' || m.localStatus === 'sending' || m.localStatus === 'uploading').length
+    messages.value.filter((m) =>
+      m.localStatus === 'queued' ||
+      m.localStatus === 'sending' ||
+      m.localStatus === 'upload_queued' ||
+      m.localStatus === 'uploading'
+    ).length
   )
 
   async function loadContacts() {
@@ -398,17 +404,100 @@ export const useChatStore = defineStore('chat', () => {
 
   function retryMessage(clientMsgId: string) {
     const local = findLocalByClientMsgId(clientMsgId)
-    if (!local || !currentContact.value) return
+    if (!local) return
     if (local.localFile && !local.fileUrl) {
-      void retryFileMessage(local)
+      retryFileMessage(local)
       return
     }
+    if (!currentContact.value) return
     local.localError = undefined
     local.localStatus = wsConnected.value ? 'sending' : 'queued'
     sendChatPayload(chatPayloadFromMessage(local))
   }
 
-  async function sendFile(file: File, onProgress?: (p: number) => void) {
+  function enqueueFileUpload(options: {
+    local: Message
+    file: File
+    userId: number
+    generation: number
+    onProgress?: (p: number) => void
+  }) {
+    const { local, file, userId, generation, onProgress } = options
+    const clientMsgId = local.clientMsgId
+    if (!clientMsgId) return
+
+    chatUploadQueue.enqueue({
+      id: clientMsgId,
+      size: file.size,
+      onQueued: () => {
+        if (!isUploadSessionCurrent({ generation, userId, local })) return
+        local.localStatus = 'upload_queued'
+        local.localError = undefined
+        local.uploadProgress = 0
+      },
+      onStart: () => {
+        if (!isUploadSessionCurrent({ generation, userId, local })) return
+        local.localStatus = 'uploading'
+        local.localError = undefined
+      },
+      onCancelled: () => {
+        if (!isUploadSessionCurrent({ generation, userId, local })) return
+        local.localStatus = 'cancelled'
+        local.localError = '上传已取消'
+      },
+      run: async (signal) => {
+        try {
+          const res = await uploadFile(file, local.receiverId, (progress) => {
+            if (!isUploadSessionCurrent({ generation, userId, local })) return
+            local.uploadProgress = progress
+            onProgress?.(progress)
+          }, signal)
+          if (!isUploadSessionCurrent({ generation, userId, local })) return
+          if (signal.aborted) {
+            local.localStatus = 'cancelled'
+            local.localError = '上传已取消'
+            return
+          }
+          if (res.data.code !== 200) {
+            local.localStatus = 'failed'
+            local.localError = res.data.message || '上传失败，点击重试'
+            return
+          }
+
+          const { fileId, url, fileName, fileSize } = res.data.data
+          local.fileId = fileId
+          local.fileUrl = url
+          local.fileName = fileName
+          local.fileSize = fileSize
+          local.uploadProgress = 100
+          local.localStatus = wsConnected.value ? 'sending' : 'queued'
+
+          sendChatPayload({
+            receiverId: local.receiverId,
+            msgType: local.msgType,
+            content: null,
+            fileId,
+            fileUrl: url,
+            fileName,
+            fileSize,
+            clientMsgId,
+          })
+        } catch (error) {
+          if (!isUploadSessionCurrent({ generation, userId, local })) return
+          if (signal.aborted) {
+            local.localStatus = 'cancelled'
+            local.localError = '上传已取消'
+            return
+          }
+          console.error('File upload failed', error)
+          local.localStatus = 'failed'
+          local.localError = '上传失败，点击重试'
+        }
+      },
+    })
+  }
+
+  function sendFile(file: File, onProgress?: (p: number) => void) {
     const userStore = useUserStore()
     const userId = userStore.userId
     const receiverId = getAttachmentRecipientId(file) ?? currentContact.value?.userId
@@ -428,100 +517,33 @@ export const useChatStore = defineStore('chat', () => {
       fileName: file.name,
       fileSize: file.size,
       clientMsgId,
-      status: 'uploading',
+      status: 'upload_queued',
       localFile: file,
       uploadProgress: 0,
     })
-    const tracked = local
-    if (currentContact.value?.userId === receiverId) messages.value.push(tracked)
-    trackLocalMessage(tracked)
 
-    try {
-      const res = await uploadFile(file, receiverId, p => {
-        if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
-        tracked.uploadProgress = p
-        onProgress?.(p)
-      })
-      if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
-      if (res.data.code !== 200) {
-        tracked.localStatus = 'failed'
-        tracked.localError = res.data.message || '上传失败，点击重试'
-        return
-      }
-
-      const { fileId, url, fileName, fileSize } = res.data.data
-      tracked.fileId = fileId
-      tracked.fileUrl = url
-      tracked.fileName = fileName
-      tracked.fileSize = fileSize
-      tracked.uploadProgress = 100
-      tracked.localStatus = wsConnected.value ? 'sending' : 'queued'
-
-      sendChatPayload({
-        receiverId,
-        msgType: tracked.msgType,
-        content: null,
-        fileId,
-        fileUrl: url,
-        fileName,
-        fileSize,
-        clientMsgId,
-      })
-    } catch (e) {
-      if (!isUploadSessionCurrent({ generation, userId, local: tracked })) return
-      console.error('File upload failed', e)
-      tracked.localStatus = 'failed'
-      tracked.localError = '上传失败，点击重试'
-    }
+    if (currentContact.value?.userId === receiverId) messages.value.push(local)
+    trackLocalMessage(local)
+    enqueueFileUpload({ local, file, userId, generation, onProgress })
   }
 
-  async function retryFileMessage(local: Message) {
+  function retryFileMessage(local: Message) {
     const userStore = useUserStore()
-    if (!local.clientMsgId || !local.localFile || !currentContact.value || !userStore.userId) return
+    if (!local.clientMsgId || !local.localFile || !userStore.userId) return
+
     const generation = storeGeneration
     const userId = userStore.userId
-    const receiverId = local.receiverId
     trackLocalMessage(local)
-    local.localStatus = 'uploading'
-    local.localError = undefined
-    local.uploadProgress = 0
+    enqueueFileUpload({
+      local,
+      file: local.localFile,
+      userId,
+      generation,
+    })
+  }
 
-    try {
-      const res = await uploadFile(local.localFile, receiverId, p => {
-        if (!isUploadSessionCurrent({ generation, userId, local })) return
-        local.uploadProgress = p
-      })
-      if (!isUploadSessionCurrent({ generation, userId, local })) return
-      if (res.data.code !== 200) {
-        local.localStatus = 'failed'
-        local.localError = res.data.message || '上传失败，点击重试'
-        return
-      }
-
-      const { fileId, url, fileName, fileSize } = res.data.data
-      local.fileId = fileId
-      local.fileUrl = url
-      local.fileName = fileName
-      local.fileSize = fileSize
-      local.uploadProgress = 100
-      local.localStatus = wsConnected.value ? 'sending' : 'queued'
-
-      sendChatPayload({
-        receiverId,
-        msgType: local.msgType,
-        content: null,
-        fileId,
-        fileUrl: url,
-        fileName,
-        fileSize,
-        clientMsgId: local.clientMsgId,
-      })
-    } catch (e) {
-      if (!isUploadSessionCurrent({ generation, userId, local })) return
-      console.error('File upload retry failed', e)
-      local.localStatus = 'failed'
-      local.localError = '上传失败，点击重试'
-    }
+  function cancelUpload(clientMsgId: string) {
+    chatUploadQueue.cancel(clientMsgId)
   }
 
   function handleWsMessage(data: WsServerMessage) {
@@ -813,6 +835,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function clearState() {
     storeGeneration += 1
+    chatUploadQueue.clear()
     disconnectWs()
     reconnectAttempts = 0
     for (const timer of sendTimers.values()) clearTimeout(timer)
@@ -897,6 +920,7 @@ export const useChatStore = defineStore('chat', () => {
     sendMessage,
     sendFile,
     retryMessage,
+    cancelUpload,
     connectWs,
     disconnectWs,
     reconnectNow,
