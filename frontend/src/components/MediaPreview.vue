@@ -17,34 +17,40 @@
           v-else-if="type === 'video'"
           ref="videoEl"
           :src="url"
+          :poster="posterUrl || undefined"
           class="media-content media-video"
           controls
           playsinline
           webkit-playsinline
-          preload="auto"
+          preload="metadata"
+          @loadedmetadata="videoError = false"
+          @error="videoError = true"
           @click.stop
         />
 
         <div v-if="type === 'image' && !loaded && !imageError" class="loading">加载中...</div>
         <div v-if="type === 'image' && imageError" class="loading error">图片加载失败</div>
+        <div v-if="type === 'video' && videoError" class="loading error">视频加载失败</div>
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted, nextTick } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{
   visible: boolean
   url: string
   type: 'image' | 'video'
+  posterUrl?: string
 }>()
 
 const emit = defineEmits<{ close: [] }>()
 
 const loaded = ref(false)
 const imageError = ref(false)
+const videoError = ref(false)
 const videoEl = ref<HTMLVideoElement | null>(null)
 
 function close() {
@@ -54,6 +60,7 @@ function close() {
 function resetMediaState() {
   loaded.value = false
   imageError.value = false
+  videoError.value = false
 }
 
 function onImageLoad() {
@@ -70,12 +77,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') close()
 }
 
-watch([() => props.visible, () => props.url, () => props.type], () => {
-  resetMediaState()
-  if (props.visible && props.type === 'video') {
-    nextTick(() => { videoEl.value?.play().catch(() => {}) })
-  }
-})
+watch([() => props.visible, () => props.url, () => props.type], resetMediaState)
 
 watch(() => props.visible, (v) => {
   if (v) {
@@ -84,13 +86,14 @@ watch(() => props.visible, (v) => {
   } else {
     document.removeEventListener('keydown', onKeydown)
     document.body.style.overflow = ''
-    if (videoEl.value) videoEl.value.pause()
+    videoEl.value?.pause()
   }
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
   document.body.style.overflow = ''
+  videoEl.value?.pause()
 })
 </script>
 
@@ -99,17 +102,23 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.88);
   cursor: pointer;
 }
 
 .media-close {
   position: fixed;
-  top: 16px;
-  right: 18px;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
   z-index: 1;
   width: 44px;
   height: 44px;
@@ -121,13 +130,33 @@ onUnmounted(() => {
   line-height: 40px;
   cursor: pointer;
 }
+
 .media-close:hover { background: rgba(255, 255, 255, 0.28); }
 .media-close:active { transform: scale(0.96); }
-.media-content { max-width: 90vw; max-height: 90vh; object-fit: contain; }
+
+.media-content {
+  max-width: 100%;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  object-fit: contain;
+}
+
 .media-img { border-radius: 4px; }
-.media-video { border-radius: 8px; background: #000; cursor: default; }
-.loading { position: absolute; color: #aaa; font-size: 14px; }
+
+.media-video {
+  width: min(100%, 960px);
+  border-radius: 8px;
+  background: #000;
+  cursor: default;
+}
+
+.loading {
+  position: absolute;
+  color: #aaa;
+  font-size: 14px;
+}
+
 .error { color: #f5f5f5; }
+
 .fade-enter-active,
 .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from,
