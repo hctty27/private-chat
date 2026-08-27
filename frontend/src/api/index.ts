@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type { ApiResponse, LoginResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse } from '../types'
-import router from '../router'
+import { forceLogout } from '../auth/session'
 
 const api = axios.create({
   baseURL: '/',
@@ -10,15 +10,6 @@ const api = axios.create({
 const thumbnailMaxEdge = 640
 const thumbnailQuality = 0.8
 
-function setLoginNotice(message: string) {
-  if (typeof window === 'undefined') return
-  try {
-    window.sessionStorage.setItem('loginNotice', message)
-  } catch {
-    // Ignore storage errors, redirect should still proceed.
-  }
-}
-
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token) {
@@ -27,23 +18,25 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+export function handleApiError(error: any) {
+  const isLoginRequest = error.config?.url === '/api/auth/login'
+  if (error.response?.status === 401 && !isLoginRequest) {
+    forceLogout('登录已过期，请重新进入')
+  }
+  return Promise.reject(error)
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    const isLoginRequest = error.config?.url === '/api/auth/login'
-    if (error.response?.status === 401 && !isLoginRequest) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('userId')
-      localStorage.removeItem('nickname')
-      setLoginNotice('登录已过期，请重新进入')
-      void router.replace('/')
-    }
-    return Promise.reject(error)
-  }
+  handleApiError
 )
 
 export function login(username: string, password: string) {
   return api.post<ApiResponse<LoginResponse>>('/api/auth/login', { username, password })
+}
+
+export function checkSession() {
+  return api.get<ApiResponse<{ userId: number }>>('/api/auth/session')
 }
 
 export function getContacts() {

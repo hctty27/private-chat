@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Contact, LocalMessageStatus, Message, MessageLoadState, WsClientChat, WsClientMessage, WsServerMessage } from '../types'
 import { getContacts, getMessages, uploadFile } from '../api'
+import { forceLogout } from '../auth/session'
 import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
 import { getAttachmentRecipientId } from '../utils/attachmentRecipient'
@@ -45,15 +46,6 @@ export const useChatStore = defineStore('chat', () => {
       return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
     })
   )
-
-  function setCoverNotice(message: string) {
-    if (typeof window === 'undefined') return
-    try {
-      window.sessionStorage.setItem('coverNotice', message)
-    } catch {
-      // Ignore storage errors, redirect should still proceed.
-    }
-  }
 
   const pendingChatCount = computed(() =>
     messages.value.filter((m) => m.localStatus === 'queued' || m.localStatus === 'sending' || m.localStatus === 'uploading').length
@@ -597,9 +589,8 @@ export const useChatStore = defineStore('chat', () => {
     if (intentionalClose || reconnecting || reconnectTimer) return
     const userStore = useUserStore()
     if (!userStore.token) {
-      userStore.logout()
       clearState()
-      window.location.href = '/'
+      forceLogout()
       return
     }
     const delay = Math.min(3000 * Math.pow(2, reconnectAttempts), 30000)
@@ -743,10 +734,8 @@ export const useChatStore = defineStore('chat', () => {
         const data: WsServerMessage = JSON.parse(event.data)
         if (data.type === 'kicked') {
           intentionalClose = true
-          setCoverNotice(data.data.message || '账号已在其他设备登录')
-          userStore.logout()
           clearState()
-          window.location.href = '/'
+          forceLogout(data.data.message || '账号已在其他设备登录')
           return
         }
         if (data.type === 'heartbeat_ack') {

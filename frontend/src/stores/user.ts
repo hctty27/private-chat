@@ -15,6 +15,15 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('nickname', name)
   }
 
+  function clearSession() {
+    token.value = ''
+    userId.value = 0
+    nickname.value = ''
+    localStorage.removeItem('token')
+    localStorage.removeItem('userId')
+    localStorage.removeItem('nickname')
+  }
+
   function logout() {
     const currentToken = token.value
     if (currentToken && typeof window !== 'undefined') {
@@ -26,15 +35,10 @@ export const useUserStore = defineStore('user', () => {
       }).catch(() => undefined)
     }
 
-    token.value = ''
-    userId.value = 0
-    nickname.value = ''
-    localStorage.removeItem('token')
-    localStorage.removeItem('userId')
-    localStorage.removeItem('nickname')
+    clearSession()
   }
 
   const isLoggedIn = () => !!token.value
 
-  return { token, userId, nickname, login, logout, isLoggedIn }
+  return { token, userId, nickname, login, logout, clearSession, isLoggedIn }
 })
