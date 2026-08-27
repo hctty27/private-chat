@@ -70,6 +70,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import type { Contact } from '../types'
 import { formatTime as fmtTime } from '../utils/time'
 import { formatContactPresence, hasPlannedAvailability } from '../utils/availability'
@@ -140,8 +141,23 @@ function onSearchBlur() {
   if (!keyword.value) searching.value = false
 }
 
-function handleLogout() {
-  if (confirm('确定退出登录吗？')) emit('logout')
+async function handleLogout() {
+  try {
+    await ElMessageBox.confirm(
+      '退出后需要重新登录才能继续聊天。',
+      '退出登录',
+      {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        autofocus: false,
+        customClass: 'logout-confirm-box',
+        confirmButtonClass: 'logout-confirm-primary',
+      },
+    )
+    emit('logout')
+  } catch {
+    // User cancelled or dismissed the dialog.
+  }
 }
 </script>
 
@@ -179,4 +195,56 @@ function handleLogout() {
 .c-msg { font-size: 13px; color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; margin-right: 8px; }
 .c-badge { flex-shrink: 0; min-width: 18px; height: 18px; padding: 0 5px; background: #ef4444; color: #fff; border-radius: 9px; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
 .cl-empty { text-align: center; padding: 40px; color: #999; font-size: 14px; }
+</style>
+
+<style>
+.logout-confirm-box {
+  width: min(400px, calc(100vw - 32px));
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.logout-confirm-box .el-message-box__header {
+  padding: 0 0 10px;
+}
+
+.logout-confirm-box .el-message-box__title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #111;
+}
+
+.logout-confirm-box .el-message-box__content {
+  padding: 0 0 18px;
+}
+
+.logout-confirm-box .el-message-box__message {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.logout-confirm-box .el-message-box__btns {
+  gap: 10px;
+  padding: 0;
+}
+
+.logout-confirm-box .el-button {
+  min-width: 82px;
+  height: 38px;
+  border-radius: 9px;
+}
+
+.logout-confirm-box .logout-confirm-primary {
+  background: #1c1c1e;
+  border-color: #1c1c1e;
+  color: #fff;
+}
+
+.logout-confirm-box .logout-confirm-primary:hover,
+.logout-confirm-box .logout-confirm-primary:focus {
+  background: #333336;
+  border-color: #333336;
+  color: #fff;
+}
 </style>
