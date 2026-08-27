@@ -100,10 +100,16 @@
                     </div>
                   </template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 5 && chatStore.messages[vi.index].fileUrl">
-                    <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" :target="isIOS ? '_self' : '_blank'" rel="noopener" class="video-link">
-                      {{ chatStore.messages[vi.index].fileName }}
-                      <small v-if="chatStore.messages[vi.index].fileSize">{{ fmtSize(chatStore.messages[vi.index].fileSize!) }}</small>
-                    </a>
+                    <VideoMessageCard
+                      :poster-url="videoPosterUrl(chatStore.messages[vi.index])"
+                      :file-name="chatStore.messages[vi.index].fileName"
+                      :file-size-text="chatStore.messages[vi.index].fileSize ? fmtSize(chatStore.messages[vi.index].fileSize!) : null"
+                      @open="openPreview(
+                        chatStore.messages[vi.index].fileUrl!,
+                        'video',
+                        videoPosterUrl(chatStore.messages[vi.index]),
+                      )"
+                    />
                   </template>
                   <template v-else-if="chatStore.messages[vi.index].msgType === 3 && chatStore.messages[vi.index].fileUrl">
                     <a :href="chatStore.messages[vi.index].fileUrl ?? undefined" target="_blank" download class="file-link">
@@ -186,6 +192,7 @@
       :visible="previewVisible"
       :url="previewUrl"
       :type="previewType"
+      :poster-url="previewPosterUrl"
       @close="previewVisible = false"
     />
 
@@ -226,6 +233,7 @@ import ContactList from '../components/ContactList.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MediaPreview from '../components/MediaPreview.vue'
+import VideoMessageCard from '../components/VideoMessageCard.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
@@ -248,6 +256,7 @@ const uploadBusy = ref(false)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
+const previewPosterUrl = ref('')
 const dragActive = ref(false)
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
 
@@ -384,9 +393,14 @@ function fallbackImageToOriginal(event: Event, message: Message) {
   image.src = message.fileUrl
 }
 
-function openPreview(url: string, type: 'image' | 'video') {
+function videoPosterUrl(message: Pick<Message, 'fileId'>) {
+  return message.fileId ? `/api/files/${message.fileId}/thumbnail` : ''
+}
+
+function openPreview(url: string, type: 'image' | 'video', posterUrl = '') {
   previewUrl.value = url
   previewType.value = type
+  previewPosterUrl.value = type === 'video' ? posterUrl : ''
   previewVisible.value = true
 }
 
@@ -549,7 +563,11 @@ async function handleMessageAction(action: MessageAction) {
     return
   }
   if (action === 'view' && message.fileUrl) {
-    openPreview(message.fileUrl, message.msgType === 2 ? 'image' : 'video')
+    openPreview(
+      message.fileUrl,
+      message.msgType === 2 ? 'image' : 'video',
+      message.msgType === 5 ? videoPosterUrl(message) : '',
+    )
     return
   }
   if (action === 'open' && message.fileUrl) {
@@ -611,8 +629,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .pic-shell { width: 200px; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 8px; background: #f2f2f2; }
 .pic { width: 100%; height: 100%; border-radius: inherit; display: block; object-fit: contain; opacity: 0; transition: opacity 120ms ease; cursor: pointer; }
 .pic.loaded { opacity: 1; }
-.video-link, .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
-.video-link small, .file-link small { display: block; color: #999; font-size: 12px; }
+.file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
+.file-link small { display: block; color: #999; font-size: 12px; }
 .media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
 .media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
 .read-tag { font-size: 11px; color: #b0b0b0; margin-top: 2px; padding-right: 2px; }

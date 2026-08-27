@@ -93,16 +93,12 @@
                   </div>
                 </template>
                 <template v-else-if="message.msgType === 5 && message.fileUrl">
-                  <a
-                    :href="message.fileUrl ?? undefined"
-                    :target="isIOS ? '_self' : '_blank'"
-                    rel="noopener"
-                    class="video-link"
-                    @click.stop="guardNativeMessageClick"
-                  >
-                    {{ message.fileName }}
-                    <small v-if="message.fileSize">{{ fmtSize(message.fileSize!) }}</small>
-                  </a>
+                  <VideoMessageCard
+                    :poster-url="videoPosterUrl(message)"
+                    :file-name="message.fileName"
+                    :file-size-text="message.fileSize ? fmtSize(message.fileSize) : null"
+                    @open="openPreviewFromBubble($event, message.fileUrl!, 'video', videoPosterUrl(message))"
+                  />
                 </template>
                 <template v-else-if="message.msgType === 3 && message.fileUrl">
                   <a
@@ -149,6 +145,7 @@
         :visible="previewVisible"
         :url="previewUrl"
         :type="previewType"
+        :poster-url="previewPosterUrl"
         @close="closeOverlay('media')"
       />
 
@@ -223,6 +220,7 @@ import { formatChatTime as fmtChatTime, formatLastSeen, shouldShowTimeSeparator,
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
+import VideoMessageCard from '../components/VideoMessageCard.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
@@ -254,6 +252,7 @@ const composerHeight = ref(70)
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewType = ref<'image' | 'video'>('image')
+const previewPosterUrl = ref('')
 
 const actionMenuVisible = ref(false)
 const actionMenuActions = ref<MessageAction[]>([])
@@ -699,22 +698,32 @@ function guardNativeMessageClick(event: MouseEvent) {
   event.stopPropagation()
 }
 
-function openPreviewFromBubble(event: MouseEvent, url: string, type: 'image' | 'video') {
+function videoPosterUrl(message: Pick<Message, 'fileId'>) {
+  return message.fileId ? `/api/files/${message.fileId}/thumbnail` : ''
+}
+
+function openPreviewFromBubble(
+  event: MouseEvent,
+  url: string,
+  type: 'image' | 'video',
+  posterUrl = '',
+) {
   if (Date.now() < suppressNativeClickUntil) {
     suppressNativeClickUntil = 0
     event.preventDefault()
     event.stopPropagation()
     return
   }
-  void openPreview(url, type)
+  void openPreview(url, type, posterUrl)
 }
 
-async function openPreview(url: string, type: 'image' | 'video') {
+async function openPreview(url: string, type: 'image' | 'video', posterUrl = '') {
   const contactId = chatStore.currentContact?.userId
   if (!contactId) return
   emojiOpen.value = false
   previewUrl.value = url
   previewType.value = type
+  previewPosterUrl.value = type === 'video' ? posterUrl : ''
   previewVisible.value = true
   await mobileHistory.pushOverlay(contactId, 'media')
 }
@@ -760,7 +769,11 @@ async function handleMessageAction(action: MessageAction) {
     return
   }
   if (action === 'view' && message.fileUrl) {
-    await openPreview(message.fileUrl, message.msgType === 2 ? 'image' : 'video')
+    await openPreview(
+      message.fileUrl,
+      message.msgType === 2 ? 'image' : 'video',
+      message.msgType === 5 ? videoPosterUrl(message) : '',
+    )
     return
   }
   if (action === 'open' && message.fileUrl) {
@@ -841,8 +854,8 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .pic-shell { width: min(68vw, 240px, 56dvh); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 12px; background: #f2f2f2; }
 .pic { width: 100%; height: 100%; border-radius: inherit; display: block; object-fit: contain; opacity: 0; transition: opacity 120ms ease; cursor: pointer; }
 .pic.loaded { opacity: 1; }
-.video-link, .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
-.video-link small, .file-link small { display: block; color: #999; font-size: 12px; }
+.file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
+.file-link small { display: block; color: #999; font-size: 12px; }
 .media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
 .media-fallback small { display: block; margin-top: 2px; color: #999; font-size: 12px; }
 .read-tag { margin-top: 2px; padding-right: 4px; }

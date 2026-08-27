@@ -77,6 +77,88 @@ async function createImageThumbnail(file: File): Promise<Blob | null> {
   }
 }
 
+
+function waitForVideoEvent(video: HTMLVideoElement, eventName: 'loadeddata' | 'seeked', timeoutMs = 4000) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error(`video ${eventName} timeout`))
+    }, timeoutMs)
+
+    const onEvent = () => {
+      cleanup()
+      resolve()
+    }
+    const onError = () => {
+      cleanup()
+      reject(new Error('video preview load failed'))
+    }
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      video.removeEventListener(eventName, onEvent)
+      video.removeEventListener('error', onError)
+    }
+
+    video.addEventListener(eventName, onEvent, { once: true })
+    video.addEventListener('error', onError, { once: true })
+  })
+}
+
+async function createVideoThumbnail(file: File): Promise<Blob | null> {
+  if (!file.type.startsWith('video/')) return null
+
+  const objectUrl = URL.createObjectURL(file)
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'auto'
+  video.src = objectUrl
+
+  try {
+    await waitForVideoEvent(video, 'loadeddata')
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0
+    const seekTime = duration > 0.2 ? Math.min(0.5, duration * 0.1) : 0
+    if (seekTime > 0) {
+      video.currentTime = seekTime
+      await waitForVideoEvent(video, 'seeked')
+    }
+
+    const sourceWidth = video.videoWidth
+    const sourceHeight = video.videoHeight
+    if (!sourceWidth || !sourceHeight) return null
+
+    const longestEdge = Math.max(sourceWidth, sourceHeight)
+    const scale = longestEdge > thumbnailMaxEdge ? thumbnailMaxEdge / longestEdge : 1
+    const width = Math.max(1, Math.round(sourceWidth * scale))
+    const height = Math.max(1, Math.round(sourceHeight * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(video, 0, 0, width, height)
+
+    return await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', thumbnailQuality)
+    })
+  } catch {
+    return null
+  } finally {
+    video.pause()
+    video.removeAttribute('src')
+    video.load()
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
+async function createMediaThumbnail(file: File): Promise<Blob | null> {
+  if (file.type.startsWith('image/')) return createImageThumbnail(file)
+  if (file.type.startsWith('video/')) return createVideoThumbnail(file)
+  return null
+}
+
 export async function uploadFile(file: File, receiverId: number, onProgress?: (p: number) => void) {
   const contentType = file.type || 'application/octet-stream'
   const presignRes = await api.post<ApiResponse<FilePresignUploadResponse>>('/api/file/presign-upload', {
@@ -90,7 +172,7 @@ export async function uploadFile(file: File, receiverId: number, onProgress?: (p
   }
 
   const { fileId, uploadUrl, headers, thumbnailUploadUrl, thumbnailHeaders } = presignRes.data.data
-  const thumbnailPromise = thumbnailUploadUrl ? createImageThumbnail(file) : Promise.resolve(null)
+  const thumbnailPromise = thumbnailUploadUrl ? createMediaThumbnail(file) : Promise.resolve(null)
 
   await axios.put(uploadUrl, file, {
     headers: headers || { 'Content-Type': contentType },
