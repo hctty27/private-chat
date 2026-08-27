@@ -147,7 +147,9 @@ export function useChatScroll(
         if (!smooth) {
           bottomSettleFrame = requestAnimationFrame(() => {
             bottomSettleFrame = null
-            virtualizer.value.scrollToEnd({ behavior: 'auto' })
+            const el = listEl.value
+            if (!el) return
+            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
           })
         }
         return
@@ -366,6 +368,13 @@ export function useChatScroll(
     prevMsgCount = chatStore.messages.length
     newMessageCount.value = 0
     showBottomButton.value = false
+
+    if (virtualized) {
+      virtualizer.value.scrollToOffset(0, { behavior: 'auto' })
+      virtualizer.value.measure()
+      if (listEl.value) listEl.value.scrollTop = 0
+    }
+
     bindScrollListener()
     if (options.scrollToBottom !== false) scrollToBottom(false)
   }
