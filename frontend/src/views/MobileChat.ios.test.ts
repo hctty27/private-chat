@@ -10,6 +10,16 @@ describe('MobileChat iOS viewport layout', () => {
     expect(mainCssSource).toContain('position: static !important')
   })
 
+  it('scopes the document viewport lock to the mobile chat lifecycle', () => {
+    expect(mobileChatSource).toContain("const mobileViewportClass = 'mobile-chat-viewport'")
+    expect(mobileChatSource).toContain('document.documentElement.classList.add(mobileViewportClass)')
+    expect(mobileChatSource).toContain('document.body.classList.add(mobileViewportClass)')
+    expect(mobileChatSource).toContain('document.documentElement.classList.remove(mobileViewportClass)')
+    expect(mobileChatSource).toContain('document.body.classList.remove(mobileViewportClass)')
+    expect(mobileChatSource).toContain('body.mobile-chat-viewport #app')
+    expect(mobileChatSource).not.toContain('html, body, #app {')
+  })
+
   it('uses dynamic viewport sizing and horizontal safe-area padding', () => {
     expect(mainCssSource).toContain('100dvh')
     expect(mainCssSource).toContain('env(safe-area-inset-left)')

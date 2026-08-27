@@ -28,9 +28,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install application dependencies
         run: npm ci
-      - name: Install interaction test dependencies
-        run: npm install --no-save --legacy-peer-deps vitest@4.1.10 @vue/test-utils@2.4.11 jsdom@27.4.0
       - name: Run interaction tests
-        run: npm exec vitest run
+        run: npm test
       - name: Type-check and build
         run: npm run build
