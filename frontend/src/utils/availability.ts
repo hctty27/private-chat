@@ -6,8 +6,8 @@ function localDaySerial(date: Date): number {
 }
 
 export function formatPlannedOnline(
-  startAt: string | null,
-  endAt: string | null,
+  startAt: string | null | undefined,
+  endAt: string | null | undefined,
   now = new Date(),
 ): string | null {
   if (!startAt || !endAt) return null
