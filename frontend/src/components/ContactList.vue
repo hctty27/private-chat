@@ -52,7 +52,7 @@
                 class="c-status"
                 :class="{ on: c.online, planned: !c.online && hasPlannedAvailability(c) }"
                 :title="c.availabilityNote || undefined"
-              >{{ formatContactPresence(c) }}</span>
+              >{{ formatContactPresence(c, undefined, showLastSeen) }}</span>
             </div>
             <span class="c-time" v-if="c.lastMessageTime">{{ fmtTime(c.lastMessageTime) }}</span>
           </div>
@@ -78,6 +78,7 @@ const props = defineProps<{
   contacts: Contact[]
   currentId: number | null
   wsConnected: boolean
+  showLastSeen: boolean
 }>()
 
 const emit = defineEmits<{
