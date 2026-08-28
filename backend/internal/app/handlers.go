@@ -130,6 +130,8 @@ func (a *App) contactsHandler(c *gin.Context) {
 	respondSuccess(c, result)
 }
 
+const maxMessagePageSize = 100
+
 func (a *App) messagesHandler(c *gin.Context) {
 	userID, ok := getUserID(c)
 	if !ok {
@@ -150,6 +152,9 @@ func (a *App) messagesHandler(c *gin.Context) {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
 			size = parsed
 		}
+	}
+	if size > maxMessagePageSize {
+		size = maxMessagePageSize
 	}
 
 	page, err := a.getMessages(c.Request.Context(), userID, targetID, cursorStr, size, mode)
@@ -180,6 +185,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 
 		var messages []model.Message
 		if err := query.
+			Preload("ReplyTo").
 			Order("created_at desc, id desc").
 			Limit(size + 1).
 			Find(&messages).Error; err != nil {
@@ -199,6 +205,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 
 	var latest []model.Message
 	if err := a.db.Where("conversation_id = ?", convID).
+		Preload("ReplyTo").
 		Order("created_at desc, id desc").
 		Limit(size + 1).
 		Find(&latest).Error; err != nil {
@@ -211,6 +218,7 @@ func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr
 
 	var unread []model.Message
 	if err := a.db.Where("conversation_id = ? AND receiver_id = ? AND is_read = 0", convID, userID).
+		Preload("ReplyTo").
 		Order("created_at asc, id asc").
 		Limit(size).
 		Find(&unread).Error; err != nil {
