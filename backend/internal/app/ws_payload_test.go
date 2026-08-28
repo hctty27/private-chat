@@ -92,7 +92,6 @@ func TestParseWsChatPayloadRejectsNonStringClientMsgID(t *testing.T) {
 	}
 }
 
-
 func TestMessageDTOIncludesReplySnapshot(t *testing.T) {
 	replyContent := "original"
 	replyID := int64(21)
