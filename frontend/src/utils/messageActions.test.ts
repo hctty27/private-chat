@@ -27,7 +27,7 @@ describe('getMessageActions', () => {
 
   it('returns view and save for available images and videos', () => {
     expect(getMessageActions(message({ msgType: 2, fileUrl: '/api/files/1/content' }))).toEqual(['reply', 'view', 'save'])
-    expect(getMessageActions(message({ msgType: 5, fileUrl: '/api/files/2/content' }))).toEqual(['view', 'save'])
+    expect(getMessageActions(message({ msgType: 5, fileUrl: '/api/files/2/content' }))).toEqual(['reply', 'view', 'save'])
   })
 
   it('returns open and save for available files', () => {
