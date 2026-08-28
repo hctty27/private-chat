@@ -233,6 +233,51 @@ export function useChatScroll(
     return restored
   }
 
+  async function scrollToMessage(messageId: number, smooth = true) {
+    const index = chatStore.messages.findIndex((message) => message.id === messageId)
+    if (index < 0 || !listEl.value) return false
+
+    if (virtualized) {
+      virtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'auto' })
+      await nextFrame()
+      await nextTick()
+    } else {
+      await nextTick()
+    }
+
+    const item = listEl.value.querySelector<HTMLElement>(
+      `.virtual-item[data-msg-id="${messageId}"], .message-item[data-msg-id="${messageId}"]`
+    )
+    if (!item) return false
+
+    item.scrollIntoView({
+      block: 'center',
+      behavior: smooth ? 'smooth' : 'auto',
+    })
+    item.classList.remove('reply-highlight')
+    void item.offsetWidth
+    item.classList.add('reply-highlight')
+    setTimeout(() => item.classList.remove('reply-highlight'), 1400)
+    wasNearBottom = isNearBottom(80)
+    updateBottomButton()
+    return true
+  }
+
+  async function locateMessage(messageId: number) {
+    if (messageId <= 0) return false
+    isLoadingMore = true
+    try {
+      const loaded = await chatStore.ensureMessageLoaded(messageId)
+      if (!loaded) return false
+      await nextTick()
+      return await scrollToMessage(messageId, true)
+    } finally {
+      prevMsgCount = chatStore.messages.length
+      isLoadingMore = false
+      updateBottomButton()
+    }
+  }
+
   function measureItem(el: Element | ComponentPublicInstance | null) {
     if (el instanceof Element) virtualizer.value.measureElement(el)
   }
@@ -439,6 +484,8 @@ export function useChatScroll(
     retryLoadMore,
     captureVisibleAnchor,
     restoreVisibleAnchor,
+    scrollToMessage,
+    locateMessage,
     sendReadReceipt,
     onContactChange,
     onMessagesChange,

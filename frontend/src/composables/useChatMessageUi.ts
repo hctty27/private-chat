@@ -41,8 +41,8 @@ export function useChatMessageUi(uid: Ref<number>) {
     return `📎 ${message.fileName || '文件准备中'}`
   }
 
-  function bubbleType(message: { msgType: number; senderId: number }) {
-    if (message.msgType === 4) return 'emoji'
+  function bubbleType(message: Pick<Message, 'msgType' | 'senderId' | 'replyToMessageId'>) {
+    if (message.msgType === 4 && !message.replyToMessageId) return 'emoji'
     return message.senderId === uid.value ? 'mine' : 'his'
   }
 

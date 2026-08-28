@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS t_message (
     file_name       VARCHAR(255),
     file_size       BIGINT,
     is_read         SMALLINT NOT NULL DEFAULT 0,
+    reply_to_message_id BIGINT REFERENCES t_message(id) ON DELETE SET NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT ck_message_msg_type CHECK (msg_type IN (1, 2, 3, 4, 5)),
     CONSTRAINT ck_message_is_read CHECK (is_read IN (0, 1))
@@ -102,6 +103,10 @@ CREATE INDEX IF NOT EXISTS idx_message_file_id
 CREATE UNIQUE INDEX IF NOT EXISTS uk_message_sender_client_msg_id
     ON t_message (sender_id, client_msg_id)
     WHERE client_msg_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_message_reply_to
+    ON t_message (reply_to_message_id)
+    WHERE reply_to_message_id IS NOT NULL;
 
 -- 测试用户（仅用于开发环境；密码都是 123456 的 BCrypt 加密）
 -- BCrypt("123456") = $2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOsl7iKTVKIUi

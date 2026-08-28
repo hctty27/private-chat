@@ -2,6 +2,7 @@ import { nextTick, type Ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useAttachmentComposer } from './useAttachmentComposer'
 import { useAttachmentIngress } from './useAttachmentIngress'
+import type { Message } from '../types'
 
 type AttachmentScrollController = {
   isNearBottom: (threshold?: number) => boolean
@@ -16,6 +17,8 @@ export function useChatAttachments(options: {
   maxVideoBytes?: number
   maxFileBytes?: number
   maxFiles?: number
+  getReplyTo?: () => Message | null
+  onReplySent?: () => void
 }) {
   const chatStore = useChatStore()
   function currentRecipient() {
@@ -45,9 +48,14 @@ export function useChatAttachments(options: {
     if (files.length === 0) return
 
     const followBatch = options.scroll.isNearBottom(160)
+    const replyTo = options.getReplyTo?.() ?? null
+    let firstFile = true
     for (const file of files) {
-      chatStore.sendFile(file)
+      if (firstFile && replyTo) chatStore.sendFile(file, undefined, replyTo)
+      else chatStore.sendFile(file)
+      firstFile = false
     }
+    if (replyTo) options.onReplySent?.()
 
     await nextTick()
     if (followBatch) options.scroll.scrollToBottomAndClear(false)

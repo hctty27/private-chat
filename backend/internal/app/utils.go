@@ -113,20 +113,32 @@ func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
 		stable := stableFileURL(*msg.FileID)
 		fileURL = &stable
 	}
+	var replyTo *model.MessageReplyDTO
+	if msg.ReplyTo != nil {
+		replyTo = &model.MessageReplyDTO{
+			MessageID: msg.ReplyTo.ID,
+			SenderID:  msg.ReplyTo.SenderID,
+			MsgType:   msg.ReplyTo.MsgType,
+			Content:   msg.ReplyTo.Content,
+			FileName:  msg.ReplyTo.FileName,
+		}
+	}
 	return model.MessageDTO{
-		ID:             msg.ID,
-		ConversationID: msg.ConversationID,
-		SenderID:       msg.SenderID,
-		ReceiverID:     msg.ReceiverID,
-		MsgType:        msg.MsgType,
-		Content:        msg.Content,
-		ClientMsgID:    msg.ClientMsgID,
-		FileID:         msg.FileID,
-		FileURL:        fileURL,
-		FileName:       msg.FileName,
-		FileSize:       msg.FileSize,
-		IsRead:         msg.IsRead,
-		CreatedAt:      formatLocalTime(msg.CreatedAt, loc),
+		ID:               msg.ID,
+		ConversationID:   msg.ConversationID,
+		SenderID:         msg.SenderID,
+		ReceiverID:       msg.ReceiverID,
+		MsgType:          msg.MsgType,
+		Content:          msg.Content,
+		ClientMsgID:      msg.ClientMsgID,
+		FileID:           msg.FileID,
+		FileURL:          fileURL,
+		FileName:         msg.FileName,
+		FileSize:         msg.FileSize,
+		IsRead:           msg.IsRead,
+		CreatedAt:        formatLocalTime(msg.CreatedAt, loc),
+		ReplyToMessageID: msg.ReplyToMessageID,
+		ReplyTo:          replyTo,
 	}
 }
 

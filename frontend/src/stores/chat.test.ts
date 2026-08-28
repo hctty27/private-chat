@@ -238,6 +238,25 @@ describe('chat store conversation loading state', () => {
     expect(restored?.localStatus).toBe('queued')
   })
 
+  it('keeps reply metadata on an optimistic text message', () => {
+    const chatStore = useChatStore()
+    chatStore.currentContact = contact(1, 'Alice')
+    const original = message(123, 1, 99, 'original')
+    chatStore.messages = [original]
+
+    chatStore.sendMessage('reply', 1, original)
+
+    const local = chatStore.messages.at(-1)
+    expect(local?.replyToMessageId).toBe(123)
+    expect(local?.replyTo).toEqual({
+      messageId: 123,
+      senderId: 1,
+      msgType: 1,
+      content: 'original',
+      fileName: null,
+    })
+  })
+
   it('can cancel an active upload without affecting the conversation', async () => {
     vi.mocked(uploadFile).mockImplementationOnce((_file, _receiverId, _onProgress, signal) => (
       new Promise((_resolve, reject) => {

@@ -96,7 +96,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function loadMessages(mode: 'init' | 'loadMore' = 'init') {
+  async function loadMessages(mode: 'init' | 'loadMore' = 'init', pageSize = 20) {
     if (mode === 'loadMore' && recoveringMessages) return false
     const targetId = currentContact.value?.userId
     if (!targetId) return false
@@ -115,7 +115,7 @@ export const useChatStore = defineStore('chat', () => {
           cursor = String(new Date(messages.value[0].createdAt).getTime())
         }
       }
-      const res = await getMessages(targetId, cursor, 20, mode)
+      const res = await getMessages(targetId, cursor, Math.min(Math.max(pageSize, 1), 100), mode)
       if (res.data.code === 200) {
         const { messages: msgs, hasMore: more, nextCursor } = res.data.data
         const isLatest = mode === 'init'
@@ -155,6 +155,23 @@ export const useChatStore = defineStore('chat', () => {
 
   async function retryInitialMessages() {
     return loadMessages('init')
+  }
+
+  async function ensureMessageLoaded(messageId: number) {
+    if (messageId <= 0) return false
+    if (messages.value.some((message) => message.id === messageId)) return true
+
+    const targetId = currentContact.value?.userId
+    if (!targetId) return false
+
+    let pages = 0
+    while (currentContact.value?.userId === targetId && hasMore.value && pages < 50) {
+      const loaded = await loadMessages('loadMore', 100)
+      if (!loaded) return false
+      if (messages.value.some((message) => message.id === messageId)) return true
+      pages += 1
+    }
+    return false
   }
 
   function trackLocalMessage(message: Message) {
@@ -246,6 +263,7 @@ export const useChatStore = defineStore('chat', () => {
     if (local.senderId !== server.senderId || local.receiverId !== server.receiverId || local.msgType !== server.msgType) return false
     if (local.content !== server.content) return false
     if (local.fileName !== server.fileName || local.fileSize !== server.fileSize) return false
+    if ((local.replyToMessageId ?? null) !== (server.replyToMessageId ?? null)) return false
     const sentAt = sentClientMsgTimes.get(clientMsgId)
     const serverTime = new Date(server.createdAt).getTime()
     if (!sentAt || !Number.isFinite(serverTime)) return false
@@ -378,7 +396,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function sendMessage(content: string, msgType: 1 | 4 = 1) {
+  function sendMessage(content: string, msgType: 1 | 4 = 1, replyTo: Message | null = null) {
     const userStore = useUserStore()
     if (!currentContact.value || !userStore.userId) return
 
@@ -395,6 +413,7 @@ export const useChatStore = defineStore('chat', () => {
       fileSize: null,
       clientMsgId,
       status: wsConnected.value ? 'sending' : 'queued',
+      replyTo,
     })
     messages.value.push(local)
     const tracked = messages.value[messages.value.length - 1]
@@ -480,6 +499,7 @@ export const useChatStore = defineStore('chat', () => {
             fileUrl: url,
             fileName,
             fileSize,
+            replyToMessageId: local.replyToMessageId,
             clientMsgId,
           })
         } catch (error) {
@@ -497,7 +517,7 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  function sendFile(file: File, onProgress?: (p: number) => void) {
+  function sendFile(file: File, onProgress?: (p: number) => void, replyTo: Message | null = null) {
     const userStore = useUserStore()
     const userId = userStore.userId
     const receiverId = getAttachmentRecipientId(file) ?? currentContact.value?.userId
@@ -520,6 +540,7 @@ export const useChatStore = defineStore('chat', () => {
       status: 'upload_queued',
       localFile: file,
       uploadProgress: 0,
+      replyTo,
     })
 
     if (currentContact.value?.userId === receiverId) messages.value.push(local)
@@ -917,6 +938,7 @@ export const useChatStore = defineStore('chat', () => {
     selectContact,
     loadMessages,
     retryInitialMessages,
+    ensureMessageLoaded,
     sendMessage,
     sendFile,
     retryMessage,

@@ -80,6 +80,12 @@
               @contextmenu="onMobileContextMenu($event, message)"
             >
               <div class="bubble" :class="bubbleType(message)">
+                <MessageReplyQuote
+                  v-if="message.replyTo"
+                  :reply="message.replyTo"
+                  :sender-name="replySenderName(message.replyTo.senderId)"
+                  @jump="jumpToReply(message.replyTo.messageId)"
+                />
                 <template v-if="message.msgType === 1">{{ message.content }}</template>
                 <template v-else-if="message.msgType === 4"><span class="emoji-big">{{ message.content }}</span></template>
                 <template v-else-if="message.msgType === 2 && message.fileUrl">
@@ -163,6 +169,12 @@
       </div>
 
       <div ref="inputBarEl" class="input-bar">
+        <ReplyComposerBar
+          v-if="replyingTo"
+          :message="replyingTo"
+          :sender-name="replySenderName(replyingTo.senderId)"
+          @cancel="clearReply"
+        />
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" aria-label="表情" @click="toggleEmoji">😊</button>
           <button class="ibtn tap-target" type="button" aria-label="添加附件" @click="fileEl?.click()">＋</button>
@@ -233,6 +245,8 @@ import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import MessageReplyQuote from '../components/MessageReplyQuote.vue'
+import ReplyComposerBar from '../components/ReplyComposerBar.vue'
 import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import type { Message } from '../types'
 
@@ -263,6 +277,7 @@ const actionMenuActions = ref<MessageAction[]>([])
 const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
+const replyingTo = ref<Message | null>(null)
 
 const scroll = useChatScroll(listEl, uid, { virtualized: false })
 const composer = useChatComposer({
@@ -273,12 +288,16 @@ const composer = useChatComposer({
   closeEmoji: () => {
     if (emojiOpen.value) closeOverlay('emoji')
   },
+  getReplyTo: () => replyingTo.value,
+  onReplySent: clearReply,
 })
 const { drafts, text, grow, addEmoji, send } = composer
 const attachments = useChatAttachments({
   emojiOpen,
   scroll,
   onWarning: (message) => ElMessage.warning(message),
+  getReplyTo: () => replyingTo.value,
+  onReplySent: clearReply,
 })
 const { attachmentComposer, attachmentIngress } = attachments
 const {
@@ -502,6 +521,7 @@ async function applyHistoryState(state: MobileChatUiState) {
 
 watch(() => chatStore.currentContact?.userId, () => {
   closeMessageMenu()
+  clearReply()
   nextTick(grow)
 })
 watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
@@ -624,6 +644,27 @@ async function openPreview(url: string, type: 'image' | 'video', posterUrl = '')
   await mobileHistory.pushOverlay(contactId, 'media')
 }
 
+function replySenderName(senderId: number) {
+  return senderId === uid.value ? '我' : chatStore.currentContact?.nickname || '对方'
+}
+
+function clearReply() {
+  replyingTo.value = null
+}
+
+function startReply(message: Message) {
+  if (message.id <= 0) return
+  replyingTo.value = message
+  nextTick(() => inputEl.value?.focus())
+}
+
+async function jumpToReply(messageId: number) {
+  collapseInput()
+  if (!await scroll.locateMessage(messageId)) {
+    ElMessage.warning('原消息暂时无法定位')
+  }
+}
+
 function onMobileContextMenu(event: MouseEvent, message: Message) {
   const actions = getMessageActions(message)
   if (actions.length === 0) return
@@ -652,6 +693,10 @@ async function handleMessageAction(action: MessageAction) {
   const message = actionMessage.value
   if (!message) return
 
+  if (action === 'reply') {
+    startReply(message)
+    return
+  }
   if (action === 'copy') {
     try {
       await navigator.clipboard.writeText(message.content ?? '')
@@ -697,6 +742,7 @@ function logout() {
   drafts.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
+  clearReply()
   chatStore.disconnectWs()
   userStore.logout()
   chatStore.clearState()
@@ -752,6 +798,8 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
 .bubble { max-width: 78%; padding: 9px 12px; border-radius: 18px; font-size: 16px; line-height: 1.45; word-break: break-word; overflow-wrap: anywhere; }
+.message-item.reply-highlight .bubble { animation: replyTargetFlash 1.35s ease; }
+@keyframes replyTargetFlash { 0%, 100% { box-shadow: none; } 20%, 70% { box-shadow: 0 0 0 3px rgba(7,193,96,0.32); } }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 6px; }
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
 .bubble.emoji { background: transparent; padding: 2px 4px; box-shadow: none; }

@@ -1,6 +1,7 @@
 import { computed, nextTick, type Ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { useChatDrafts } from './useChatDrafts'
+import type { Message } from '../types'
 
 type ChatScrollController = {
   scrollToBottomAndClear: (smooth?: boolean) => void
@@ -12,6 +13,8 @@ export function useChatComposer(options: {
   maxHeight: number
   scroll: ChatScrollController
   closeEmoji?: () => void
+  getReplyTo?: () => Message | null
+  onReplySent?: () => void
 }) {
   const chatStore = useChatStore()
   const drafts = useChatDrafts()
@@ -53,7 +56,9 @@ export function useChatComposer(options: {
     else options.emojiOpen.value = false
 
     const isEmoji = /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]$/u.test(value)
-    chatStore.sendMessage(value, isEmoji ? 4 : 1)
+    const replyTo = options.getReplyTo?.() ?? null
+    chatStore.sendMessage(value, isEmoji ? 4 : 1, replyTo)
+    if (replyTo) options.onReplySent?.()
     drafts.clear(contactId)
 
     await nextTick()

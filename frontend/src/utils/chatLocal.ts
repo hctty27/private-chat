@@ -1,4 +1,5 @@
 import type { LocalMessageStatus, Message, WsClientChat } from '../types'
+import { toMessageReply } from './messageReply'
 
 let clientMsgSeq = 0
 let tempMessageId = -1
@@ -31,6 +32,7 @@ export function createLocalMessage(options: {
   status: LocalMessageStatus
   localFile?: File
   uploadProgress?: number
+  replyTo?: Message | null
 }): Message {
   return {
     id: nextTempMessageId(),
@@ -45,6 +47,8 @@ export function createLocalMessage(options: {
     fileSize: options.fileSize,
     isRead: 0,
     createdAt: new Date().toISOString(),
+    replyToMessageId: options.replyTo && options.replyTo.id > 0 ? options.replyTo.id : undefined,
+    replyTo: options.replyTo && options.replyTo.id > 0 ? toMessageReply(options.replyTo) : undefined,
     clientMsgId: options.clientMsgId,
     localStatus: options.status,
     localFile: options.localFile,
@@ -68,6 +72,7 @@ export function chatPayloadFromMessage(message: Message): WsClientChat['data'] {
     fileUrl: message.fileUrl,
     fileName: message.fileName,
     fileSize: message.fileSize,
+    replyToMessageId: message.replyToMessageId,
     clientMsgId: message.clientMsgId,
   }
 }

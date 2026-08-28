@@ -221,11 +221,12 @@ func isFileMessageType(msgType int) bool {
 }
 
 type wsChatPayload struct {
-	receiverID  int64
-	msgType     int
-	content     *string
-	fileID      int64
-	clientMsgID *string
+	receiverID       int64
+	msgType          int
+	content          *string
+	fileID           int64
+	clientMsgID      *string
+	replyToMessageID *int64
 }
 
 func parseWsChatPayload(data map[string]any) (wsChatPayload, error) {
@@ -238,14 +239,30 @@ func parseWsChatPayload(data map[string]any) (wsChatPayload, error) {
 	if err != nil {
 		return wsChatPayload{}, err
 	}
+	replyToMessageID, err := parseReplyToMessageID(data["replyToMessageId"])
+	if err != nil {
+		return wsChatPayload{}, err
+	}
 
 	return wsChatPayload{
-		receiverID:  receiverID,
-		msgType:     int(toInt64(data["msgType"])),
-		content:     toOptionalString(data["content"]),
-		fileID:      toInt64(data["fileId"]),
-		clientMsgID: clientMsgID,
+		receiverID:       receiverID,
+		msgType:          int(toInt64(data["msgType"])),
+		content:          toOptionalString(data["content"]),
+		fileID:           toInt64(data["fileId"]),
+		clientMsgID:      clientMsgID,
+		replyToMessageID: replyToMessageID,
 	}, nil
+}
+
+func parseReplyToMessageID(value any) (*int64, error) {
+	if value == nil {
+		return nil, nil
+	}
+	messageID := toInt64(value)
+	if messageID <= 0 {
+		return nil, fmt.Errorf("replyToMessageId must be a positive integer")
+	}
+	return &messageID, nil
 }
 
 func parseClientMsgID(value any) (*string, error) {
@@ -278,8 +295,20 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := a.requireContact(context.Background(), senderID, payload.receiverID); err != nil {
+	ctx := context.Background()
+	if err := a.requireContact(ctx, senderID, payload.receiverID); err != nil {
 		return err
+	}
+
+	var replyTo *model.Message
+	if payload.replyToMessageID != nil {
+		var original model.Message
+		if err := a.db.WithContext(ctx).
+			Where("id = ? AND conversation_id = ?", *payload.replyToMessageID, conversationID(senderID, payload.receiverID)).
+			First(&original).Error; err != nil {
+			return fmt.Errorf("reply message unavailable")
+		}
+		replyTo = &original
 	}
 
 	var attachment *model.File
@@ -290,7 +319,7 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 		if a.files == nil {
 			return fmt.Errorf("file manager unavailable")
 		}
-		file, err := a.files.ResolveAttachment(context.Background(), senderID, payload.receiverID, payload.fileID)
+		file, err := a.files.ResolveAttachment(ctx, senderID, payload.receiverID, payload.fileID)
 		if err != nil {
 			return fmt.Errorf("resolve attachment: %w", err)
 		}
@@ -298,14 +327,15 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 		payload.content = nil
 	}
 
-	saved, err := a.saveMessage(
-		context.Background(),
+	saved, err := a.saveMessageWithReply(
+		ctx,
 		senderID,
 		payload.receiverID,
 		payload.msgType,
 		payload.content,
 		attachment,
 		payload.clientMsgID,
+		replyTo,
 	)
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
@@ -370,6 +400,18 @@ func (a *App) saveMessage(
 	attachment *model.File,
 	clientMsgID *string,
 ) (model.MessageDTO, error) {
+	return a.saveMessageWithReply(ctx, senderID, receiverID, msgType, content, attachment, clientMsgID, nil)
+}
+
+func (a *App) saveMessageWithReply(
+	ctx context.Context,
+	senderID, receiverID int64,
+	msgType int,
+	content *string,
+	attachment *model.File,
+	clientMsgID *string,
+	replyTo *model.Message,
+) (model.MessageDTO, error) {
 	msg := model.Message{
 		ConversationID: conversationID(senderID, receiverID),
 		SenderID:       senderID,
@@ -378,6 +420,10 @@ func (a *App) saveMessage(
 		Content:        content,
 		ClientMsgID:    clientMsgID,
 		IsRead:         0,
+	}
+	if replyTo != nil {
+		replyToMessageID := replyTo.ID
+		msg.ReplyToMessageID = &replyToMessageID
 	}
 	if attachment != nil {
 		fileID := attachment.ID
@@ -398,6 +444,7 @@ func (a *App) saveMessage(
 		if err := db.Create(&msg).Error; err != nil {
 			return model.MessageDTO{}, err
 		}
+		msg.ReplyTo = replyTo
 		return toMessageDTO(msg, a.loc), nil
 	}
 
@@ -406,11 +453,13 @@ func (a *App) saveMessage(
 		return model.MessageDTO{}, result.Error
 	}
 	if result.RowsAffected == 1 {
+		msg.ReplyTo = replyTo
 		return toMessageDTO(msg, a.loc), nil
 	}
 
 	var existing model.Message
 	if err := db.
+		Preload("ReplyTo").
 		Where("sender_id = ? AND client_msg_id = ?", senderID, *clientMsgID).
 		First(&existing).Error; err != nil {
 		return model.MessageDTO{}, err

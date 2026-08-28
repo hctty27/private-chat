@@ -83,6 +83,20 @@
                 @keydown.shift.f10.prevent="openMessageMenuFromElement($event, message)"
               >
                 <div class="bubble" :class="bubbleType(message)">
+                  <button
+                    v-if="message.id > 0"
+                    class="reply-shortcut"
+                    type="button"
+                    title="引用"
+                    aria-label="引用这条消息"
+                    @click.stop="startReply(message)"
+                  >引用</button>
+                  <MessageReplyQuote
+                    v-if="message.replyTo"
+                    :reply="message.replyTo"
+                    :sender-name="replySenderName(message.replyTo.senderId)"
+                    @jump="jumpToReply(message.replyTo.messageId)"
+                  />
                   <template v-if="message.msgType === 1">{{ message.content }}</template>
                   <template v-else-if="message.msgType === 4"><span class="emoji-big">{{ message.content }}</span></template>
                   <template v-else-if="message.msgType === 2 && message.fileUrl">
@@ -152,6 +166,12 @@
         </div>
 
         <div class="input-bar">
+          <ReplyComposerBar
+            v-if="replyingTo"
+            :message="replyingTo"
+            :sender-name="replySenderName(replyingTo.senderId)"
+            @cancel="clearReply"
+          />
           <div class="input-row">
             <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" @click="emojiOpen = !emojiOpen">😊</button>
             <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
@@ -236,6 +256,8 @@ import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
 import MessageActionMenu from '../components/MessageActionMenu.vue'
+import MessageReplyQuote from '../components/MessageReplyQuote.vue'
+import ReplyComposerBar from '../components/ReplyComposerBar.vue'
 import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import type { Message } from '../types'
 
@@ -261,6 +283,7 @@ const actionMenuActions = ref<MessageAction[]>([])
 const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
+const replyingTo = ref<Message | null>(null)
 let selectionSeq = 0
 let dragDepth = 0
 
@@ -270,12 +293,16 @@ const composer = useChatComposer({
   emojiOpen,
   maxHeight: 100,
   scroll,
+  getReplyTo: () => replyingTo.value,
+  onReplySent: clearReply,
 })
 const { drafts, text, grow, addEmoji, send } = composer
 const attachments = useChatAttachments({
   emojiOpen,
   scroll,
   onWarning: (message) => ElMessage.warning(message),
+  getReplyTo: () => replyingTo.value,
+  onReplySent: clearReply,
 })
 const { attachmentComposer, attachmentIngress } = attachments
 const {
@@ -302,6 +329,7 @@ onUnmounted(() => {
 
 watch(() => chatStore.currentContact?.userId, () => {
   closeMessageMenu()
+  clearReply()
   nextTick(grow)
 })
 watch(listEl, (el) => { scroll.onListReady(el) })
@@ -334,6 +362,7 @@ function logout() {
   drafts.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
+  clearReply()
   chatStore.disconnectWs()
   userStore.logout()
   chatStore.clearState()
@@ -389,6 +418,27 @@ function cancelUploadByClientId(clientMsgId?: string) {
   chatStore.cancelUpload(clientMsgId)
 }
 
+function replySenderName(senderId: number) {
+  return senderId === uid.value ? '我' : chatStore.currentContact?.nickname || '对方'
+}
+
+function clearReply() {
+  replyingTo.value = null
+}
+
+function startReply(message: Message) {
+  if (message.id <= 0) return
+  replyingTo.value = message
+  emojiOpen.value = false
+  nextTick(() => inputEl.value?.focus())
+}
+
+async function jumpToReply(messageId: number) {
+  if (!await scroll.locateMessage(messageId)) {
+    ElMessage.warning('原消息暂时无法定位')
+  }
+}
+
 function openMessageMenu(event: MouseEvent, message: Message) {
   if (getMessageActions(message).length === 0) return
   event.preventDefault()
@@ -421,6 +471,10 @@ async function handleMessageAction(action: MessageAction) {
   const message = actionMessage.value
   if (!message) return
 
+  if (action === 'reply') {
+    startReply(message)
+    return
+  }
   if (action === 'copy') {
     try {
       await navigator.clipboard.writeText(message.content ?? '')
@@ -492,7 +546,12 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .msg:focus-visible { border-radius: 8px; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.65); }
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
-.bubble { max-width: 65%; padding: 9px 13px; border-radius: 12px; font-size: 15px; line-height: 1.5; word-break: break-word; }
+.bubble { position: relative; max-width: 65%; padding: 9px 13px; border-radius: 12px; font-size: 15px; line-height: 1.5; word-break: break-word; }
+.reply-shortcut { position: absolute; top: 50%; right: -48px; transform: translateY(-50%); min-width: 40px; height: 28px; padding: 0 8px; border: 0; border-radius: 14px; background: rgba(255,255,255,0.92); color: #576b95; font-size: 12px; cursor: pointer; opacity: 0; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,0.12); transition: opacity .12s ease; }
+.msg.right .reply-shortcut { right: auto; left: -48px; }
+.bubble:hover > .reply-shortcut, .reply-shortcut:focus-visible { opacity: 1; pointer-events: auto; }
+.message-item.reply-highlight .bubble { animation: replyTargetFlash 1.35s ease; }
+@keyframes replyTargetFlash { 0%, 100% { box-shadow: none; } 20%, 70% { box-shadow: 0 0 0 3px rgba(7,193,96,0.32); } }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 3px; }
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 3px; }
 .bubble.emoji { background: transparent; padding: 2px 4px; }

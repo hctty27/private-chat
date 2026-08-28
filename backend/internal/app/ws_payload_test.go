@@ -91,3 +91,49 @@ func TestParseWsChatPayloadRejectsNonStringClientMsgID(t *testing.T) {
 		t.Fatal("expected non-string clientMsgId to be rejected")
 	}
 }
+
+func TestMessageDTOIncludesReplySnapshot(t *testing.T) {
+	replyContent := "original"
+	replyID := int64(21)
+	dto := toMessageDTO(model.Message{
+		ID:               42,
+		ReplyToMessageID: &replyID,
+		ReplyTo: &model.Message{
+			ID:       replyID,
+			SenderID: 2,
+			MsgType:  1,
+			Content:  &replyContent,
+		},
+	}, time.UTC)
+
+	body, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	payload := string(body)
+	if !strings.Contains(payload, `"replyToMessageId":21`) {
+		t.Fatalf("expected replyToMessageId in payload, got %s", payload)
+	}
+	if !strings.Contains(payload, `"replyTo":{"messageId":21,"senderId":2,"msgType":1,"content":"original"`) {
+		t.Fatalf("expected reply snapshot in payload, got %s", payload)
+	}
+}
+
+func TestParseReplyToMessageIDAcceptsPositiveInteger(t *testing.T) {
+	got, err := parseReplyToMessageID(float64(12))
+	if err != nil {
+		t.Fatalf("parse replyToMessageId: %v", err)
+	}
+	if got == nil || *got != 12 {
+		t.Fatalf("expected replyToMessageId 12, got %#v", got)
+	}
+}
+
+func TestParseReplyToMessageIDRejectsInvalidValue(t *testing.T) {
+	if _, err := parseReplyToMessageID(float64(0)); err == nil {
+		t.Fatal("expected zero replyToMessageId to be rejected")
+	}
+	if _, err := parseReplyToMessageID("not-a-number"); err == nil {
+		t.Fatal("expected invalid replyToMessageId to be rejected")
+	}
+}
