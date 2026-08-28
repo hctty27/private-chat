@@ -52,6 +52,14 @@ type AvailabilityDTO struct {
 	Note    *string `json:"note"`
 }
 
+type MessageReplyDTO struct {
+	MessageID int64   `json:"messageId"`
+	SenderID  int64   `json:"senderId"`
+	MsgType   int     `json:"msgType"`
+	Content   *string `json:"content"`
+	FileName  *string `json:"fileName"`
+}
+
 type MessageDTO struct {
 	ID             int64   `json:"id"`
 	ConversationID string  `json:"conversationId"`
@@ -65,7 +73,9 @@ type MessageDTO struct {
 	FileName       *string `json:"fileName"`
 	FileSize       *int64  `json:"fileSize"`
 	IsRead         int     `json:"isRead"`
-	CreatedAt      string  `json:"createdAt"`
+	CreatedAt      string           `json:"createdAt"`
+	ReplyToMessageID *int64         `json:"replyToMessageId,omitempty"`
+	ReplyTo          *MessageReplyDTO `json:"replyTo,omitempty"`
 }
 
 type MessagePageDTO struct {
@@ -175,7 +185,9 @@ type Message struct {
 	FileName       *string   `gorm:"column:file_name"`
 	FileSize       *int64    `gorm:"column:file_size"`
 	IsRead         int       `gorm:"column:is_read"`
-	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"`
+	ReplyToMessageID *int64    `gorm:"column:reply_to_message_id"`
+	ReplyTo          *Message  `gorm:"foreignKey:ReplyToMessageID;references:ID"`
 }
 
 func (Message) TableName() string { return "t_message" }
