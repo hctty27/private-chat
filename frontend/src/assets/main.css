@@ -69,6 +69,14 @@ html, body, #app {
     overscroll-behavior-y: contain;
   }
 
+  .msg,
+  .msg .bubble,
+  .msg .bubble * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
   .new-message-entry {
     right: calc(16px + env(safe-area-inset-right)) !important;
   }
