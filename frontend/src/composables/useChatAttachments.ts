@@ -49,8 +49,11 @@ export function useChatAttachments(options: {
 
     const followBatch = options.scroll.isNearBottom(160)
     const replyTo = options.getReplyTo?.() ?? null
-    for (let index = 0; index < files.length; index++) {
-      chatStore.sendFile(files[index], undefined, index === 0 ? replyTo : null)
+    let firstFile = true
+    for (const file of files) {
+      if (firstFile && replyTo) chatStore.sendFile(file, undefined, replyTo)
+      else chatStore.sendFile(file)
+      firstFile = false
     }
     if (replyTo) options.onReplySent?.()
 
