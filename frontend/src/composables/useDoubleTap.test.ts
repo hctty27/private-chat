@@ -1,9 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useDoubleTap } from './useDoubleTap'
 
-function pointer(x = 0, y = 0, pointerType = 'touch'): PointerEvent {
-  return new PointerEvent('pointerup', { clientX: x, clientY: y, pointerType })
+function pointer(type: string, x = 0, y = 0, pointerType = 'touch'): PointerEvent {
+  return new PointerEvent(type, { clientX: x, clientY: y, pointerType })
 }
+
+function tap(doubleTap: ReturnType<typeof useDoubleTap<number>>, payload: number, x = 0, y = 0) {
+  doubleTap.start(pointer('pointerdown', x, y), payload)
+  doubleTap.end(pointer('pointerup', x, y))
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('useDoubleTap', () => {
   it('triggers when the same payload is tapped twice within the delay and distance', () => {
@@ -12,13 +21,12 @@ describe('useDoubleTap', () => {
     const trigger = vi.fn()
     const doubleTap = useDoubleTap<number>(trigger, { delayMs: 320, movementPx: 16 })
 
-    doubleTap.tap(pointer(20, 30), 7)
+    tap(doubleTap, 7, 20, 30)
     vi.advanceTimersByTime(200)
-    doubleTap.tap(pointer(25, 34), 7)
+    tap(doubleTap, 7, 25, 34)
 
     expect(trigger).toHaveBeenCalledOnce()
     expect(trigger).toHaveBeenCalledWith(7)
-    vi.useRealTimers()
   })
 
   it('does not trigger for different payloads', () => {
@@ -27,12 +35,11 @@ describe('useDoubleTap', () => {
     const trigger = vi.fn()
     const doubleTap = useDoubleTap<number>(trigger)
 
-    doubleTap.tap(pointer(20, 30), 7)
+    tap(doubleTap, 7, 20, 30)
     vi.advanceTimersByTime(150)
-    doubleTap.tap(pointer(20, 30), 8)
+    tap(doubleTap, 8, 20, 30)
 
     expect(trigger).not.toHaveBeenCalled()
-    vi.useRealTimers()
   })
 
   it('does not trigger when taps are too far apart', () => {
@@ -41,20 +48,33 @@ describe('useDoubleTap', () => {
     const trigger = vi.fn()
     const doubleTap = useDoubleTap<number>(trigger, { movementPx: 16 })
 
-    doubleTap.tap(pointer(0, 0), 7)
+    tap(doubleTap, 7, 0, 0)
     vi.advanceTimersByTime(100)
-    doubleTap.tap(pointer(30, 0), 7)
+    tap(doubleTap, 7, 30, 0)
 
     expect(trigger).not.toHaveBeenCalled()
-    vi.useRealTimers()
+  })
+
+  it('cancels a tap when the pointer moves beyond the threshold', () => {
+    const trigger = vi.fn()
+    const doubleTap = useDoubleTap<number>(trigger, { movementPx: 10 })
+
+    doubleTap.start(pointer('pointerdown', 0, 0), 7)
+    doubleTap.move(pointer('pointermove', 11, 0))
+    doubleTap.end(pointer('pointerup', 11, 0))
+    tap(doubleTap, 7, 11, 0)
+
+    expect(trigger).not.toHaveBeenCalled()
   })
 
   it('ignores non-touch pointers', () => {
     const trigger = vi.fn()
     const doubleTap = useDoubleTap<number>(trigger)
 
-    doubleTap.tap(pointer(10, 10, 'mouse'), 7)
-    doubleTap.tap(pointer(10, 10, 'mouse'), 7)
+    doubleTap.start(pointer('pointerdown', 10, 10, 'mouse'), 7)
+    doubleTap.end(pointer('pointerup', 10, 10, 'mouse'))
+    doubleTap.start(pointer('pointerdown', 10, 10, 'mouse'), 7)
+    doubleTap.end(pointer('pointerup', 10, 10, 'mouse'))
 
     expect(trigger).not.toHaveBeenCalled()
   })
