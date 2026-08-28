@@ -113,6 +113,16 @@ func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
 		stable := stableFileURL(*msg.FileID)
 		fileURL = &stable
 	}
+	var replyTo *model.MessageReplyDTO
+	if msg.ReplyTo != nil {
+		replyTo = &model.MessageReplyDTO{
+			MessageID: msg.ReplyTo.ID,
+			SenderID:  msg.ReplyTo.SenderID,
+			MsgType:   msg.ReplyTo.MsgType,
+			Content:   msg.ReplyTo.Content,
+			FileName:  msg.ReplyTo.FileName,
+		}
+	}
 	return model.MessageDTO{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,
@@ -125,8 +135,10 @@ func toMessageDTO(msg model.Message, loc *time.Location) model.MessageDTO {
 		FileURL:        fileURL,
 		FileName:       msg.FileName,
 		FileSize:       msg.FileSize,
-		IsRead:         msg.IsRead,
-		CreatedAt:      formatLocalTime(msg.CreatedAt, loc),
+		IsRead:           msg.IsRead,
+		CreatedAt:        formatLocalTime(msg.CreatedAt, loc),
+		ReplyToMessageID: msg.ReplyToMessageID,
+		ReplyTo:          replyTo,
 	}
 }
 
