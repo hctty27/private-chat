@@ -83,14 +83,6 @@
                 @keydown.shift.f10.prevent="openMessageMenuFromElement($event, message)"
               >
                 <div class="bubble" :class="bubbleType(message)">
-                  <button
-                    v-if="message.id > 0"
-                    class="reply-shortcut"
-                    type="button"
-                    title="引用"
-                    aria-label="引用这条消息"
-                    @click.stop="startReply(message)"
-                  >引用</button>
                   <MessageReplyQuote
                     v-if="message.replyTo"
                     :reply="message.replyTo"
@@ -547,9 +539,6 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
 .bubble { position: relative; max-width: 65%; padding: 9px 13px; border-radius: 12px; font-size: 15px; line-height: 1.5; word-break: break-word; }
-.reply-shortcut { position: absolute; top: 50%; right: -48px; transform: translateY(-50%); min-width: 40px; height: 28px; padding: 0 8px; border: 0; border-radius: 14px; background: rgba(255,255,255,0.92); color: #576b95; font-size: 12px; cursor: pointer; opacity: 0; pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,0.12); transition: opacity .12s ease; }
-.msg.right .reply-shortcut { right: auto; left: -48px; }
-.bubble:hover > .reply-shortcut, .reply-shortcut:focus-visible { opacity: 1; pointer-events: auto; }
 .message-item.reply-highlight .bubble { animation: replyTargetFlash 1.35s ease; }
 @keyframes replyTargetFlash { 0%, 100% { box-shadow: none; } 20%, 70% { box-shadow: 0 0 0 3px rgba(7,193,96,0.32); } }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 3px; }
