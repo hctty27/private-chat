@@ -36,6 +36,14 @@ export interface Contact {
 export type LocalMessageStatus = 'sending' | 'sent' | 'failed' | 'queued' | 'upload_queued' | 'uploading' | 'cancelled'
 export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 
+export interface MessageReply {
+  messageId: number
+  senderId: number
+  msgType: 1 | 2 | 3 | 4 | 5
+  content: string | null
+  fileName: string | null
+}
+
 export interface Message {
   id: number
   conversationId?: string
@@ -49,6 +57,8 @@ export interface Message {
   fileSize: number | null
   isRead: 0 | 1
   createdAt: string
+  replyToMessageId?: number
+  replyTo?: MessageReply
   clientMsgId?: string
   localStatus?: LocalMessageStatus
   localError?: string
@@ -138,6 +148,7 @@ export interface WsClientChat {
     fileUrl: string | null
     fileName: string | null
     fileSize: number | null
+    replyToMessageId?: number
     clientMsgId?: string
   }
 }
