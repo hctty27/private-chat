@@ -73,11 +73,10 @@
             <div
               class="msg"
               :class="message.senderId === uid ? 'right' : 'left'"
-              @pointerdown="longPress.start($event, message)"
-              @pointermove="longPress.move($event)"
-              @pointerup="longPress.cancel"
-              @pointercancel="longPress.cancel"
-              @contextmenu="onMobileContextMenu($event, message)"
+              @pointerdown="onMessagePointerDown($event, message)"
+              @pointermove="doubleTap.move($event)"
+              @pointerup="doubleTap.end($event)"
+              @pointercancel="doubleTap.cancel"
             >
               <div class="bubble" :class="bubbleType(message)">
                 <MessageReplyQuote
@@ -231,7 +230,7 @@ import { useChatComposer } from '../composables/useChatComposer'
 import { useChatAttachments } from '../composables/useChatAttachments'
 import { useChatMessageUi } from '../composables/useChatMessageUi'
 import { useMobileChatHistory, type MobileChatUiState, type MobileOverlayKind } from '../composables/useMobileChatHistory'
-import { useLongPress } from '../composables/useLongPress'
+import { useDoubleTap } from '../composables/useDoubleTap'
 import { formatChatTime as fmtChatTime, formatFileSize as fmtSize } from '../utils/time'
 import { formatContactPresence } from '../utils/availability'
 import { getMessageActions, type MessageAction } from '../utils/messageActions'
@@ -334,9 +333,8 @@ let historyBackPending = false
 let suppressNativeClickUntil = 0
 const mobileViewportClass = 'mobile-chat-viewport'
 
-const longPress = useLongPress<Message>((message, event) => {
-  suppressNativeClickUntil = Date.now() + 600
-  openMessageMenuAt(event.clientX, event.clientY, message)
+const doubleTap = useDoubleTap<Message>((message) => {
+  startReply(message)
 })
 
 function lockMobileViewport() {
@@ -381,7 +379,7 @@ onUnmounted(() => {
   unlockMobileViewport()
   historySyncSeq += 1
   unsubscribeHistory?.()
-  longPress.cancel()
+  doubleTap.cancel()
   drafts.clearAll()
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
@@ -473,7 +471,7 @@ async function ensureChat(contactId: number, seq: number) {
 async function applyHistoryState(state: MobileChatUiState) {
   const seq = ++historySyncSeq
   closeMessageMenu()
-  longPress.cancel()
+  doubleTap.cancel()
 
   if (state.kind === 'list') {
     emojiOpen.value = false
@@ -658,6 +656,19 @@ function startReply(message: Message) {
   nextTick(() => inputEl.value?.focus())
 }
 
+function onMessagePointerDown(event: PointerEvent, message: Message) {
+  if (message.msgType !== 1 && message.msgType !== 4) {
+    doubleTap.cancel()
+    return
+  }
+  const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('button, a, img, video, [role="button"]')) {
+    doubleTap.cancel()
+    return
+  }
+  doubleTap.start(event, message)
+}
+
 async function jumpToReply(messageId: number) {
   collapseInput()
   if (!await scroll.locateMessage(messageId)) {
@@ -794,10 +805,10 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .time-bar { text-align: center; padding: 6px 0 8px; }
 .time-bar span { font-size: 11px; color: #a6a6aa; background: transparent; padding: 0 6px; border-radius: 0; }
-.msg { display: flex; flex-direction: column; padding-bottom: 6px; touch-action: pan-y; -webkit-touch-callout: none; }
+.msg { display: flex; flex-direction: column; padding-bottom: 6px; touch-action: pan-y; }
 .msg.right { align-items: flex-end; }
 .msg.left { align-items: flex-start; }
-.bubble { max-width: 78%; padding: 9px 12px; border-radius: 18px; font-size: 16px; line-height: 1.45; word-break: break-word; overflow-wrap: anywhere; }
+.bubble { max-width: 78%; padding: 9px 12px; border-radius: 18px; font-size: 16px; line-height: 1.45; word-break: break-word; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .message-item.reply-highlight .bubble { animation: replyTargetFlash 1.35s ease; }
 @keyframes replyTargetFlash { 0%, 100% { box-shadow: none; } 20%, 70% { box-shadow: 0 0 0 3px rgba(7,193,96,0.32); } }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 6px; }
