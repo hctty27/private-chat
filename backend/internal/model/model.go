@@ -61,20 +61,20 @@ type MessageReplyDTO struct {
 }
 
 type MessageDTO struct {
-	ID             int64   `json:"id"`
-	ConversationID string  `json:"conversationId"`
-	SenderID       int64   `json:"senderId"`
-	ReceiverID     int64   `json:"receiverId"`
-	MsgType        int     `json:"msgType"`
-	Content        *string `json:"content"`
-	ClientMsgID    *string `json:"clientMsgId,omitempty"`
-	FileID         *int64  `json:"fileId,omitempty"`
-	FileURL        *string `json:"fileUrl"`
-	FileName       *string `json:"fileName"`
-	FileSize       *int64  `json:"fileSize"`
-	IsRead         int     `json:"isRead"`
-	CreatedAt      string           `json:"createdAt"`
-	ReplyToMessageID *int64         `json:"replyToMessageId,omitempty"`
+	ID               int64            `json:"id"`
+	ConversationID   string           `json:"conversationId"`
+	SenderID         int64            `json:"senderId"`
+	ReceiverID       int64            `json:"receiverId"`
+	MsgType          int              `json:"msgType"`
+	Content          *string          `json:"content"`
+	ClientMsgID      *string          `json:"clientMsgId,omitempty"`
+	FileID           *int64           `json:"fileId,omitempty"`
+	FileURL          *string          `json:"fileUrl"`
+	FileName         *string          `json:"fileName"`
+	FileSize         *int64           `json:"fileSize"`
+	IsRead           int              `json:"isRead"`
+	CreatedAt        string           `json:"createdAt"`
+	ReplyToMessageID *int64           `json:"replyToMessageId,omitempty"`
 	ReplyTo          *MessageReplyDTO `json:"replyTo,omitempty"`
 }
 
@@ -173,18 +173,18 @@ type File struct {
 func (File) TableName() string { return "t_file" }
 
 type Message struct {
-	ID             int64     `gorm:"column:id;primaryKey;autoIncrement"`
-	ConversationID string    `gorm:"column:conversation_id"`
-	SenderID       int64     `gorm:"column:sender_id"`
-	ReceiverID     int64     `gorm:"column:receiver_id"`
-	MsgType        int       `gorm:"column:msg_type"`
-	Content        *string   `gorm:"column:content"`
-	ClientMsgID    *string   `gorm:"column:client_msg_id"`
-	FileID         *int64    `gorm:"column:file_id"`
-	FileURL        *string   `gorm:"column:file_url"`
-	FileName       *string   `gorm:"column:file_name"`
-	FileSize       *int64    `gorm:"column:file_size"`
-	IsRead         int       `gorm:"column:is_read"`
+	ID               int64     `gorm:"column:id;primaryKey;autoIncrement"`
+	ConversationID   string    `gorm:"column:conversation_id"`
+	SenderID         int64     `gorm:"column:sender_id"`
+	ReceiverID       int64     `gorm:"column:receiver_id"`
+	MsgType          int       `gorm:"column:msg_type"`
+	Content          *string   `gorm:"column:content"`
+	ClientMsgID      *string   `gorm:"column:client_msg_id"`
+	FileID           *int64    `gorm:"column:file_id"`
+	FileURL          *string   `gorm:"column:file_url"`
+	FileName         *string   `gorm:"column:file_name"`
+	FileSize         *int64    `gorm:"column:file_size"`
+	IsRead           int       `gorm:"column:is_read"`
 	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"`
 	ReplyToMessageID *int64    `gorm:"column:reply_to_message_id"`
 	ReplyTo          *Message  `gorm:"foreignKey:ReplyToMessageID;references:ID"`
