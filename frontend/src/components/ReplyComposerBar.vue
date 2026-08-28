@@ -71,3 +71,4 @@ const emit = defineEmits<{
 .reply-composer-close:active {
   background: rgba(0, 0, 0, 0.06);
 }
+</style>
