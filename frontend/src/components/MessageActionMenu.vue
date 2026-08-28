@@ -39,6 +39,7 @@ const emit = defineEmits<{
 }>()
 
 const labels: Record<MessageAction, string> = {
+  reply: '引用',
   copy: '复制',
   view: '查看',
   open: '打开',
