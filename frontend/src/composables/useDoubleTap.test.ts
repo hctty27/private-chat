@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 describe('useDoubleTap', () => {
-  it('triggers when the same payload is tapped twice within the delay and distance', () => {
+  it('triggers with the second tap coordinates when the same payload is tapped twice', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-28T10:00:00Z'))
     const trigger = vi.fn()
@@ -26,7 +26,7 @@ describe('useDoubleTap', () => {
     tap(doubleTap, 7, 25, 34)
 
     expect(trigger).toHaveBeenCalledOnce()
-    expect(trigger).toHaveBeenCalledWith(7)
+    expect(trigger).toHaveBeenCalledWith(7, { x: 25, y: 34 })
   })
 
   it('does not trigger for different payloads', () => {
