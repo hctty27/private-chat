@@ -263,6 +263,21 @@ export function useChatScroll(
     return true
   }
 
+  async function locateMessage(messageId: number) {
+    if (messageId <= 0) return false
+    isLoadingMore = true
+    try {
+      const loaded = await chatStore.ensureMessageLoaded(messageId)
+      if (!loaded) return false
+      await nextTick()
+      return await scrollToMessage(messageId, true)
+    } finally {
+      prevMsgCount = chatStore.messages.length
+      isLoadingMore = false
+      updateBottomButton()
+    }
+  }
+
   function measureItem(el: Element | ComponentPublicInstance | null) {
     if (el instanceof Element) virtualizer.value.measureElement(el)
   }
@@ -470,6 +485,7 @@ export function useChatScroll(
     captureVisibleAnchor,
     restoreVisibleAnchor,
     scrollToMessage,
+    locateMessage,
     sendReadReceipt,
     onContactChange,
     onMessagesChange,
