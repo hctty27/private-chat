@@ -660,13 +660,7 @@ function startReply(message: Message) {
 
 async function jumpToReply(messageId: number) {
   collapseInput()
-  const loaded = await chatStore.ensureMessageLoaded(messageId)
-  if (!loaded) {
-    ElMessage.warning('原消息暂时无法定位')
-    return
-  }
-  await nextTick()
-  if (!await scroll.scrollToMessage(messageId, true)) {
+  if (!await scroll.locateMessage(messageId)) {
     ElMessage.warning('原消息暂时无法定位')
   }
 }
