@@ -3,13 +3,14 @@ import chatPageSource from './ChatPage.vue?raw'
 import mobileChatSource from './MobileChat.vue?raw'
 import mediaMessageSource from '../components/MediaMessageCard.vue?raw'
 import videoMessageSource from '../components/VideoMessageCard.vue?raw'
+import audioMessageSource from '../components/AudioMessageCard.vue?raw'
 
 describe('chat media loading', () => {
   it('renders desktop and mobile rich media through one shared component', () => {
     for (const source of [chatPageSource, mobileChatSource]) {
       expect(source).toContain("import MediaMessageCard from '../components/MediaMessageCard.vue'")
       expect(source).toContain('v-else-if="isRichMediaMessage(message)"')
-      expect(source).toContain(":class=\"[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message) }]\"")
+      expect(source).toContain("'voice-media': isStandaloneVoiceMessage(message)")
       expect(source).not.toContain('class="pic-shell"')
       expect(source).not.toContain('<VideoMessageCard')
       expect(source).not.toContain('<AudioMessageCard')
@@ -46,6 +47,24 @@ describe('chat media loading', () => {
     expect(mediaMessageSource).toContain("message.localStatus === 'uploading'")
     for (const source of [chatPageSource, mobileChatSource]) {
       expect(source).toContain('!hasInlineMediaStatus(message)')
+    }
+  })
+
+  it('adds subtle media frames without changing reserved dimensions', () => {
+    expect(mediaMessageSource).toContain('box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08)')
+    expect(videoMessageSource).toContain('box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12)')
+    expect(mediaMessageSource).toContain('.video-pending::after')
+  })
+
+  it('keeps standalone voice bubbles compact with a 44px mobile target', () => {
+    expect(audioMessageSource).toContain('height: 42px')
+    expect(audioMessageSource).toContain('height: 44px')
+    expect(audioMessageSource).toContain('height: 18px')
+    expect(mediaMessageSource).toContain('.audio-pending')
+    expect(mediaMessageSource).toContain('height: 44px')
+    for (const source of [chatPageSource, mobileChatSource]) {
+      expect(source).toContain("'voice-media': isStandaloneVoiceMessage(message)")
+      expect(source).toContain('.bubble.voice-media')
     }
   })
 })
