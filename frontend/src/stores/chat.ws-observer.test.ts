@@ -16,6 +16,7 @@ class FakeWebSocket {
   sent: string[] = []
 
   constructor(_url: string) {
+    Object.preventExtensions(this)
     FakeWebSocket.instances.push(this)
   }
 
