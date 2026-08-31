@@ -71,11 +71,22 @@ func (s *memoryCallStore) MarkActive(_ context.Context, id string, actorID int64
 }
 
 func (s *memoryCallStore) Delete(_ context.Context, id string) (callRecord, error) {
+	return s.delete(id, nil)
+}
+
+func (s *memoryCallStore) DeleteIfStatus(_ context.Context, id string, expected callStatus) (callRecord, error) {
+	return s.delete(id, &expected)
+}
+
+func (s *memoryCallStore) delete(id string, expected *callStatus) (callRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	record, ok := s.calls[id]
 	if !ok {
 		return callRecord{}, errCallNotFound
+	}
+	if expected != nil && record.Status != *expected {
+		return callRecord{}, errCallState
 	}
 	delete(s.calls, id)
 	if s.byUser[record.CallerID] == id {
@@ -299,5 +310,31 @@ func TestCallManagerDisconnectEndsCurrentCall(t *testing.T) {
 
 	if len(*sent) != 1 || (*sent)[0].userID != 1 || messageType(t, (*sent)[0]) != "call_ended" {
 		t.Fatalf("unexpected messages: %#v", *sent)
+	}
+}
+
+
+func TestCallManagerTimeoutDoesNotDeleteAcceptedCall(t *testing.T) {
+	store := newMemoryCallStore()
+	manager, sent, scheduled := newTestCallManager(store)
+	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Accept(context.Background(), 2, "call-1"); err != nil {
+		t.Fatal(err)
+	}
+	*sent = nil
+
+	(*scheduled)()
+
+	if len(*sent) != 0 {
+		t.Fatalf("accepted call must not emit timeout: %#v", *sent)
+	}
+	record, err := store.Get(context.Background(), "call-1")
+	if err != nil {
+		t.Fatalf("expected accepted call to remain: %v", err)
+	}
+	if record.Status != callStatusActive {
+		t.Fatalf("expected active call, got %s", record.Status)
 	}
 }
