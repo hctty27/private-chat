@@ -65,6 +65,17 @@ describe('MobileChat iOS viewport layout', () => {
   })
 })
 
+describe('MobileChat voice call isolation', () => {
+  it('keeps voice call overlays outside the visual viewport chat shell', () => {
+    expect(mobileChatSource).toContain('<IncomingCallOverlay')
+    expect(mobileChatSource).toContain('<VoiceCallOverlay')
+    expect(mobileChatSource).not.toContain("mobileHistory.pushOverlay(contactId, 'call')")
+    expect(mobileChatSource).not.toContain("state.overlay === 'call'")
+    expect(mobileChatSource).toContain('viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0')
+    expect(mobileChatSource).toContain('useChatScroll(listEl, uid, { virtualized: false })')
+  })
+})
+
 describe('MobileChat message actions', () => {
   it('opens the existing action menu from a touch double tap for every message type', () => {
     expect(mobileChatSource).toContain('const doubleTap = useDoubleTap<Message>((message, point) => {')
@@ -92,7 +103,7 @@ describe('MobileChat message actions', () => {
 
 describe('MobileChat iOS visual polish', () => {
   it('centers the chat identity in a balanced navigation bar', () => {
-    expect(mobileChatSource).toContain('class="chat-head-spacer"')
+    expect(mobileChatSource).toContain('class="mobile-call-button"')
     expect(mobileChatSource).toMatch(/\.chat-head\s*\{[^}]*grid-template-columns:\s*44px minmax\(0, 1fr\) 44px/s)
     expect(mobileChatSource).toMatch(/\.ch-info\s*\{[^}]*text-align:\s*center/s)
   })

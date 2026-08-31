@@ -25,6 +25,7 @@ type App struct {
 	jwt       *auth.JWTManager
 	hub       *Hub
 	relations relationAuthorizer
+	calls     *callManager
 	loc       *time.Location
 	router    *gin.Engine
 }
@@ -93,6 +94,12 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	app.calls = newCallManager(
+		newRedisCallStore(rdb),
+		app.requireContact,
+		func(userID int64) bool { return len(app.hub.GetAll(userID)) > 0 },
+		app.sendToUser,
+	)
 	app.router = router
 	return app, nil
 }
@@ -196,6 +203,8 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/availability", a.getAvailabilityHandler)
+			protected.GET("/webrtc/status", a.webRTCStatusHandler)
+			protected.GET("/webrtc/ice-config", a.iceConfigHandler)
 			protected.PUT("/availability", a.updateAvailabilityHandler)
 			protected.DELETE("/availability", a.clearAvailabilityHandler)
 			protected.GET("/messages/:targetId", a.requireContactParam("targetId"), a.messagesHandler)

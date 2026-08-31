@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaultsGinProductionConfig(t *testing.T) {
@@ -119,5 +120,85 @@ func TestValidateAcceptsStrongJWTSecret(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected configuration to be valid, got %v", err)
+	}
+}
+
+func validWebRTCTestConfig() Config {
+	return Config{JWTSecret: "this-is-a-valid-test-secret-with-32-characters"}
+}
+
+func TestConfigValidateAcceptsDisabledWebRTCWithoutTurn(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = false
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected disabled WebRTC to validate: %v", err)
+	}
+}
+
+func TestConfigValidateAcceptsAllIcePolicy(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "all"
+	cfg.WebRTCStunURL = "stun:turn.example.com:3478"
+	cfg.WebRTCTurnURLs = []string{"turn:turn.example.com:3478?transport=udp"}
+	cfg.WebRTCTurnSecret = "shared-secret"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected config to validate: %v", err)
+	}
+}
+
+func TestConfigValidateAcceptsRelayIcePolicy(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "relay"
+	cfg.WebRTCTurnURLs = []string{"turn:turn.example.com:3478?transport=udp"}
+	cfg.WebRTCTurnSecret = "shared-secret"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected relay config to validate: %v", err)
+	}
+}
+
+func TestConfigValidateRejectsUnknownIcePolicy(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "unknown"
+	cfg.WebRTCTurnURLs = []string{"turn:turn.example.com:3478"}
+	cfg.WebRTCTurnSecret = "shared-secret"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "WEBRTC_ICE_POLICY") {
+		t.Fatalf("expected policy validation error, got %v", err)
+	}
+}
+
+func TestConfigValidateRequiresTurnWhenEnabled(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "relay"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "WEBRTC_TURN_URLS") {
+		t.Fatalf("expected TURN URL validation error, got %v", err)
+	}
+
+	cfg.WebRTCTurnURLs = []string{"turn:turn.example.com:3478"}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "WEBRTC_TURN_SECRET") {
+		t.Fatalf("expected TURN secret validation error, got %v", err)
+	}
+}
+
+func TestConfigLoadUsesWebRTCDefaults(t *testing.T) {
+	t.Setenv("WEBRTC_ENABLED", "")
+	t.Setenv("WEBRTC_ICE_POLICY", "")
+	t.Setenv("WEBRTC_TURN_CREDENTIAL_TTL", "")
+	cfg := Load()
+	if cfg.WebRTCEnabled {
+		t.Fatal("expected WebRTC disabled by default")
+	}
+	if cfg.WebRTCICEPolicy != "all" {
+		t.Fatalf("expected all policy, got %q", cfg.WebRTCICEPolicy)
+	}
+	if cfg.WebRTCTurnCredentialTTL != 10*time.Minute {
+		t.Fatalf("expected 10m credential TTL, got %v", cfg.WebRTCTurnCredentialTTL)
 	}
 }
