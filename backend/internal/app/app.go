@@ -203,6 +203,7 @@ func (a *App) routes() (*gin.Engine, error) {
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/availability", a.getAvailabilityHandler)
+			protected.GET("/webrtc/status", a.webRTCStatusHandler)
 			protected.GET("/webrtc/ice-config", a.iceConfigHandler)
 			protected.PUT("/availability", a.updateAvailabilityHandler)
 			protected.DELETE("/availability", a.clearAvailabilityHandler)
