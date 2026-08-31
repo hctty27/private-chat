@@ -166,3 +166,26 @@ func TestRedisCallStoreFindByUserReturnsRecord(t *testing.T) {
 		t.Fatalf("unexpected record: %+v", actual)
 	}
 }
+
+
+func TestRedisCallStoreDeleteIfStatusPreservesAcceptedCall(t *testing.T) {
+	store, _ := newTestCallStore(t)
+	ctx := context.Background()
+	if err := store.CreateRinging(ctx, testRingingCall("call-1", 1, 2), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MarkActive(ctx, "call-1", 2, time.Unix(200, 0), time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.DeleteIfStatus(ctx, "call-1", callStatusRinging); !errors.Is(err, errCallState) {
+		t.Fatalf("expected state error, got %v", err)
+	}
+	record, err := store.Get(ctx, "call-1")
+	if err != nil {
+		t.Fatalf("expected active call to remain: %v", err)
+	}
+	if record.Status != callStatusActive {
+		t.Fatalf("expected active call, got %s", record.Status)
+	}
+}
