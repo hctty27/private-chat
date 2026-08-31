@@ -376,6 +376,7 @@ onMounted(async () => {
   lockMobileViewport()
   installViewportHandler()
   callStore.ensureBound()
+  void callStore.checkAvailability()
   await chatStore.loadContacts()
   chatStore.connectWs()
   await mobileHistory.replaceList()
