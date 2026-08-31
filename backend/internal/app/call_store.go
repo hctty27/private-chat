@@ -40,6 +40,7 @@ type callStore interface {
 	FindByUser(context.Context, int64) (callRecord, error)
 	MarkActive(context.Context, string, int64, time.Time, time.Duration) (callRecord, error)
 	Delete(context.Context, string) (callRecord, error)
+	DeleteIfStatus(context.Context, string, callStatus) (callRecord, error)
 }
 
 type redisCallStore struct {
@@ -212,6 +213,22 @@ func (s *redisCallStore) MarkActive(
 }
 
 func (s *redisCallStore) Delete(ctx context.Context, callID string) (callRecord, error) {
+	return s.delete(ctx, callID, nil)
+}
+
+func (s *redisCallStore) DeleteIfStatus(
+	ctx context.Context,
+	callID string,
+	expected callStatus,
+) (callRecord, error) {
+	return s.delete(ctx, callID, &expected)
+}
+
+func (s *redisCallStore) delete(
+	ctx context.Context,
+	callID string,
+	expected *callStatus,
+) (callRecord, error) {
 	current, err := s.Get(ctx, callID)
 	if err != nil {
 		return callRecord{}, err
@@ -221,6 +238,7 @@ func (s *redisCallStore) Delete(ctx context.Context, callID string) (callRecord,
 	calleeKey := callUserKey(current.CalleeID)
 	keys := []string{sessionKey, callerKey, calleeKey}
 
+	var deleted callRecord
 	for attempt := 0; attempt < 5; attempt++ {
 		err = s.client.Watch(ctx, func(tx *redis.Tx) error {
 			raw, err := tx.Get(ctx, sessionKey).Bytes()
@@ -238,6 +256,9 @@ func (s *redisCallStore) Delete(ctx context.Context, callID string) (callRecord,
 			if record.ID != callID {
 				return errCallState
 			}
+			if expected != nil && record.Status != *expected {
+				return errCallState
+			}
 
 			mappings, err := tx.MGet(ctx, callerKey, calleeKey).Result()
 			if err != nil {
@@ -253,10 +274,13 @@ func (s *redisCallStore) Delete(ctx context.Context, callID string) (callRecord,
 				}
 				return nil
 			})
+			if err == nil {
+				deleted = record
+			}
 			return err
 		}, keys...)
 		if !errors.Is(err, redis.TxFailedErr) {
-			return current, err
+			return deleted, err
 		}
 	}
 	return callRecord{}, errCallState
