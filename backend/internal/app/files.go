@@ -427,7 +427,8 @@ func safeInlineContentType(contentType string) bool {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	switch contentType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp",
-		"video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/avi", "video/x-msvideo":
+		"video/mp4", "video/webm", "video/ogg", "video/quicktime", "video/avi", "video/x-msvideo",
+		"audio/mpeg", "audio/mp4", "audio/webm", "audio/ogg", "audio/aac", "audio/x-m4a", "audio/wav", "audio/x-wav":
 		return true
 	default:
 		return false
