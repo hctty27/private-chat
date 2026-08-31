@@ -39,7 +39,7 @@ export type MessageLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 export interface MessageReply {
   messageId: number
   senderId: number
-  msgType: 1 | 2 | 3 | 4 | 5
+  msgType: 1 | 2 | 3 | 4 | 5 | 6
   content: string | null
   fileName: string | null
 }
@@ -49,7 +49,7 @@ export interface Message {
   conversationId?: string
   senderId: number
   receiverId: number
-  msgType: 1 | 2 | 3 | 4 | 5
+  msgType: 1 | 2 | 3 | 4 | 5 | 6
   content: string | null
   fileId: number | null
   fileUrl: string | null
@@ -142,7 +142,7 @@ export interface WsClientChat {
   type: 'chat'
   data: {
     receiverId: number
-    msgType: 1 | 2 | 3 | 4 | 5
+    msgType: 1 | 2 | 3 | 4 | 5 | 6
     content: string | null
     fileId: number | null
     fileUrl: string | null
