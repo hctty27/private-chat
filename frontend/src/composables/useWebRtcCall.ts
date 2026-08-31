@@ -56,12 +56,16 @@ export function useWebRtcCall(
       getIceConfig(),
     ])
 
-    if (mediaResult.status === 'rejected' || configResult.status === 'rejected') {
-      if (mediaResult.status === 'fulfilled') {
-        for (const track of mediaResult.value.getTracks()) track.stop()
-      }
-      const reason = mediaResult.status === 'rejected' ? mediaResult.reason : configResult.reason
-      throw reason instanceof Error ? reason : new Error('voice call preparation failed')
+    if (mediaResult.status === 'rejected') {
+      throw mediaResult.reason instanceof Error
+        ? mediaResult.reason
+        : new Error('voice call preparation failed')
+    }
+    if (configResult.status === 'rejected') {
+      for (const track of mediaResult.value.getTracks()) track.stop()
+      throw configResult.reason instanceof Error
+        ? configResult.reason
+        : new Error('voice call preparation failed')
     }
 
     localStream = mediaResult.value
