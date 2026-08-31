@@ -9,9 +9,9 @@ import (
 )
 
 type memoryCallStore struct {
-	mu      sync.Mutex
-	calls   map[string]callRecord
-	byUser  map[int64]string
+	mu     sync.Mutex
+	calls  map[string]callRecord
+	byUser map[int64]string
 }
 
 func newMemoryCallStore() *memoryCallStore {
