@@ -30,7 +30,13 @@ type Config struct {
 	JWTSecret           string
 	JWTExpiration       time.Duration
 	MessagePageSize     int
-	TimeZone            string
+	TimeZone                 string
+	WebRTCEnabled            bool
+	WebRTCICEPolicy          string
+	WebRTCStunURL            string
+	WebRTCTurnURLs           []string
+	WebRTCTurnSecret         string
+	WebRTCTurnCredentialTTL  time.Duration
 }
 
 func Load() Config {
@@ -56,7 +62,13 @@ func Load() Config {
 		JWTSecret:           envOrDefault("JWT_SECRET", ""),
 		JWTExpiration:       envDurationOrDefault("JWT_EXPIRATION", 24*time.Hour),
 		MessagePageSize:     envIntOrDefault("MESSAGE_PAGE_SIZE", 20),
-		TimeZone:            envOrDefault("TIME_ZONE", "Asia/Shanghai"),
+		TimeZone:                 envOrDefault("TIME_ZONE", "Asia/Shanghai"),
+		WebRTCEnabled:            envBoolOrDefault("WEBRTC_ENABLED", false),
+		WebRTCICEPolicy:          envOrDefault("WEBRTC_ICE_POLICY", "all"),
+		WebRTCStunURL:            envOrDefault("WEBRTC_STUN_URL", ""),
+		WebRTCTurnURLs:           envList("WEBRTC_TURN_URLS"),
+		WebRTCTurnSecret:         envOrDefault("WEBRTC_TURN_SECRET", ""),
+		WebRTCTurnCredentialTTL:  envDurationOrDefault("WEBRTC_TURN_CREDENTIAL_TTL", 10*time.Minute),
 	}
 }
 
@@ -67,6 +79,24 @@ func (c Config) Validate() error {
 	}
 	if len(secret) < 32 {
 		return fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	}
+	if !c.WebRTCEnabled {
+		return nil
+	}
+	if c.WebRTCICEPolicy != "all" && c.WebRTCICEPolicy != "relay" {
+		return fmt.Errorf("WEBRTC_ICE_POLICY must be all or relay")
+	}
+	if c.WebRTCICEPolicy == "all" && strings.TrimSpace(c.WebRTCStunURL) == "" {
+		return fmt.Errorf("WEBRTC_STUN_URL is required when WEBRTC_ICE_POLICY=all")
+	}
+	if len(c.WebRTCTurnURLs) == 0 {
+		return fmt.Errorf("WEBRTC_TURN_URLS is required when WEBRTC_ENABLED=true")
+	}
+	if strings.TrimSpace(c.WebRTCTurnSecret) == "" {
+		return fmt.Errorf("WEBRTC_TURN_SECRET is required when WEBRTC_ENABLED=true")
+	}
+	if c.WebRTCTurnCredentialTTL <= 0 {
+		return fmt.Errorf("WEBRTC_TURN_CREDENTIAL_TTL must be positive")
 	}
 	return nil
 }
