@@ -315,7 +315,6 @@ func TestCallManagerDisconnectEndsCurrentCall(t *testing.T) {
 	}
 }
 
-
 func TestCallManagerTimeoutDoesNotDeleteAcceptedCall(t *testing.T) {
 	store := newMemoryCallStore()
 	manager, sent, scheduled := newTestCallManager(store)
@@ -340,7 +339,6 @@ func TestCallManagerTimeoutDoesNotDeleteAcceptedCall(t *testing.T) {
 		t.Fatalf("expected active call, got %s", record.Status)
 	}
 }
-
 
 func TestCallManagerCancelEndsCallWhenAcceptWinsRace(t *testing.T) {
 	store := newMemoryCallStore()
