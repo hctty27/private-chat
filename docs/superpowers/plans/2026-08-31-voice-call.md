@@ -1347,4 +1347,182 @@ export POSTGRES_DB=private_chat
 export REDIS_PASSWORD=redis-password
 export R2_ENDPOINT=https://example.r2.cloudflarestorage.com
 export R2_ACCESS_KEY=access-key
-expor
+export R2_SECRET_KEY=secret-key
+export R2_BUCKET=bucket
+export JWT_SECRET=this-is-a-ci-only-secret-with-32-characters
+export WEBRTC_STUN_URL=stun:turn.example.com:3478
+export WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp
+export WEBRTC_TURN_SECRET=ci-turn-shared-secret
+export WEBRTC_TURN_REALM=turn.example.com
+export WEBRTC_TURN_EXTERNAL_IP=203.0.113.10
+
+docker compose config --quiet
+docker compose --profile voice config --quiet
+git add compose.yml .env.example README.md
+git commit -m "ops: add coturn voice profile"
+```
+
+Expected: both Compose validations pass.
+
+---
+
+### Task 9: CI, Documentation, and End-to-End Verification
+
+**Files:**
+- Modify: `.github/workflows/ci.yml`
+- Modify: `README.md`
+- Modify: `frontend/package.json` only if the new test selection benefits from a named script; otherwise leave unchanged.
+
+**Interfaces:**
+- No new runtime interfaces.
+- Produces CI coverage for all new call state, WebRTC and UI units.
+
+- [ ] **Step 1: Extend backend CI**
+
+The existing backend job already runs `go test ./...`; miniredis requires no service.
+
+The Compose job must add safe placeholders:
+
+```yaml
+WEBRTC_STUN_URL: stun:turn.example.com:3478
+WEBRTC_TURN_URLS: turn:turn.example.com:3478?transport=udp
+WEBRTC_TURN_SECRET: ci-only-turn-shared-secret
+WEBRTC_TURN_REALM: turn.example.com
+WEBRTC_TURN_EXTERNAL_IP: 203.0.113.10
+```
+
+Add a second validation command:
+
+```yaml
+- name: Validate Compose configuration
+  run: |
+    docker compose config --quiet
+    docker compose --profile voice config --quiet
+```
+
+- [ ] **Step 2: Extend frontend CI test selection**
+
+Update “Test chat flows” to include:
+
+```text
+src/composables/useWebRtcCall.test.ts
+src/stores/call.test.ts
+src/components/VoiceCallOverlay.test.ts
+src/views/VoiceCallIntegration.test.ts
+src/views/MobileChat.ios.test.ts
+```
+
+Keep `npm run build` as the final type-check/build gate.
+
+- [ ] **Step 3: Update README feature/security text**
+
+Add:
+
+- “一对一语音通话（WebRTC，TURN 兜底）” to features.
+- WebSocket call event list.
+- `GET /api/webrtc/ice-config` API row.
+- Explicit statement that calls are not stored in `t_message`.
+- TURN credentials are temporary and HMAC-derived.
+- iOS Safari background/lock-screen limitation.
+- Required public TURN ports.
+- `WEBRTC_ICE_POLICY=relay` privacy mode trade-off: hides direct peer network path but routes all media through TURN and consumes server bandwidth.
+
+Do not change the existing statement that chat messages/files are not application-level E2EE.
+
+- [ ] **Step 4: Run complete local verification**
+
+Backend:
+
+```bash
+cd backend
+gofmt -w .
+go test ./...
+go vet ./...
+cd ..
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm ci
+npm run test -- \
+  src/api/imageUpload.test.ts \
+  src/composables/useAttachmentIngress.test.ts \
+  src/utils/uploadQueue.test.ts \
+  src/stores/chat.test.ts \
+  src/components/MessageStatusIndicator.test.ts \
+  src/utils/messageReply.test.ts \
+  src/composables/useWebRtcCall.test.ts \
+  src/stores/call.test.ts \
+  src/components/VoiceCallOverlay.test.ts \
+  src/views/VoiceCallIntegration.test.ts \
+  src/views/MobileChat.ios.test.ts
+npm run build
+cd ..
+```
+
+Compose:
+
+```bash
+docker compose config --quiet
+docker compose --profile voice config --quiet
+```
+
+Expected: all commands PASS.
+
+- [ ] **Step 5: Perform real browser/network verification**
+
+Use two authenticated test users and record pass/fail for:
+
+```text
+1. Chrome desktop A ↔ Chrome desktop B, same LAN
+2. Chrome desktop ↔ iPhone Safari, different networks
+3. iPhone Safari ↔ iPhone Safari, both foreground
+4. Callee denies microphone
+5. Caller cancels while ringing
+6. Callee rejects
+7. Callee is already in another call -> busy
+8. Caller closes page during active call -> peer sees disconnected/end
+9. Network interruption under 10 seconds -> call recovers when ICE state recovers
+10. Forced WEBRTC_ICE_POLICY=relay -> successful call through TURN
+```
+
+For the relay test, inspect `RTCPeerConnection.getStats()` manually in browser diagnostics and verify the selected candidate pair contains a `relay` candidate. Do not add SDP or candidate strings to application logs.
+
+- [ ] **Step 6: Final commit**
+
+```bash
+git add .github/workflows/ci.yml README.md
+git commit -m "test: verify voice call flows"
+```
+
+- [ ] **Step 7: Final branch verification**
+
+Run:
+
+```bash
+git status --short
+git log --oneline --decorate -10
+```
+
+Expected:
+
+- working tree clean;
+- voice call work is split into reviewable commits;
+- no database migration was created;
+- no TURN shared secret appears in tracked files other than placeholder text.
+
+Search tracked source:
+
+```bash
+git grep -nE 'static-auth-secret=.*[^<{]' -- ':!docs/superpowers/*' || true
+git grep -n 'webrtc_offer' backend frontend
+git grep -n 'msg_type.*7\|msgType: 7' backend frontend || true
+```
+
+Expected:
+
+- no hard-coded real TURN secret;
+- expected WebRTC protocol references exist;
+- no call message type was added to `t_message`.
