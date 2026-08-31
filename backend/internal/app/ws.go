@@ -161,6 +161,12 @@ func (s *Session) readLoop() {
 			}
 		case "heartbeat":
 			s.app.handleHeartbeat(s.userID, s)
+		default:
+			if isCallWebSocketType(msgType) {
+				if err := s.app.handleWsCall(s.userID, msgType, data); err != nil {
+					log.Printf("handle call signal failed for user %d: %v", s.userID, err)
+				}
+			}
 		}
 	}
 }
@@ -187,6 +193,9 @@ func (a *App) registerSession(session *Session) {
 func (a *App) unregisterSession(session *Session) {
 	if a.hub.Remove(session.userID, session) {
 		ctx := context.Background()
+		if a.calls != nil {
+			a.calls.Disconnect(ctx, session.userID)
+		}
 		now := time.Now().UTC()
 		_ = a.redis.Del(ctx, onlineKey(session.userID)).Err()
 		if a.presence != nil {
