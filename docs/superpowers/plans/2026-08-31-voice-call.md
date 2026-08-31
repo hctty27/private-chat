@@ -109,4 +109,177 @@
       CalleeID   int64      `json:"calleeId"`
       Status     callStatus `json:"status"`
       CreatedAt  time.Time  `json:"createdAt"`
-      AcceptedA
+      AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
+  }
+
+  type callStore interface {
+      CreateRinging(context.Context, callRecord, time.Duration) error
+      Get(context.Context, string) (callRecord, error)
+      FindByUser(context.Context, int64) (callRecord, error)
+      MarkActive(context.Context, string, int64, time.Time, time.Duration) (callRecord, error)
+      Delete(context.Context, string) (callRecord, error)
+  }
+  ```
+- Produces sentinel errors:
+  ```go
+  var (
+      errCallNotFound = errors.New("call not found")
+      errCallBusy     = errors.New("user already has a call")
+      errCallState    = errors.New("invalid call state")
+      errCallRole     = errors.New("invalid call role")
+  )
+  ```
+- Key format:
+  ```text
+  voice_call:session:{callId}
+  voice_call:user:{userId}
+  ```
+
+- [ ] **Step 1: Add miniredis test dependency**
+
+Run:
+
+```bash
+cd backend
+go get github.com/alicebob/miniredis/v2@v2.38.0
+```
+
+Expected: `go.mod` / `go.sum` include `github.com/alicebob/miniredis/v2`.
+
+- [ ] **Step 2: Write failing store tests**
+
+Create `backend/internal/app/call_store_test.go` with tests that use a real `go-redis` client against `miniredis.RunT(t)`:
+
+```go
+func TestRedisCallStoreCreateRingingClaimsBothUsers(t *testing.T) {
+    store, mini := newTestCallStore(t)
+    record := callRecord{
+        ID: "call-1", CallerID: 1, CalleeID: 2,
+        Status: callStatusRinging, CreatedAt: time.Unix(100, 0).UTC(),
+    }
+
+    if err := store.CreateRinging(context.Background(), record, time.Minute); err != nil {
+        t.Fatalf("create ringing: %v", err)
+    }
+
+    mini.CheckGet(t, "voice_call:user:1", "call-1")
+    mini.CheckGet(t, "voice_call:user:2", "call-1")
+}
+```
+
+Also add:
+
+```go
+func TestRedisCallStoreRejectsSecondCallForEitherBusyUser(t *testing.T)
+func TestRedisCallStoreConcurrentCrossInviteCreatesOnlyOneCall(t *testing.T)
+func TestRedisCallStoreMarkActiveRequiresCalleeAndRingingState(t *testing.T)
+func TestRedisCallStoreMarkActiveRefreshesAllTTLs(t *testing.T)
+func TestRedisCallStoreDeleteOnlyRemovesMappingsOwnedByCall(t *testing.T)
+func TestRedisCallStoreFindByUserReturnsCallRecord(t *testing.T)
+```
+
+For TTL tests use `mini.TTL(key)` rather than sleeping.
+
+- [ ] **Step 3: Run tests to verify failure**
+
+Run:
+
+```bash
+cd backend
+go test ./internal/app -run 'TestRedisCallStore' -count=1
+```
+
+Expected: FAIL because `newRedisCallStore`, `callRecord`, and store methods do not exist.
+
+- [ ] **Step 4: Implement the Redis store**
+
+Create `backend/internal/app/call_store.go`.
+
+Use JSON for `voice_call:session:*` values and string values for `voice_call:user:*`.
+
+`CreateRinging` must use Redis `WATCH` on both user keys and retry `redis.TxFailedErr` up to 5 times:
+
+```go
+func (s *redisCallStore) CreateRinging(ctx context.Context, record callRecord, ttl time.Duration) error {
+    callerKey := callUserKey(record.CallerID)
+    calleeKey := callUserKey(record.CalleeID)
+
+    for attempt := 0; attempt < 5; attempt++ {
+        err := s.client.Watch(ctx, func(tx *redis.Tx) error {
+            values, err := tx.MGet(ctx, callerKey, calleeKey).Result()
+            if err != nil {
+                return err
+            }
+            if values[0] != nil || values[1] != nil {
+                return errCallBusy
+            }
+
+            raw, err := json.Marshal(record)
+            if err != nil {
+                return err
+            }
+
+            _, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+                pipe.Set(ctx, callSessionKey(record.ID), raw, ttl)
+                pipe.Set(ctx, callerKey, record.ID, ttl)
+                pipe.Set(ctx, calleeKey, record.ID, ttl)
+                return nil
+            })
+            return err
+        }, callerKey, calleeKey)
+
+        if !errors.Is(err, redis.TxFailedErr) {
+            return err
+        }
+    }
+    return errCallBusy
+}
+```
+
+`MarkActive` and `Delete` must similarly WATCH the session key plus user mapping keys so they cannot overwrite/delete a newer call.
+
+- [ ] **Step 5: Run store tests**
+
+Run:
+
+```bash
+cd backend
+go test ./internal/app -run 'TestRedisCallStore' -count=1
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Run backend suite and commit**
+
+Run:
+
+```bash
+cd backend
+gofmt -w internal/app/call_store.go internal/app/call_store_test.go
+go test ./...
+go vet ./...
+git add backend/go.mod backend/go.sum backend/internal/app/call_store.go backend/internal/app/call_store_test.go
+git commit -m "feat: add redis voice call state store"
+```
+
+Expected: all backend checks pass.
+
+---
+
+### Task 2: Call Manager and WebSocket Protocol
+
+**Files:**
+- Create: `backend/internal/app/call_manager.go`
+- Create: `backend/internal/app/call_manager_test.go`
+- Create: `backend/internal/app/call_ws.go`
+- Create: `backend/internal/app/call_ws_test.go`
+- Modify: `backend/internal/app/app.go`
+- Modify: `backend/internal/app/ws.go`
+
+**Interfaces:**
+- Consumes: `callStore` from Task 1.
+- Produces:
+  ```go
+  type callManager struct {
+      store          callStore
+      requireContact func(conte
