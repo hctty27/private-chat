@@ -167,7 +167,6 @@ func TestRedisCallStoreFindByUserReturnsRecord(t *testing.T) {
 	}
 }
 
-
 func TestRedisCallStoreDeleteIfStatusPreservesAcceptedCall(t *testing.T) {
 	store, _ := newTestCallStore(t)
 	ctx := context.Background()
