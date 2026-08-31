@@ -123,7 +123,6 @@ func TestValidateAcceptsStrongJWTSecret(t *testing.T) {
 	}
 }
 
-
 func validWebRTCTestConfig() Config {
 	return Config{JWTSecret: "this-is-a-valid-test-secret-with-32-characters"}
 }
