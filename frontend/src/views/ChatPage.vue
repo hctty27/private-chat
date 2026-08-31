@@ -28,6 +28,7 @@
             <div class="ch-status" :title="chatStore.currentContact.availabilityNote || undefined">{{ formatContactPresence(chatStore.currentContact) }}</div>
           </div>
           <VoiceCallButton
+            v-if="callStore.available"
             class="desktop-call-button"
             :disabled="!chatStore.wsConnected || callStore.phase !== 'idle'"
             @call="startCurrentCall"
@@ -336,6 +337,7 @@ const {
 
 onMounted(async () => {
   callStore.ensureBound()
+  void callStore.checkAvailability()
   await chatStore.loadContacts()
   chatStore.connectWs()
 })
