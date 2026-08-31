@@ -991,4 +991,179 @@ Required tests:
 it('does not send call_invite when prepare fails')
 it('sends call_invite only after prepare succeeds')
 it('records callId from call_ringing')
-it('enters incoming state from call_incoming even when no conversation is selected
+it('enters incoming state from call_incoming even when no conversation is selected')
+it('callee prepares media before sending call_accept')
+it('sends media_unavailable rejection if callee prepare fails')
+it('caller starts offer only after call_accepted')
+it('routes offer answer and ice to the webrtc controller')
+it('returns to idle after busy unavailable rejected cancelled timeout and ended')
+it('sends hangup after local peer failure when a callId exists')
+it('stops tracks and timers on kicked websocket message')
+it('cleanupLocal is idempotent')
+```
+
+- [ ] **Step 2: Implement idempotent WS binding**
+
+`ensureBound()` subscribes exactly once:
+
+```ts
+let unsubscribeWs: (() => void) | null = null
+
+function ensureBound() {
+  if (unsubscribeWs) return
+  const chat = useChatStore()
+  unsubscribeWs = chat.onWsMessage(handleServerMessage)
+}
+```
+
+Initialize a `watch` on `chat.wsConnected`. If an established/outgoing/incoming call exists and the socket becomes disconnected, display network failure and run local cleanup; the server remains authoritative for peer notification on Session removal.
+
+- [ ] **Step 3: Implement outgoing preparation order**
+
+```ts
+async function startCall(contact: Contact) {
+  ensureBound()
+  if (phase.value !== 'idle') return
+
+  peerUserId.value = contact.userId
+  peerName.value = contact.nickname
+  error.value = ''
+
+  try {
+    await rtc.prepare()
+  } catch {
+    error.value = '无法访问麦克风或通话服务不可用'
+    cleanupLocal()
+    return
+  }
+
+  phase.value = 'outgoing'
+  useChatStore().sendWsMessage({
+    type: 'call_invite',
+    data: { receiverId: contact.userId },
+  })
+}
+```
+
+If the user presses cancel before `call_ringing` provides the `callId`, set `cancelPendingInvite = true`; when `call_ringing` arrives, immediately send `call_cancel`.
+
+- [ ] **Step 4: Implement incoming/accept/reject**
+
+On `call_incoming`, resolve `peerName` from `chat.contacts` by `callerId`, defaulting to `联系人`.
+
+On accept:
+
+```ts
+try {
+  await rtc.prepare()
+  phase.value = 'connecting'
+  chat.sendWsMessage({ type: 'call_accept', data: { callId: callId.value! } })
+} catch {
+  chat.sendWsMessage({
+    type: 'call_reject',
+    data: { callId: callId.value!, reason: 'media_unavailable' },
+  })
+  error.value = '无法访问麦克风或通话服务不可用'
+  cleanupLocal()
+}
+```
+
+- [ ] **Step 5: Implement WebRTC message handling**
+
+- `call_accepted`: if this client is caller, `await rtc.startCaller()`.
+- `webrtc_offer`: `await rtc.acceptOffer(data.sdp)`.
+- `webrtc_answer`: `await rtc.applyAnswer(data.sdp)`.
+- `webrtc_ice`: `await rtc.addRemoteIce(data.candidate)`.
+- `rtc.onConnected`: phase `connected`, set `connectedAt`, start one 1-second duration timer.
+- `rtc.onFailed`: send `call_hangup` with reason `failed` if `callId` exists; local phase `failed`; cleanup media and timer.
+
+- [ ] **Step 6: Implement terminal-event reset policy**
+
+For `call_busy`, `call_unavailable`, `call_rejected`, `call_cancelled`, `call_timeout`, `call_ended`:
+
+1. Set a user-visible `error`/terminal message when relevant.
+2. Stop media/timers.
+3. Keep `ended`/`failed` phase for 1200 ms so UI can display the reason.
+4. Reset call-specific identifiers to idle after that delay.
+
+Use one reset timer and clear it on every new call.
+
+- [ ] **Step 7: Run tests/typecheck and commit**
+
+Run:
+
+```bash
+cd frontend
+npm run test -- src/stores/call.test.ts
+npm run typecheck
+git add src/stores/call.ts src/stores/call.test.ts
+git commit -m "feat: add voice call client state machine"
+```
+
+Expected: PASS.
+
+---
+
+### Task 7: Desktop and Mobile Voice Call UI
+
+**Files:**
+- Create: `frontend/src/components/VoiceCallButton.vue`
+- Create: `frontend/src/components/VoiceCallOverlay.vue`
+- Create: `frontend/src/components/IncomingCallOverlay.vue`
+- Create: `frontend/src/components/VoiceCallOverlay.test.ts`
+- Create: `frontend/src/views/VoiceCallIntegration.test.ts`
+- Modify: `frontend/src/views/ChatPage.vue`
+- Modify: `frontend/src/views/MobileChat.vue`
+- Modify: `frontend/src/views/MobileChat.ios.test.ts`
+
+**Interfaces:**
+- Consumes: `useCallStore()`.
+- `VoiceCallButton` props:
+  ```ts
+  defineProps<{
+    disabled?: boolean
+    label?: string
+  }>()
+  ```
+- `VoiceCallButton` emits `call`.
+- Overlay components emit `accept`, `reject`, `hangup`, `toggle-mute`, `resume-audio` as applicable.
+
+- [ ] **Step 1: Write failing shared UI tests**
+
+`VoiceCallOverlay.test.ts`:
+
+```ts
+it('shows calling text for outgoing phase')
+it('shows mm:ss duration when connected')
+it('emits toggle-mute and hangup')
+it('shows terminal error text')
+```
+
+`IncomingCallOverlay`:
+
+```ts
+it('shows caller name and emits accept/reject')
+```
+
+Use `@vue/test-utils`.
+
+- [ ] **Step 2: Implement shared components**
+
+`VoiceCallButton.vue` must use a real `<button type="button">`, 44px minimum mobile touch target, and inline SVG phone icon; no emoji glyph.
+
+`VoiceCallOverlay.vue` root style must be viewport-fixed:
+
+```css
+.voice-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+```
+
+Do not place it inside `.msg-scroll`.
+
+`IncomingCallOverlay.vue` uses th
