@@ -226,6 +226,7 @@ jobs:
             src/components/MessageStatusIndicator.test.ts \
             src/utils/messageReply.test.ts \
             src/composables/useWebRtcCall.test.ts \
+            src/composables/useIncomingCallAlert.test.ts \
             src/stores/call.test.ts \
             src/components/VoiceCallOverlay.test.ts \
             src/views/VoiceCallIntegration.test.ts \
