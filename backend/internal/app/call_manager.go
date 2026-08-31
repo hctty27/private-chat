@@ -98,11 +98,8 @@ func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64) erro
 
 func (m *callManager) timeoutRinging(callID string) {
 	ctx := context.Background()
-	record, err := m.store.Get(ctx, callID)
-	if err != nil || record.Status != callStatusRinging {
-		return
-	}
-	if _, err := m.store.Delete(ctx, callID); err != nil {
+	record, err := m.store.DeleteIfStatus(ctx, callID, callStatusRinging)
+	if err != nil {
 		return
 	}
 	payload := callMessage("call_timeout", gin.H{"callId": callID})
@@ -138,7 +135,7 @@ func (m *callManager) Reject(ctx context.Context, userID int64, callID, reason s
 	if reason != "rejected" && reason != "media_unavailable" {
 		return errCallState
 	}
-	if _, err := m.store.Delete(ctx, callID); err != nil {
+	if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusRinging); err != nil {
 		return err
 	}
 	m.send(record.CallerID, callMessage("call_rejected", gin.H{
@@ -159,7 +156,7 @@ func (m *callManager) Cancel(ctx context.Context, userID int64, callID string) e
 	if userID != record.CallerID {
 		return errCallRole
 	}
-	if _, err := m.store.Delete(ctx, callID); err != nil {
+	if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusRinging); err != nil {
 		return err
 	}
 	m.send(record.CalleeID, callMessage("call_cancelled", gin.H{"callId": callID}))
@@ -184,7 +181,7 @@ func (m *callManager) Hangup(ctx context.Context, userID int64, callID, reason s
 	if reason != "hangup" && reason != "failed" {
 		return errCallState
 	}
-	if _, err := m.store.Delete(ctx, callID); err != nil {
+	if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusActive); err != nil {
 		return err
 	}
 	m.send(peerID, callMessage("call_ended", gin.H{
