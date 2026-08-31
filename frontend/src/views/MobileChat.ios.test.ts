@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const mainCssSource = readFileSync(resolve(process.cwd(), 'src/assets/main.css'), 'utf8')
 const mobileChatSource = readFileSync(resolve(process.cwd(), 'src/views/MobileChat.vue'), 'utf8')
+const audioMessageSource = readFileSync(resolve(process.cwd(), 'src/components/AudioMessageCard.vue'), 'utf8')
 
 describe('MobileChat iOS viewport layout', () => {
   it('overrides the mobile document fixed-position lock', () => {
@@ -87,6 +88,16 @@ describe('MobileChat message actions', () => {
     expect(mobileChatSource).toContain('const clickAt = Date.now()')
     expect(mobileChatSource).toContain('if (suppressNativeClickUntil > clickAt) return')
     expect(mobileChatSource).toContain('}, 340)')
+  })
+
+  it('lets voice taps reach the message double-tap recognizer and defers playback', () => {
+    expect(mobileChatSource).toContain(':voice-tap-delay-ms="340"')
+    expect(mobileChatSource).toContain(':suppress-voice-playback-until="voicePlaybackSuppressedUntil"')
+    expect(mobileChatSource).toContain('voicePlaybackSuppressedUntil.value = until')
+    expect(audioMessageSource).toContain('@click.stop="requestTogglePlayback"')
+    expect(audioMessageSource).not.toContain('@pointerdown.stop')
+    expect(audioMessageSource).toContain('if (props.suppressPlaybackUntil > clickAt) return')
+    expect(audioMessageSource).toContain('touch-action: manipulation')
   })
 })
 
