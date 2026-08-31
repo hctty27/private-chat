@@ -35,6 +35,22 @@ export function useChatMessageUi(uid: Ref<number>) {
     return (message.msgType === 2 || message.msgType === 3 || message.msgType === 5 || message.msgType === 6) && !message.fileUrl
   }
 
+  function isRichMediaMessage(message: Pick<Message, 'msgType'>) {
+    return message.msgType === 2 || message.msgType === 5 || message.msgType === 6
+  }
+
+  function isStandaloneVisualMedia(message: Pick<Message, 'msgType' | 'replyToMessageId'>) {
+    return (message.msgType === 2 || message.msgType === 5) && !message.replyToMessageId
+  }
+
+  function hasInlineMediaStatus(message: Pick<Message, 'msgType' | 'localStatus'>) {
+    if (!isRichMediaMessage(message)) return false
+    return message.localStatus === 'upload_queued'
+      || message.localStatus === 'uploading'
+      || message.localStatus === 'failed'
+      || message.localStatus === 'cancelled'
+  }
+
   function pendingMediaText(message: Message) {
     if (message.msgType === 2) return '📷 图片准备中'
     if (message.msgType === 5) return '🎬 视频准备中'
@@ -69,6 +85,9 @@ export function useChatMessageUi(uid: Ref<number>) {
     isLastSelfMessage,
     shouldShowMessageStatus,
     isPendingMediaMessage,
+    isRichMediaMessage,
+    isStandaloneVisualMedia,
+    hasInlineMediaStatus,
     pendingMediaText,
     bubbleType,
     onImageLoaded,
