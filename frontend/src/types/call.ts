@@ -10,6 +10,10 @@ export type CallPhase =
 export type CallEndReason = 'hangup' | 'failed' | 'disconnected'
 export type CallRejectReason = 'rejected' | 'media_unavailable'
 
+export interface WebRTCStatus {
+  enabled: boolean
+}
+
 export interface WebRTCIceConfig {
   iceServers: RTCIceServer[]
   iceTransportPolicy: RTCIceTransportPolicy
