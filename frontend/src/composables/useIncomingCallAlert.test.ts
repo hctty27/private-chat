@@ -34,7 +34,7 @@ describe('useIncomingCallAlert', () => {
       createGain: vi.fn(() => gain),
       close: vi.fn(async () => undefined),
     }
-    const AudioContextMock = vi.fn(() => context)
+    const AudioContextMock = vi.fn(function AudioContextMock() { return context })
     const vibrate = vi.fn(() => true)
 
     vi.stubGlobal('AudioContext', AudioContextMock)
@@ -89,7 +89,7 @@ describe('useIncomingCallAlert', () => {
       })),
       close: vi.fn(async () => undefined),
     }
-    const AudioContextMock = vi.fn(() => context)
+    const AudioContextMock = vi.fn(function AudioContextMock() { return context })
     vi.stubGlobal('AudioContext', AudioContextMock)
     Object.defineProperty(window, 'AudioContext', {
       configurable: true,
