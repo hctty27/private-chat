@@ -85,6 +85,9 @@ func iceCandidateFromData(data map[string]any) (map[string]any, error) {
 }
 
 func (a *App) handleWsCall(userID int64, msgType string, data map[string]any) error {
+	if !a.cfg.WebRTCEnabled {
+		return fmt.Errorf("webrtc disabled")
+	}
 	if a.calls == nil {
 		return fmt.Errorf("call manager unavailable")
 	}
