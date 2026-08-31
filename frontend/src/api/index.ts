@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, Availability, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse, FileMultipartCompletedPart, WebRTCIceConfig } from '../types'
+import type { ApiResponse, Availability, LoginResponse, SessionResponse, Contact, MessagesResponse, FileUploadResponse, FilePresignUploadResponse, FileMultipartCompletedPart, WebRTCIceConfig, WebRTCStatus } from '../types'
 import { forceLogout } from '../auth/session'
 
 const api = axios.create({
@@ -34,6 +34,10 @@ export function checkSession() {
 
 export function getContacts() {
   return api.get<ApiResponse<Contact[]>>('/api/contacts')
+}
+
+export function getWebRTCStatus() {
+  return api.get<ApiResponse<WebRTCStatus>>('/api/webrtc/status')
 }
 
 export function getWebRTCIceConfig() {
