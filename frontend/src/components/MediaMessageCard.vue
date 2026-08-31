@@ -47,6 +47,8 @@
       v-else-if="message.msgType === 6 && message.fileUrl"
       :url="message.fileUrl"
       :file-name="message.fileName"
+      :tap-delay-ms="voiceTapDelayMs"
+      :suppress-playback-until="suppressVoicePlaybackUntil"
     />
 
     <div v-else-if="message.msgType === 6" class="audio-pending" aria-label="语音准备中">
@@ -94,8 +96,12 @@ import type { Message } from '../types'
 const props = withDefaults(defineProps<{
   message: Message
   lazyImage?: boolean
+  voiceTapDelayMs?: number
+  suppressVoicePlaybackUntil?: number
 }>(), {
   lazyImage: true,
+  voiceTapDelayMs: 0,
+  suppressVoicePlaybackUntil: 0,
 })
 
 const emit = defineEmits<{
