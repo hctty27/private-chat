@@ -40,6 +40,24 @@ export const useChatStore = defineStore('chat', () => {
   let recoveringMessages = false
   let recoveredNoticeTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectCheckTimer: ReturnType<typeof setTimeout> | null = null
+  const wsMessageListeners = new Set<(message: WsServerMessage) => void>()
+
+  function onWsMessage(listener: (message: WsServerMessage) => void) {
+    wsMessageListeners.add(listener)
+    return () => {
+      wsMessageListeners.delete(listener)
+    }
+  }
+
+  function notifyWsMessage(message: WsServerMessage) {
+    for (const listener of wsMessageListeners) {
+      try {
+        listener(message)
+      } catch (error) {
+        console.error('WebSocket listener failed', error)
+      }
+    }
+  }
 
   const sortedContacts = computed(() =>
     [...contacts.value].sort((a, b) => {
@@ -792,6 +810,7 @@ export const useChatStore = defineStore('chat', () => {
       if (ws.value !== socket) return
       try {
         const data: WsServerMessage = JSON.parse(event.data)
+        notifyWsMessage(data)
         if (data.type === 'kicked') {
           intentionalClose = true
           clearState()
@@ -949,5 +968,6 @@ export const useChatStore = defineStore('chat', () => {
     reconnectNow,
     clearState,
     sendWsMessage,
+    onWsMessage,
   }
 })
