@@ -620,4 +620,188 @@ WEBRTC_TURN_SECRET=<replace_with_long_random_turn_shared_secret>
 WEBRTC_TURN_CREDENTIAL_TTL=10m
 ```
 
-Add the same variables to th
+Add the same variables to the backend `environment:` list in `compose.yml`.
+
+Do not expose `WEBRTC_TURN_SECRET` to the frontend service.
+
+- [ ] **Step 6: Run tests and commit**
+
+Run:
+
+```bash
+cd backend
+gofmt -w internal/config/config.go internal/config/config_test.go internal/app/webrtc.go internal/app/webrtc_test.go internal/app/app.go
+go test ./...
+go vet ./...
+cd ..
+docker compose config --quiet
+git add backend .env.example compose.yml
+git commit -m "feat: issue temporary turn credentials"
+```
+
+Expected: PASS.
+
+---
+
+### Task 4: Frontend Call Protocol Types and WebSocket Observer
+
+**Files:**
+- Create: `frontend/src/types/call.ts`
+- Modify: `frontend/src/types/index.ts`
+- Modify: `frontend/src/api/index.ts`
+- Modify: `frontend/src/stores/chat.ts`
+- Modify: `frontend/src/stores/chat.test.ts`
+
+**Interfaces:**
+- Produces:
+  ```ts
+  export interface WebRtcIceConfig {
+    iceServers: RTCIceServer[]
+    iceTransportPolicy: RTCIceTransportPolicy
+  }
+
+  export type CallPhase =
+    | 'idle'
+    | 'outgoing'
+    | 'incoming'
+    | 'connecting'
+    | 'connected'
+    | 'ended'
+    | 'failed'
+  ```
+- `useChatStore()` additionally produces:
+  ```ts
+  onWsMessage(listener: (message: WsServerMessage) => void): () => void
+  ```
+
+- [ ] **Step 1: Write failing observer test**
+
+Add to `frontend/src/stores/chat.test.ts`:
+
+```ts
+it('notifies websocket observers about call events without owning call state', () => {
+  const store = useChatStore()
+  const seen: WsServerMessage[] = []
+  const unsubscribe = store.onWsMessage((message) => seen.push(message))
+
+  store.handleWsMessageForTest?.({
+    type: 'call_incoming',
+    data: { callId: 'call-1', callerId: 2 },
+  } as WsServerMessage)
+
+  expect(seen).toHaveLength(1)
+  unsubscribe()
+})
+```
+
+Do not add a production-only `handleWsMessageForTest`. Instead expose/refactor a private `dispatchServerMessage` through a test seam already used by the fake WebSocket in `chat.test.ts`; adapt the exact test to the repository's existing WebSocket mock pattern.
+
+The behavior being tested is exact: observers receive call messages, while existing chat/read/online behavior remains unchanged.
+
+- [ ] **Step 2: Add call TypeScript types**
+
+Create `frontend/src/types/call.ts` with explicit client/server payloads:
+
+```ts
+export type CallEndReason = 'hangup' | 'failed' | 'disconnected'
+export type CallRejectReason = 'rejected' | 'media_unavailable'
+
+export interface WsCallIncoming {
+  type: 'call_incoming'
+  data: { callId: string; callerId: number }
+}
+
+export interface WsCallRinging {
+  type: 'call_ringing'
+  data: { callId: string; userId: number }
+}
+
+export interface WsWebRtcOffer {
+  type: 'webrtc_offer'
+  data: { callId: string; sdp: RTCSessionDescriptionInit }
+}
+
+export interface WsWebRtcAnswer {
+  type: 'webrtc_answer'
+  data: { callId: string; sdp: RTCSessionDescriptionInit }
+}
+
+export interface WsWebRtcIce {
+  type: 'webrtc_ice'
+  data: { callId: string; candidate: RTCIceCandidateInit }
+}
+
+```
+
+Include the remaining busy/unavailable/accepted/rejected/cancelled/timeout/ended and client-side invite/accept/reject/cancel/hangup/offer/answer/ice types.
+
+Re-export from `types/index.ts` and extend `WsServerMessage` / `WsClientMessage` unions.
+
+- [ ] **Step 3: Add ICE config API function**
+
+In `frontend/src/api/index.ts`:
+
+```ts
+export function getWebRtcIceConfig() {
+  return api.get<ApiResponse<WebRtcIceConfig>>('/api/webrtc/ice-config')
+}
+```
+
+Import `WebRtcIceConfig` from `../types`.
+
+- [ ] **Step 4: Implement WS observer without importing call store**
+
+In `chat.ts`:
+
+```ts
+const wsMessageListeners = new Set<(message: WsServerMessage) => void>()
+
+function onWsMessage(listener: (message: WsServerMessage) => void) {
+  wsMessageListeners.add(listener)
+  return () => wsMessageListeners.delete(listener)
+}
+
+function notifyWsMessage(message: WsServerMessage) {
+  for (const listener of wsMessageListeners) listener(message)
+}
+```
+
+In `socket.onmessage`, call `notifyWsMessage(data)` before the `kicked` early return and before existing message routing.
+
+Do not clear `wsMessageListeners` in `clearState()`; a Pinia call store may stay alive across reconnects. Its subscription must be idempotent and explicitly disposable.
+
+Export `onWsMessage`.
+
+- [ ] **Step 5: Run frontend tests and commit**
+
+Run:
+
+```bash
+cd frontend
+npm run test -- src/stores/chat.test.ts
+npm run typecheck
+git add src/types src/api/index.ts src/stores/chat.ts src/stores/chat.test.ts
+git commit -m "feat: expose voice call websocket protocol"
+```
+
+Expected: PASS.
+
+---
+
+### Task 5: WebRTC Media Controller
+
+**Files:**
+- Create: `frontend/src/composables/useWebRtcCall.ts`
+- Create: `frontend/src/composables/useWebRtcCall.test.ts`
+
+**Interfaces:**
+- Consumes: `WebRtcIceConfig`.
+- Produces:
+  ```ts
+  export interface WebRtcCallCallbacks {
+    sendOffer(sdp: RTCSessionDescriptionInit): void
+    sendAnswer(sdp: RTCSessionDescriptionInit): void
+    sendIce(candidate: RTCIceCandidateInit): void
+    onConnected(): void
+    onFailed(message: string): void
+    onRemoteStream(stream: Med
