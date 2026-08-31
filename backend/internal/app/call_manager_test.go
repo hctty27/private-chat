@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type memoryCallStore struct {
@@ -111,7 +113,7 @@ func newTestCallManager(store callStore) (*callManager, *[]sentCallMessage, *fun
 		func(context.Context, int64, int64) error { return nil },
 		func(int64) bool { return true },
 		func(userID int64, payload any) {
-			sent = append(sent, sentCallMessage{userID: userID, payload: payload.(map[string]any)})
+			sent = append(sent, sentCallMessage{userID: userID, payload: map[string]any(payload.(gin.H))})
 		},
 	)
 	manager.newID = func() string { return "call-1" }
@@ -336,5 +338,23 @@ func TestCallManagerTimeoutDoesNotDeleteAcceptedCall(t *testing.T) {
 	}
 	if record.Status != callStatusActive {
 		t.Fatalf("expected active call, got %s", record.Status)
+	}
+}
+
+
+func TestCallManagerCancelEndsCallWhenAcceptWinsRace(t *testing.T) {
+	store := newMemoryCallStore()
+	_ = store.CreateRinging(context.Background(), testRingingCall("call-1", 1, 2), time.Minute)
+	_, _ = store.MarkActive(context.Background(), "call-1", 2, time.Now(), time.Hour)
+	manager, sent, _ := newTestCallManager(store)
+
+	if err := manager.Cancel(context.Background(), 1, "call-1"); err != nil {
+		t.Fatalf("cancel accepted call: %v", err)
+	}
+	if len(*sent) != 1 || (*sent)[0].userID != 2 || messageType(t, (*sent)[0]) != "call_ended" {
+		t.Fatalf("unexpected messages: %#v", *sent)
+	}
+	if _, err := store.Get(context.Background(), "call-1"); !errors.Is(err, errCallNotFound) {
+		t.Fatalf("expected call deleted, got %v", err)
 	}
 }
