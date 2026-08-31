@@ -89,7 +89,7 @@
                     :sender-name="replySenderName(message.replyTo.senderId)"
                     @jump="jumpToReply(message.replyTo.messageId)"
                   />
-                  <template v-if="message.msgType === 1">{{ message.content }}</template>
+                  <template v-if="message.msgType === 1"><span class="message-text">{{ message.content }}</span></template>
                   <template v-else-if="message.msgType === 4"><span class="emoji-big">{{ message.content }}</span></template>
                   <MediaMessageCard
                     v-else-if="isRichMediaMessage(message)"
@@ -553,6 +553,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 3px; }
 .bubble.emoji { background: transparent; padding: 2px 4px; }
 .bubble.visual-media { max-width: none; padding: 0; background: transparent; box-shadow: none; }
+.message-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
