@@ -235,21 +235,19 @@ describe('call store', () => {
     expect(call.muted).toBe(true)
     expect(rtc.setMuted).toHaveBeenCalledWith(true)
   })
-})
+  it('does not end a call during websocket heartbeat probing', async () => {
+    const chat = useChatStore()
+    const call = useCallStore()
+    await call.startCall(contact())
 
+    chat.wsConnected = false
+    await nextTick()
 
-it('does not end a call during websocket heartbeat probing', async () => {
-  const chat = useChatStore()
-  const call = useCallStore()
-  await call.startCall(contact())
+    expect(call.phase).toBe('outgoing')
 
-  chat.wsConnected = false
-  await nextTick()
+    chat.wsStatus = 'reconnecting'
+    await nextTick()
 
-  expect(call.phase).toBe('outgoing')
-
-  chat.wsStatus = 'reconnecting'
-  await nextTick()
-
-  expect(call.phase).toBe('failed')
+    expect(call.phase).toBe('failed')
+  })
 })
