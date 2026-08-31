@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch, type WatchStopHandle } from 'vue'
-import { getWebRTCIceConfig } from '../api'
+import { getWebRTCIceConfig, getWebRTCStatus } from '../api'
 import { useWebRtcCall } from '../composables/useWebRtcCall'
 import type {
   CallPhase,
@@ -18,6 +18,7 @@ function isCallServerMessage(message: WsServerMessage): message is WsCallServerM
 }
 
 export const useCallStore = defineStore('call', () => {
+  const available = ref(false)
   const phase = ref<CallPhase>('idle')
   const callId = ref<string | null>(null)
   const peerUserId = ref<number | null>(null)
@@ -151,9 +152,18 @@ export const useCallStore = defineStore('call', () => {
     )
   }
 
+  async function checkAvailability() {
+    try {
+      const response = await getWebRTCStatus()
+      available.value = response.data.code === 200 && response.data.data.enabled
+    } catch {
+      available.value = false
+    }
+  }
+
   async function startCall(contact: Contact) {
     ensureBound()
-    if (phase.value !== 'idle') return
+    if (!available.value || phase.value !== 'idle') return
     const chat = useChatStore()
     if (!chat.wsConnected) {
       error.value = '网络未连接'
@@ -347,6 +357,7 @@ export const useCallStore = defineStore('call', () => {
   }
 
   return {
+    available,
     phase,
     callId,
     peerUserId,
@@ -357,6 +368,7 @@ export const useCallStore = defineStore('call', () => {
     error,
     remoteStream,
     ensureBound,
+    checkAvailability,
     startCall,
     acceptCall,
     rejectCall,
