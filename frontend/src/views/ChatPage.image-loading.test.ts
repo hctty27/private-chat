@@ -1,38 +1,51 @@
 import { describe, expect, it } from 'vitest'
 import chatPageSource from './ChatPage.vue?raw'
 import mobileChatSource from './MobileChat.vue?raw'
+import mediaMessageSource from '../components/MediaMessageCard.vue?raw'
+import videoMessageSource from '../components/VideoMessageCard.vue?raw'
 
-function imageMessageTemplate(source: string, messageRef: string) {
-  const marker = `msgType === 2 && ${messageRef}.fileUrl`
-  const start = source.indexOf(marker)
-  expect(start).toBeGreaterThanOrEqual(0)
-  const end = source.indexOf('</template>', start)
-  expect(end).toBeGreaterThan(start)
-  return source.slice(start, end)
-}
-
-function expectThumbnailAndFallback(source: string, messageRef: string) {
-  const template = imageMessageTemplate(source, messageRef)
-  expect(template).toContain('/thumbnail')
-  expect(template).toContain('.fileId')
-  expect(template).toContain('decoding="async"')
-  expect(template).toContain('class="pic-shell"')
-  expect(template).toContain('@load="onImageLoaded"')
-  expect(template).toContain(`@error="fallbackImageToOriginal($event, ${messageRef})"`)
-  expect(source).toContain('aspect-ratio: 4 / 3')
-  expect(source).toContain('object-fit: contain')
-  expect(source).toContain('.pic.loaded { opacity: 1; }')
-  return template
-}
-
-describe('chat image loading', () => {
-  it('reserves desktop image space while keeping lazy loading and protected fallback', () => {
-    const template = expectThumbnailAndFallback(chatPageSource, 'message')
-    expect(template).toContain('loading="lazy"')
+describe('chat media loading', () => {
+  it('renders desktop and mobile rich media through one shared component', () => {
+    for (const source of [chatPageSource, mobileChatSource]) {
+      expect(source).toContain("import MediaMessageCard from '../components/MediaMessageCard.vue'")
+      expect(source).toContain('v-else-if="isRichMediaMessage(message)"')
+      expect(source).toContain(":class=\"[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message) }]\"")
+      expect(source).not.toContain('class="pic-shell"')
+      expect(source).not.toContain('<VideoMessageCard')
+      expect(source).not.toContain('<AudioMessageCard')
+    }
   })
 
-  it('reserves mobile image space without native lazy loading on the native chat flow', () => {
-    const template = expectThumbnailAndFallback(mobileChatSource, 'message')
-    expect(template).not.toContain('loading="lazy"')
+  it('reserves image space before loading and falls back from thumbnail to original', () => {
+    expect(mediaMessageSource).toContain('aspect-ratio: 4 / 3')
+    expect(mediaMessageSource).toContain('object-fit: contain')
+    expect(mediaMessageSource).toContain(':src="imageSrc"')
+    expect(mediaMessageSource).toContain('fallbackOriginal.value = true')
+    expect(mediaMessageSource).toContain('imageFailed.value = true')
+    expect(mediaMessageSource).toContain(':class="{ loaded: imageLoaded }"')
+  })
+
+  it('keeps desktop image lazy loading while avoiding native lazy loading on mobile chat', () => {
+    expect(chatPageSource).toContain(':lazy-image="true"')
+    expect(mobileChatSource).toContain(':lazy-image="false"')
+    expect(mediaMessageSource).toContain(':loading="lazyImage ? \'lazy\' : undefined"')
+  })
+
+  it('keeps video card height stable while posters load', () => {
+    expect(videoMessageSource).toContain('aspect-ratio: 16 / 9')
+    expect(videoMessageSource).toContain('object-fit: cover')
+    expect(videoMessageSource).not.toContain('video-meta')
+    expect(mediaMessageSource).toContain('class="video-pending"')
+    expect(mediaMessageSource).toContain('aspect-ratio: 16 / 9')
+  })
+
+  it('keeps transfer state inside the reserved media card', () => {
+    expect(mediaMessageSource).toContain('class="transfer-state"')
+    expect(mediaMessageSource).toContain('position: absolute')
+    expect(mediaMessageSource).toContain('inset: 0')
+    expect(mediaMessageSource).toContain("message.localStatus === 'uploading'")
+    for (const source of [chatPageSource, mobileChatSource]) {
+      expect(source).toContain('!hasInlineMediaStatus(message)')
+    }
   })
 })

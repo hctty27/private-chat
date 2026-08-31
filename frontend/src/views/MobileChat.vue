@@ -78,7 +78,7 @@
               @pointerup="doubleTap.end($event)"
               @pointercancel="doubleTap.cancel"
             >
-              <div class="bubble" :class="bubbleType(message)">
+              <div class="bubble" :class="[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message) }]">
                 <MessageReplyQuote
                   v-if="message.replyTo"
                   :reply="message.replyTo"
@@ -87,33 +87,14 @@
                 />
                 <template v-if="message.msgType === 1">{{ message.content }}</template>
                 <template v-else-if="message.msgType === 4"><span class="emoji-big">{{ message.content }}</span></template>
-                <template v-else-if="message.msgType === 2 && message.fileUrl">
-                  <div class="pic-shell">
-                    <img
-                      :src="message.fileId ? `/api/files/${message.fileId}/thumbnail` : message.fileUrl ?? undefined"
-                      decoding="async"
-                      class="pic"
-                      @load="onImageLoaded"
-                      @error="fallbackImageToOriginal($event, message)"
-                      @click.stop="openPreviewFromBubble($event, message.fileUrl!, 'image')"
-                    />
-                  </div>
-                </template>
-                <template v-else-if="message.msgType === 5 && message.fileUrl">
-                  <VideoMessageCard
-                    :poster-url="videoPosterUrl(message)"
-                    :file-name="message.fileName"
-                    :file-size-text="message.fileSize ? fmtSize(message.fileSize) : null"
-                    @open="openPreviewFromBubble($event, message.fileUrl!, 'video', videoPosterUrl(message))"
-                  />
-                </template>
-                <template v-else-if="message.msgType === 6 && message.fileUrl">
-                  <AudioMessageCard
-                    :url="message.fileUrl"
-                    :file-name="message.fileName"
-                    @pointerdown.stop
-                  />
-                </template>
+                <MediaMessageCard
+                  v-else-if="isRichMediaMessage(message)"
+                  :message="message"
+                  :lazy-image="false"
+                  @open="openMediaFromBubble"
+                  @retry="retryMessageByClientId(message.clientMsgId)"
+                  @cancel="cancelUploadByClientId(message.clientMsgId)"
+                />
                 <template v-else-if="message.msgType === 3 && message.fileUrl">
                   <a
                     :href="message.fileUrl ?? undefined"
@@ -133,7 +114,7 @@
                   </div>
                 </template>
               </div>
-              <div v-if="shouldShowMessageStatus(index)" class="read-tag">
+              <div v-if="shouldShowMessageStatus(index) && !hasInlineMediaStatus(message)" class="read-tag">
                 <MessageStatusIndicator
                   :status="message.localStatus"
                   :is-read="message.isRead === 1"
@@ -249,8 +230,7 @@ import { getMessageActions, type MessageAction } from '../utils/messageActions'
 import { isIOSDevice } from '../utils/platform'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
-import VideoMessageCard from '../components/VideoMessageCard.vue'
-import AudioMessageCard from '../components/AudioMessageCard.vue'
+import MediaMessageCard from '../components/MediaMessageCard.vue'
 import VoiceRecorderButton from '../components/VoiceRecorderButton.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
@@ -318,10 +298,11 @@ const {
   isLastSelfMessage,
   shouldShowMessageStatus,
   isPendingMediaMessage,
+  isRichMediaMessage,
+  isStandaloneVisualMedia,
+  hasInlineMediaStatus,
   pendingMediaText,
   bubbleType,
-  onImageLoaded,
-  fallbackImageToOriginal,
   videoPosterUrl,
 } = useChatMessageUi(uid)
 
@@ -673,6 +654,15 @@ function openPreviewFromBubble(
   }, 340)
 }
 
+function openMediaFromBubble(
+  event: MouseEvent,
+  type: 'image' | 'video',
+  url: string,
+  posterUrl = '',
+) {
+  openPreviewFromBubble(event, url, type, posterUrl)
+}
+
 async function openPreview(url: string, type: 'image' | 'video', posterUrl = '') {
   const contactId = chatStore.currentContact?.userId
   if (!contactId) return
@@ -847,10 +837,8 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 .bubble.mine { background: #95ec69; color: #111; border-bottom-right-radius: 6px; }
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
 .bubble.emoji { background: transparent; padding: 2px 4px; box-shadow: none; }
+.bubble.visual-media { max-width: none; padding: 0; background: transparent; box-shadow: none; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
-.pic-shell { width: min(68vw, 240px, 56dvh); aspect-ratio: 4 / 3; overflow: hidden; border-radius: 12px; background: #f2f2f2; }
-.pic { width: 100%; height: 100%; border-radius: inherit; display: block; object-fit: contain; opacity: 0; transition: opacity 120ms ease; cursor: pointer; }
-.pic.loaded { opacity: 1; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
 .file-link small { display: block; color: #999; font-size: 12px; }
 .media-fallback { min-width: 120px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.45); color: #576b95; font-size: 14px; }
