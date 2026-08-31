@@ -1166,4 +1166,185 @@ Use `@vue/test-utils`.
 
 Do not place it inside `.msg-scroll`.
 
-`IncomingCallOverlay.vue` uses th
+`IncomingCallOverlay.vue` uses the same fixed layer and buttons with clear `aria-label`.
+
+- [ ] **Step 3: Add desktop header integration**
+
+In `ChatPage.vue` change `.chat-head` layout so identity stays left and `VoiceCallButton` is at right:
+
+```vue
+<VoiceCallButton
+  :disabled="!chatStore.wsConnected || callStore.phase !== 'idle'"
+  @call="startCurrentCall"
+/>
+```
+
+`startCurrentCall()`:
+
+```ts
+function startCurrentCall() {
+  const contact = chatStore.currentContact
+  if (contact) void callStore.startCall(contact)
+}
+```
+
+Mount `IncomingCallOverlay` and `VoiceCallOverlay` outside the `v-if="chatStore.currentContact"` branch so incoming calls render even when no conversation is selected.
+
+Call `callStore.ensureBound()` in `onMounted()`.
+
+Before logout:
+
+```ts
+callStore.cleanupLocal()
+```
+
+- [ ] **Step 4: Add mobile header integration without touching viewport math**
+
+Replace `.chat-head-spacer` with a 44px `VoiceCallButton` slot so the current 44 / center / 44 grid remains balanced.
+
+Required structure:
+
+```vue
+<div class="chat-head">
+  <button class="back tap-target" ...>‹</button>
+  <div class="ch-info">...</div>
+  <VoiceCallButton class="mobile-call-button" ... />
+</div>
+```
+
+Mount call overlays directly under `.mobile-root`, not under `.chat-page`, `.msg-scroll`, `.input-bar`, or any mobile history overlay.
+
+Do not add call state to `useMobileChatHistory`.
+
+- [ ] **Step 5: Add source-level regression tests for iOS isolation**
+
+Extend `MobileChat.ios.test.ts`:
+
+```ts
+it('keeps voice call overlays outside the visual viewport chat shell', () => {
+  expect(mobileChatSource).toContain('<IncomingCallOverlay')
+  expect(mobileChatSource).toContain('<VoiceCallOverlay')
+  expect(mobileChatSource).not.toContain("mobileHistory.pushOverlay(contactId, 'call')")
+})
+```
+
+`VoiceCallIntegration.test.ts` should assert both desktop and mobile contain the call button and call overlays, and mobile still contains:
+
+```text
+viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0
+useChatScroll(listEl, uid, { virtualized: false })
+```
+
+- [ ] **Step 6: Run UI tests and build**
+
+Run:
+
+```bash
+cd frontend
+npm run test -- \
+  src/components/VoiceCallOverlay.test.ts \
+  src/views/VoiceCallIntegration.test.ts \
+  src/views/MobileChat.ios.test.ts \
+  src/stores/call.test.ts \
+  src/composables/useWebRtcCall.test.ts
+npm run build
+```
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit UI**
+
+```bash
+git add frontend/src/components frontend/src/views
+git commit -m "feat: add desktop and mobile voice call ui"
+```
+
+---
+
+### Task 8: Coturn Deployment Profile
+
+**Files:**
+- Modify: `compose.yml`
+- Modify: `.env.example`
+- Modify: `README.md`
+
+**Interfaces:**
+- Produces optional Compose service `coturn` under profile `voice`.
+- Uses Coturn image `coturn/coturn:4.17.2-r0`.
+- Default relay UDP range: `49160-49200`.
+
+- [ ] **Step 1: Add Coturn environment placeholders**
+
+Append to `.env.example`:
+
+```dotenv
+# Optional self-hosted Coturn profile
+WEBRTC_TURN_REALM=turn.example.com
+WEBRTC_TURN_EXTERNAL_IP=<public_ipv4>
+WEBRTC_TURN_MIN_PORT=49160
+WEBRTC_TURN_MAX_PORT=49200
+```
+
+Keep `WEBRTC_TURN_SECRET` shared with the backend configuration from Task 3.
+
+- [ ] **Step 2: Add optional Coturn service**
+
+In `compose.yml` add:
+
+```yaml
+  coturn:
+    image: coturn/coturn:4.17.2-r0
+    container_name: private-chat-coturn
+    profiles: ["voice"]
+    restart: unless-stopped
+    command:
+      - --log-file=stdout
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${WEBRTC_TURN_SECRET:?missing WEBRTC_TURN_SECRET}
+      - --realm=${WEBRTC_TURN_REALM:?missing WEBRTC_TURN_REALM}
+      - --external-ip=${WEBRTC_TURN_EXTERNAL_IP:?missing WEBRTC_TURN_EXTERNAL_IP}
+      - --min-port=${WEBRTC_TURN_MIN_PORT:-49160}
+      - --max-port=${WEBRTC_TURN_MAX_PORT:-49200}
+      - --no-cli
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "${WEBRTC_TURN_MIN_PORT:-49160}-${WEBRTC_TURN_MAX_PORT:-49200}:${WEBRTC_TURN_MIN_PORT:-49160}-${WEBRTC_TURN_MAX_PORT:-49200}/udp"
+```
+
+First release supports TURN UDP/TCP on 3478. `turns:` 5349 is documented as an optional production hardening step requiring a certificate/key mount; do not pretend TLS works unless cert paths are actually configured.
+
+- [ ] **Step 3: Add README deployment procedure**
+
+Document:
+
+```bash
+docker compose --profile voice up -d --build
+```
+
+Document firewall rules:
+
+```text
+TCP 3478
+UDP 3478
+UDP 49160-49200
+```
+
+Explain that `WEBRTC_TURN_URLS` must point to the publicly reachable TURN host, not the Docker service name used inside `my-network .
+
+Document optional TLS/5349 separately, including that browser `turns:` URLs must only be configured after Coturn is actually serving a valid TLS certificate.
+
+- [ ] **Step 4: Validate Compose and commit**
+
+Run:
+
+```bash
+export POSTGRES_HOST=postgres.example
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=postgres
+export POSTGRES_DB=private_chat
+export REDIS_PASSWORD=redis-password
+export R2_ENDPOINT=https://example.r2.cloudflarestorage.com
+export R2_ACCESS_KEY=access-key
+expor
