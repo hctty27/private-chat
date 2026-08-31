@@ -5,11 +5,11 @@
       <div class="name">{{ peerName || '联系人' }}</div>
       <div class="label">邀请你语音通话</div>
       <div class="actions">
-        <button type="button" class="action reject" aria-label="拒绝语音通话" @click="emit('reject')">
+        <button type="button" class="action reject" aria-label="拒绝语音通话" @click="reject">
           <span>✕</span>
           <small>拒绝</small>
         </button>
-        <button type="button" class="action accept" aria-label="接听语音通话" @click="emit('accept')">
+        <button type="button" class="action accept" aria-label="接听语音通话" @click="accept">
           <span>✓</span>
           <small>接听</small>
         </button>
@@ -19,11 +19,29 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
+import { useIncomingCallAlert } from '../composables/useIncomingCallAlert'
+
 defineProps<{ peerName: string }>()
 const emit = defineEmits<{
   accept: []
   reject: []
 }>()
+
+const alert = useIncomingCallAlert()
+
+function accept() {
+  alert.stop()
+  emit('accept')
+}
+
+function reject() {
+  alert.stop()
+  emit('reject')
+}
+
+onMounted(alert.start)
+onBeforeUnmount(alert.stop)
 </script>
 
 <style scoped>
