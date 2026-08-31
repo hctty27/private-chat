@@ -282,4 +282,166 @@ Expected: all backend checks pass.
   ```go
   type callManager struct {
       store          callStore
-      requireContact func(conte
+      requireContact func(context.Context, int64, int64) error
+      isConnected    func(int64) bool
+      send           func(int64, any)
+      newID          func() string
+      now            func() time.Time
+      schedule       func(time.Duration, func())
+      ringingTTL     time.Duration
+      activeTTL      time.Duration
+  }
+
+  func (m *callManager) Invite(context.Context, int64, int64) error
+  func (m *callManager) Accept(context.Context, int64, string) error
+  func (m *callManager) Reject(context.Context, int64, string, string) error
+  func (m *callManager) Cancel(context.Context, int64, string) error
+  func (m *callManager) Hangup(context.Context, int64, string, string) error
+  func (m *callManager) RelayOffer(context.Context, int64, string, map[string]any) error
+  func (m *callManager) RelayAnswer(context.Context, int64, string, map[string]any) error
+  func (m *callManager) RelayICE(context.Context, int64, string, map[string]any) error
+  func (m *callManager) Disconnect(context.Context, int64)
+  ```
+- `callManager` sends existing protocol names exactly as approved in the spec.
+
+- [ ] **Step 1: Write failing manager tests**
+
+Use a small fake `callStore` plus captured `send(userID, payload)` calls.
+
+Required tests:
+
+```go
+func TestCallManagerInviteRejectsSelf(t *testing.T)
+func TestCallManagerInviteRequiresContact(t *testing.T)
+func TestCallManagerInviteReturnsUnavailableWhenPeerDisconnected(t *testing.T)
+func TestCallManagerInviteReturnsBusyWhenStoreIsBusy(t *testing.T)
+func TestCallManagerInviteSendsRingingAndIncoming(t *testing.T)
+func TestCallManagerAcceptOnlyAllowsCallee(t *testing.T)
+func TestCallManagerRejectOnlyAllowsCallee(t *testing.T)
+func TestCallManagerCancelOnlyAllowsCallerWhileRinging(t *testing.T)
+func TestCallManagerHangupAllowsEitherActiveParticipant(t *testing.T)
+func TestCallManagerOfferOnlyAllowsCaller(t *testing.T)
+func TestCallManagerAnswerOnlyAllowsCallee(t *testing.T)
+func TestCallManagerICEAllowsEitherParticipant(t *testing.T)
+func TestCallManagerTimeoutDeletesOnlyStillRingingCall(t *testing.T)
+func TestCallManagerDisconnectEndsCurrentCall(t *testing.T)
+```
+
+Capture the timeout callback instead of sleeping:
+
+```go
+var scheduled func()
+manager.schedule = func(_ time.Duration, fn func()) {
+    scheduled = fn
+}
+```
+
+- [ ] **Step 2: Run manager tests to verify failure**
+
+Run:
+
+```bash
+cd backend
+go test ./internal/app -run 'TestCallManager' -count=1
+```
+
+Expected: FAIL because `callManager` does not exist.
+
+- [ ] **Step 3: Implement `call_manager.go`**
+
+Use `uuid.NewString()` as default ID generator and `time.Now().UTC()` as default clock.
+
+`Invite` order must be:
+
+```go
+if callerID == calleeID { return errCallRole }
+if err := m.requireContact(ctx, callerID, calleeID); err != nil { return err }
+if !m.isConnected(calleeID) {
+    m.send(callerID, gin.H{"type": "call_unavailable", "data": gin.H{
+        "userId": calleeID, "reason": "offline",
+    }})
+    return nil
+}
+```
+
+Then `CreateRinging`. On `errCallBusy`, send `call_busy` to caller and return nil.
+
+On success send:
+
+```go
+m.send(callerID, gin.H{"type": "call_ringing", "data": gin.H{
+    "callId": record.ID, "userId": calleeID,
+}})
+m.send(calleeID, gin.H{"type": "call_incoming", "data": gin.H{
+    "callId": record.ID, "callerId": callerID,
+}})
+```
+
+Schedule one 60-second timeout that re-reads the call and only ends it if status is still `ringing`.
+
+`Hangup` must notify the other participant with `call_ended` and a bounded reason enum (`hangup`, `failed`, `disconnected`), then delete state.
+
+- [ ] **Step 4: Write failing WebSocket protocol tests**
+
+Create `call_ws_test.go` for:
+
+```go
+func TestParseCallIDRejectsEmptyAndOversizedValues(t *testing.T)
+func TestParseWebRTCSDPRejectsOversizedSDP(t *testing.T)
+func TestParseICECandidateRejectsOversizedCandidate(t *testing.T)
+func TestHandleWsCallRoutesInvite(t *testing.T)
+func TestHandleWsCallRoutesMediaUnavailableRejectReason(t *testing.T)
+```
+
+Use constants:
+
+```go
+const (
+    maxCallIDLength       = 128
+    maxSDPLength          = 48 * 1024
+    maxICECandidateLength = 8 * 1024
+)
+```
+
+No test should log or assert full SDP/candidate values.
+
+- [ ] **Step 5: Implement `call_ws.go` and wire `ws.go`**
+
+Add:
+
+```go
+func isCallWebSocketType(msgType string) bool {
+    switch msgType {
+    case "call_invite", "call_accept", "call_reject", "call_cancel", "call_hangup",
+        "webrtc_offer", "webrtc_answer", "webrtc_ice":
+        return true
+    default:
+        return false
+    }
+}
+```
+
+`Session.readLoop()` becomes:
+
+```go
+default:
+    if isCallWebSocketType(msgType) {
+        if err := s.app.handleWsCall(s.userID, msgType, data); err != nil {
+            log.Printf("handle call signal failed for user %d: %v", s.userID, err)
+        }
+    }
+```
+
+Do not log `data`.
+
+In `unregisterSession`, only after `hub.Remove(...)` returns true call:
+
+```go
+if a.calls != nil {
+    a.calls.Disconnect(ctx, session.userID)
+}
+```
+
+That preserves the current “only the last Session means offline” behavior.
+
+- [ ] **Step 6: Wire the man
