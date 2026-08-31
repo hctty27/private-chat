@@ -43,6 +43,10 @@ export function useChatMessageUi(uid: Ref<number>) {
     return (message.msgType === 2 || message.msgType === 5) && !message.replyToMessageId
   }
 
+  function isStandaloneVoiceMessage(message: Pick<Message, 'msgType' | 'replyToMessageId'>) {
+    return message.msgType === 6 && !message.replyToMessageId
+  }
+
   function hasInlineMediaStatus(message: Pick<Message, 'msgType' | 'localStatus'>) {
     if (!isRichMediaMessage(message)) return false
     return message.localStatus === 'upload_queued'
@@ -87,6 +91,7 @@ export function useChatMessageUi(uid: Ref<number>) {
     isPendingMediaMessage,
     isRichMediaMessage,
     isStandaloneVisualMedia,
+    isStandaloneVoiceMessage,
     hasInlineMediaStatus,
     pendingMediaText,
     bubbleType,
