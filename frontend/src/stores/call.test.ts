@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import type { Contact, WsServerMessage } from '../types'
 import { useChatStore } from './chat'
 import { useUserStore } from './user'
@@ -234,4 +235,21 @@ describe('call store', () => {
     expect(call.muted).toBe(true)
     expect(rtc.setMuted).toHaveBeenCalledWith(true)
   })
+})
+
+
+it('does not end a call during websocket heartbeat probing', async () => {
+  const chat = useChatStore()
+  const call = useCallStore()
+  await call.startCall(contact())
+
+  chat.wsConnected = false
+  await nextTick()
+
+  expect(call.phase).toBe('outgoing')
+
+  chat.wsStatus = 'reconnecting'
+  await nextTick()
+
+  expect(call.phase).toBe('failed')
 })
