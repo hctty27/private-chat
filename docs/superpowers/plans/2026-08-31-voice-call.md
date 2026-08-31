@@ -444,4 +444,180 @@ if a.calls != nil {
 
 That preserves the current “only the last Session means offline” behavior.
 
-- [ ] **Step 6: Wire the man
+- [ ] **Step 6: Wire the manager into `App`**
+
+Add field:
+
+```go
+calls *callManager
+```
+
+After `app := &App{...}` is constructed:
+
+```go
+app.calls = newCallManager(
+    newRedisCallStore(rdb),
+    app.requireContact,
+    func(userID int64) bool { return len(app.hub.GetAll(userID)) > 0 },
+    app.sendToUser,
+)
+```
+
+Do not use Redis presence TTL as the callable test; Hub connection is the authoritative current-process signal.
+
+- [ ] **Step 7: Run protocol/backend tests and commit**
+
+Run:
+
+```bash
+cd backend
+gofmt -w internal/app/call_manager.go internal/app/call_manager_test.go internal/app/call_ws.go internal/app/call_ws_test.go internal/app/app.go internal/app/ws.go
+go test ./internal/app -run 'Test(CallManager|ParseCall|ParseWebRTC|ParseICE|HandleWsCall)' -count=1
+go test ./...
+go vet ./...
+git add backend/internal/app
+git commit -m "feat: add voice call websocket signaling"
+```
+
+Expected: PASS.
+
+---
+
+### Task 3: TURN Configuration and ICE Config API
+
+**Files:**
+- Create: `backend/internal/app/webrtc.go`
+- Create: `backend/internal/app/webrtc_test.go`
+- Modify: `backend/internal/app/app.go`
+- Modify: `backend/internal/config/config.go`
+- Create or modify: `backend/internal/config/config_test.go`
+- Modify: `.env.example`
+- Modify: `compose.yml`
+
+**Interfaces:**
+- Produces endpoint:
+  ```text
+  GET /api/webrtc/ice-config
+  ```
+- Produces config fields:
+  ```go
+  WebRTCIcePolicy         string
+  WebRTCStunURL           string
+  WebRTCTurnURLs          []string
+  WebRTCTurnSecret        string
+  WebRTCTurnCredentialTTL time.Duration
+  ```
+- Produces frontend response shape:
+  ```json
+  {
+    "code": 200,
+    "data": {
+      "iceServers": [
+        {"urls":["stun:turn.example.com:3478"]},
+        {
+          "urls":["turn:turn.example.com:3478?transport=udp"],
+          "username":"<expiry>:<userId>",
+          "credential":"<base64-hmac>"
+        }
+      ],
+      "iceTransportPolicy":"all"
+    }
+  }
+  ```
+
+- [ ] **Step 1: Write failing config tests**
+
+Create/update `backend/internal/config/config_test.go`:
+
+```go
+func TestConfigValidateAcceptsAllIcePolicy(t *testing.T)
+func TestConfigValidateAcceptsRelayIcePolicy(t *testing.T)
+func TestConfigValidateRejectsUnknownIcePolicy(t *testing.T)
+func TestConfigValidateRequiresTurnURL(t *testing.T)
+func TestConfigValidateRequiresTurnSecret(t *testing.T)
+func TestConfigLoadUsesTenMinuteTurnCredentialTTLByDefault(t *testing.T)
+```
+
+Test with a helper that starts from a valid config so existing JWT validation remains satisfied.
+
+- [ ] **Step 2: Implement WebRTC config fields**
+
+In `Load()` use:
+
+```go
+WebRTCIcePolicy:         envOrDefault("WEBRTC_ICE_POLICY", "all"),
+WebRTCStunURL:           envOrDefault("WEBRTC_STUN_URL", ""),
+WebRTCTurnURLs:          envList("WEBRTC_TURN_URLS"),
+WebRTCTurnSecret:        envOrDefault("WEBRTC_TURN_SECRET", ""),
+WebRTCTurnCredentialTTL: envDurationOrDefault("WEBRTC_TURN_CREDENTIAL_TTL", 10*time.Minute),
+```
+
+In `Validate()` require:
+
+```go
+if c.WebRTCIcePolicy != "all" && c.WebRTCIcePolicy != "relay" { ... }
+if len(c.WebRTCTurnURLs) == 0 { ... }
+if strings.TrimSpace(c.WebRTCTurnSecret) == "" { ... }
+if c.WebRTCTurnCredentialTTL <= 0 { ... }
+if c.WebRTCIcePolicy == "all" && strings.TrimSpace(c.WebRTCStunURL) == "" { ... }
+```
+
+- [ ] **Step 3: Write failing TURN credential tests**
+
+Create `webrtc_test.go`:
+
+```go
+func TestGenerateTurnCredentialUsesExpiryAndUserID(t *testing.T) {
+    now := time.Unix(1_788_166_800, 0).UTC()
+    username, credential := generateTurnCredential("shared-secret", 7, now, 10*time.Minute)
+
+    if username != "1788167400:7" {
+        t.Fatalf("unexpected username %q", username)
+    }
+
+    mac := hmac.New(sha1.New, []byte("shared-secret"))
+    _, _ = mac.Write([]byte(username))
+    expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+    if credential != expected {
+        t.Fatalf("credential mismatch")
+    }
+}
+```
+
+Also test `iceConfigHandler` returns no shared secret and route is protected by `secureAuthMiddleware`.
+
+- [ ] **Step 4: Implement `webrtc.go` and protected route**
+
+Implement:
+
+```go
+func generateTurnCredential(secret string, userID int64, now time.Time, ttl time.Duration) (string, string) {
+    expiry := now.Add(ttl).Unix()
+    username := fmt.Sprintf("%d:%d", expiry, userID)
+    mac := hmac.New(sha1.New, []byte(secret))
+    _, _ = mac.Write([]byte(username))
+    return username, base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+```
+
+Handler builds one STUN server when configured and one TURN server containing all configured TURN URLs.
+
+Register inside the existing protected API group:
+
+```go
+protected.GET("/webrtc/ice-config", a.iceConfigHandler)
+```
+
+- [ ] **Step 5: Update env/compose backend wiring**
+
+Add to `.env.example`:
+
+```dotenv
+WEBRTC_ICE_POLICY=all
+WEBRTC_STUN_URL=stun:turn.example.com:3478
+WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+WEBRTC_TURN_SECRET=<replace_with_long_random_turn_shared_secret>
+WEBRTC_TURN_CREDENTIAL_TTL=10m
+```
+
+Add the same variables to th
