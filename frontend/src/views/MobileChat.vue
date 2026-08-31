@@ -91,6 +91,8 @@
                   v-else-if="isRichMediaMessage(message)"
                   :message="message"
                   :lazy-image="false"
+                  :voice-tap-delay-ms="340"
+                  :suppress-voice-playback-until="voicePlaybackSuppressedUntil"
                   @open="openMediaFromBubble"
                   @retry="retryMessageByClientId(message.clientMsgId)"
                   @cancel="cancelUploadByClientId(message.clientMsgId)"
@@ -327,10 +329,17 @@ let focusStartedAtEnd = false
 let historySyncSeq = 0
 let historyBackPending = false
 let suppressNativeClickUntil = 0
+const voicePlaybackSuppressedUntil = ref(0)
 const mobileViewportClass = 'mobile-chat-viewport'
 
+function suppressNativeMessageActions() {
+  const until = Date.now() + 600
+  suppressNativeClickUntil = until
+  voicePlaybackSuppressedUntil.value = until
+}
+
 const doubleTap = useDoubleTap<Message>((message, point) => {
-  suppressNativeClickUntil = Date.now() + 600
+  suppressNativeMessageActions()
   openMessageMenuAt(point.x, point.y, message)
 })
 
@@ -704,7 +713,7 @@ function onMobileContextMenu(event: MouseEvent, message: Message) {
   const actions = getMessageActions(message)
   if (actions.length === 0) return
   event.preventDefault()
-  suppressNativeClickUntil = Date.now() + 600
+  suppressNativeMessageActions()
   openMessageMenuAt(event.clientX, event.clientY, message)
 }
 
