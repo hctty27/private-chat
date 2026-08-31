@@ -69,6 +69,7 @@ describe('call store', () => {
 
     const chat = useChatStore()
     chat.wsConnected = true
+    chat.wsStatus = 'connected'
     chat.contacts = [contact()]
     vi.spyOn(chat, 'sendWsMessage').mockImplementation(() => undefined)
     useCallStore().available = true
@@ -235,6 +236,50 @@ describe('call store', () => {
     expect(call.muted).toBe(true)
     expect(rtc.setMuted).toHaveBeenCalledWith(true)
   })
+  it('does not send invite if websocket disconnects during preparation', async () => {
+    let resolvePrepare!: () => void
+    rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve
+    }))
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+    chat.wsStatus = 'reconnecting'
+    chat.wsConnected = false
+    resolvePrepare()
+    await pending
+
+    expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
+      type: 'call_invite',
+      data: { receiverId: 2 },
+    })
+    expect(rtc.cleanup).toHaveBeenCalled()
+    expect(call.phase).toBe('idle')
+    expect(call.error).toBe('网络已断开')
+  })
+
+  it('does not resurrect an outbound call after dispose during preparation', async () => {
+    let resolvePrepare!: () => void
+    rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve
+    }))
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+    call.dispose()
+    resolvePrepare()
+    await pending
+
+    expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
+      type: 'call_invite',
+      data: { receiverId: 2 },
+    })
+    expect(rtc.cleanup).toHaveBeenCalled()
+    expect(call.phase).toBe('idle')
+  })
+
   it('does not end a call during websocket heartbeat probing', async () => {
     const chat = useChatStore()
     const call = useCallStore()
