@@ -804,4 +804,191 @@ Expected: PASS.
     sendIce(candidate: RTCIceCandidateInit): void
     onConnected(): void
     onFailed(message: string): void
-    onRemoteStream(stream: Med
+    onRemoteStream(stream: MediaStream): void
+  }
+
+  export interface WebRtcCallController {
+    prepare(): Promise<void>
+    startCaller(): Promise<void>
+    acceptOffer(offer: RTCSessionDescriptionInit): Promise<void>
+    applyAnswer(answer: RTCSessionDescriptionInit): Promise<void>
+    addRemoteIce(candidate: RTCIceCandidateInit): Promise<void>
+    setMuted(muted: boolean): void
+    cleanup(): void
+  }
+
+  export function useWebRtcCall(
+    getIceConfig: () => Promise<WebRtcIceConfig>,
+    callbacks: WebRtcCallCallbacks,
+    deps?: WebRtcBrowserDeps,
+  ): WebRtcCallController
+  ```
+
+- [ ] **Step 1: Write failing tests with fake browser APIs**
+
+Create a fake `RTCPeerConnection` and fake `MediaStreamTrack`.
+
+Required tests:
+
+```ts
+it('prepares microphone and ice config before signaling')
+it('caller sets local offer then emits it')
+it('callee sets remote offer before creating answer')
+it('queues remote ice until remote description exists')
+it('flushes queued ice in arrival order after remote description')
+it('mutes only local audio tracks')
+it('cleanup stops every local track and closes peer connection exactly once')
+it('waits 10 seconds before failing a disconnected ice state')
+it('cancels the disconnect timer when connection recovers')
+```
+
+Use `vi.useFakeTimers()` for the 10-second grace period.
+
+- [ ] **Step 2: Run test to verify failure**
+
+Run:
+
+```bash
+cd frontend
+npm run test -- src/composables/useWebRtcCall.test.ts
+```
+
+Expected: FAIL because controller does not exist.
+
+- [ ] **Step 3: Implement `prepare()`**
+
+`prepare()` must start `getUserMedia` immediately:
+
+```ts
+async function prepare() {
+  if (localStream && iceConfig) return
+
+  const mediaPromise = deps.getUserMedia({ audio: true })
+  const configPromise = getIceConfig()
+
+  const [stream, config] = await Promise.all([mediaPromise, configPromise])
+  localStream = stream
+  iceConfig = config
+}
+```
+
+This is the method called directly from the user's click/tap path before `call_invite` or `call_accept`.
+
+- [ ] **Step 4: Implement peer creation and SDP flow**
+
+`ensurePeer()`:
+
+```ts
+const peer = deps.createPeerConnection({
+  iceServers: iceConfig!.iceServers,
+  iceTransportPolicy: iceConfig!.iceTransportPolicy,
+})
+for (const track of localStream!.getAudioTracks()) {
+  peer.addTrack(track, localStream!)
+}
+```
+
+`peer.onicecandidate` sends only non-null candidates:
+
+```ts
+peer.onicecandidate = (event) => {
+  if (event.candidate) callbacks.sendIce(event.candidate.toJSON())
+}
+```
+
+`addRemoteIce()`:
+
+```ts
+if (!peer?.remoteDescription) {
+  pendingRemoteIce.push(candidate)
+  return
+}
+await peer.addIceCandidate(candidate)
+```
+
+After every successful `setRemoteDescription()`, flush `pendingRemoteIce` in FIFO order.
+
+- [ ] **Step 5: Implement connection state and cleanup**
+
+Treat `connected`/`completed` as connected.
+
+On `disconnected`, start one 10-second timer. Cancel it if the state recovers.
+
+On `failed`, or if the 10-second timer expires, call `callbacks.onFailed('通话连接失败')` once.
+
+`cleanup()` must:
+
+```ts
+disconnectTimer && clearTimeout(disconnectTimer)
+for (const track of localStream?.getTracks() ?? []) track.stop()
+peer?.close()
+pendingRemoteIce.length = 0
+localStream = null
+peer = null
+iceConfig = null
+```
+
+Make it idempotent.
+
+- [ ] **Step 6: Run tests/typecheck and commit**
+
+Run:
+
+```bash
+cd frontend
+npm run test -- src/composables/useWebRtcCall.test.ts
+npm run typecheck
+git add src/composables/useWebRtcCall.ts src/composables/useWebRtcCall.test.ts
+git commit -m "feat: add webrtc voice media controller"
+```
+
+Expected: PASS.
+
+---
+
+### Task 6: Pinia Call Store and Lifecycle
+
+**Files:**
+- Create: `frontend/src/stores/call.ts`
+- Create: `frontend/src/stores/call.test.ts`
+- Modify: `frontend/src/stores/chat.ts` only if a test exposes a missing transport hook.
+
+**Interfaces:**
+- Consumes: `useChatStore().sendWsMessage`, `useChatStore().onWsMessage`, `getWebRtcIceConfig`, `useWebRtcCall`.
+- Produces:
+  ```ts
+  export const useCallStore = defineStore('call', () => {
+    const phase = ref<CallPhase>('idle')
+    const callId = ref<string | null>(null)
+    const peerUserId = ref<number | null>(null)
+    const peerName = ref('')
+    const muted = ref(false)
+    const connectedAt = ref<number | null>(null)
+    const durationSeconds = ref(0)
+    const error = ref('')
+    const remoteStream = ref<MediaStream | null>(null)
+
+    async function startCall(contact: Contact): Promise<void>
+    async function acceptCall(): Promise<void>
+    function rejectCall(): void
+    function cancelCall(): void
+    function hangup(): void
+    function toggleMute(): void
+    function cleanupLocal(): void
+    function ensureBound(): void
+
+    return { ... }
+  })
+  ```
+
+- [ ] **Step 1: Write failing call store tests**
+
+Mock `useWebRtcCall` and use a fake chat transport.
+
+Required tests:
+
+```ts
+it('does not send call_invite when prepare fails')
+it('sends call_invite only after prepare succeeds')
+it('records callId from call_ringing')
+it('enters incoming state from call_incoming even when no conversation is selected
