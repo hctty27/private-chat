@@ -343,6 +343,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopCallBeforeLogout()
   dragActive.value = false
   dragDepth = 0
 })
