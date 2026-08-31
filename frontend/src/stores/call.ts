@@ -30,6 +30,8 @@ export const useCallStore = defineStore('call', () => {
   const remoteStream = ref<MediaStream | null>(null)
 
   let cancelPendingInvite = false
+  let preparingOutgoing = false
+  let outgoingPrepareSeq = 0
   let durationTimer: ReturnType<typeof setInterval> | null = null
   let resetTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeWs: (() => void) | null = null
@@ -120,6 +122,8 @@ export const useCallStore = defineStore('call', () => {
 
   function resetToIdle() {
     clearResetTimer()
+    outgoingPrepareSeq += 1
+    preparingOutgoing = false
     cleanupLocal()
     phase.value = 'idle'
     callId.value = null
@@ -163,9 +167,9 @@ export const useCallStore = defineStore('call', () => {
 
   async function startCall(contact: Contact) {
     ensureBound()
-    if (!available.value || phase.value !== 'idle') return
+    if (!available.value || phase.value !== 'idle' || preparingOutgoing) return
     const chat = useChatStore()
-    if (!chat.wsConnected) {
+    if (!chat.wsConnected || chat.wsStatus !== 'connected') {
       error.value = '网络未连接'
       return
     }
@@ -174,14 +178,33 @@ export const useCallStore = defineStore('call', () => {
     error.value = ''
     peerUserId.value = contact.userId
     peerName.value = contact.nickname
+    preparingOutgoing = true
+    const prepareSeq = ++outgoingPrepareSeq
 
     try {
       await rtc.prepare()
     } catch {
+      if (prepareSeq !== outgoingPrepareSeq) return
+      preparingOutgoing = false
       finish('failed', '无法访问麦克风或通话服务不可用')
       return
     }
 
+    if (
+      prepareSeq !== outgoingPrepareSeq ||
+      phase.value !== 'idle' ||
+      !chat.wsConnected ||
+      chat.wsStatus !== 'connected'
+    ) {
+      preparingOutgoing = false
+      rtc.cleanup()
+      if (prepareSeq === outgoingPrepareSeq && phase.value === 'idle') {
+        error.value = '网络已断开'
+      }
+      return
+    }
+
+    preparingOutgoing = false
     phase.value = 'outgoing'
     chat.sendWsMessage({
       type: 'call_invite',
@@ -282,6 +305,13 @@ export const useCallStore = defineStore('call', () => {
 
     switch (message.type) {
       case 'call_incoming': {
+        if (preparingOutgoing) {
+          useChatStore().sendWsMessage({
+            type: 'call_reject',
+            data: { callId: message.data.callId, reason: 'rejected' },
+          })
+          return
+        }
         if (phase.value !== 'idle') return
         clearResetTimer()
         error.value = ''
@@ -349,6 +379,8 @@ export const useCallStore = defineStore('call', () => {
   }
 
   function dispose() {
+    outgoingPrepareSeq += 1
+    preparingOutgoing = false
     unsubscribeWs?.()
     unsubscribeWs = null
     stopWsWatch?.()
