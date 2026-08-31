@@ -1126,7 +1126,8 @@ Expected: PASS.
   }>()
   ```
 - `VoiceCallButton` emits `call`.
-- Overlay components emit `accept`, `reject`, `hangup`, `toggle-mute`, `resume-audio` as applicable.
+- `VoiceCallOverlay` receives `remoteStream: MediaStream | null` and emits `hangup` / `toggle-mute`; it owns remote-audio playback UI.
+- `IncomingCallOverlay` emits `accept` / `reject`.
 
 - [ ] **Step 1: Write failing shared UI tests**
 
@@ -1137,6 +1138,8 @@ it('shows calling text for outgoing phase')
 it('shows mm:ss duration when connected')
 it('emits toggle-mute and hangup')
 it('shows terminal error text')
+it('attaches remote stream to an autoplay playsinline audio element')
+it('shows a resume-audio action when audio play is rejected')
 ```
 
 `IncomingCallOverlay`:
@@ -1167,6 +1170,14 @@ Use `@vue/test-utils`.
 Do not place it inside `.msg-scroll`.
 
 `IncomingCallOverlay.vue` uses the same fixed layer and buttons with clear `aria-label`.
+
+`VoiceCallOverlay.vue` must own one hidden remote audio element:
+
+```vue
+<audio ref="remoteAudioEl" autoplay playsinline></audio>
+```
+
+When `remoteStream` changes, assign it to `remoteAudioEl.srcObject` and call `play()`. If `play()` rejects (for example because Safari requires a fresh user gesture), show a visible “点击恢复声音” button. That button calls `play()` again directly from the user click. Clear `srcObject` when the call ends/unmounts. Do not reuse the voice-message player.
 
 - [ ] **Step 3: Add desktop header integration**
 
