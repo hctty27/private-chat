@@ -34,10 +34,15 @@ describe('getMessageActions', () => {
     expect(getMessageActions(message({ msgType: 3, fileUrl: '/api/files/3/content' }))).toEqual(['reply', 'open', 'save'])
   })
 
+  it('returns save for available voice messages', () => {
+    expect(getMessageActions(message({ msgType: 6, fileUrl: '/api/files/6/content' }))).toEqual(['reply', 'save'])
+  })
+
   it('does not expose unavailable media actions before a file URL exists', () => {
     expect(getMessageActions(message({ msgType: 2, fileUrl: null }))).toEqual(['reply'])
     expect(getMessageActions(message({ msgType: 3, fileUrl: null }))).toEqual(['reply'])
     expect(getMessageActions(message({ msgType: 5, fileUrl: null }))).toEqual(['reply'])
+    expect(getMessageActions(message({ msgType: 6, fileUrl: null }))).toEqual(['reply'])
   })
 
   it('prepends retry for failed text and limits failed attachments to retry', () => {
