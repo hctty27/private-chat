@@ -11,6 +11,7 @@ function compactText(value: string | null | undefined) {
 export function messageReplySummary(message: ReplySource) {
   if (message.msgType === 2) return '[图片]'
   if (message.msgType === 5) return '[视频]'
+  if (message.msgType === 6) return '[语音]'
   if (message.msgType === 3) {
     const name = compactText(message.fileName)
     return name ? `[文件] ${name}` : '[文件]'

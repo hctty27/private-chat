@@ -527,10 +527,11 @@ export const useChatStore = defineStore('chat', () => {
     const clientMsgId = createClientMsgId()
     const isImage = file.type.startsWith('image/')
     const isVideo = file.type.startsWith('video/')
+    const isAudio = file.type.startsWith('audio/')
     const local = createLocalMessage({
       currentUserId: userId,
       receiverId,
-      msgType: isImage ? 2 : isVideo ? 5 : 3,
+      msgType: isImage ? 2 : isVideo ? 5 : isAudio ? 6 : 3,
       content: null,
       fileId: null,
       fileUrl: null,
@@ -587,7 +588,7 @@ export const useChatStore = defineStore('chat', () => {
         const contact = contacts.value.find((c) => c.userId === contactId)
         if (contact) {
           contact.lastMessage = msg.content || msg.fileName
-            ? (msg.msgType === 2 ? '[图片]' : msg.msgType === 5 ? '[视频]' : msg.fileName || '[文件]')
+            ? (msg.msgType === 2 ? '[图片]' : msg.msgType === 5 ? '[视频]' : msg.msgType === 6 ? '[语音]' : msg.fileName || '[文件]')
             : '[文件]'
           contact.lastMessageTime = msg.createdAt
           if (shouldIncrementUnread({

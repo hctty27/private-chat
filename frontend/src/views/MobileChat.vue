@@ -107,6 +107,13 @@
                     @open="openPreviewFromBubble($event, message.fileUrl!, 'video', videoPosterUrl(message))"
                   />
                 </template>
+                <template v-else-if="message.msgType === 6 && message.fileUrl">
+                  <AudioMessageCard
+                    :url="message.fileUrl"
+                    :file-name="message.fileName"
+                    @pointerdown.stop
+                  />
+                </template>
                 <template v-else-if="message.msgType === 3 && message.fileUrl">
                   <a
                     :href="message.fileUrl ?? undefined"
@@ -176,6 +183,11 @@
         />
         <div class="input-row">
           <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" aria-label="表情" @click="toggleEmoji">😊</button>
+          <VoiceRecorderButton
+            @recording-start="prepareVoiceRecording"
+            @recorded="onVoiceRecorded"
+            @warning="ElMessage.warning($event)"
+          />
           <button class="ibtn tap-target" type="button" aria-label="添加附件" @click="fileEl?.click()">＋</button>
           <input ref="fileEl" type="file" multiple hidden @change="onFile" />
           <textarea
@@ -238,6 +250,8 @@ import { isIOSDevice } from '../utils/platform'
 import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import VideoMessageCard from '../components/VideoMessageCard.vue'
+import AudioMessageCard from '../components/AudioMessageCard.vue'
+import VoiceRecorderButton from '../components/VoiceRecorderButton.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
@@ -539,6 +553,15 @@ async function onFile(event: Event) {
   const contactId = chatStore.currentContact?.userId
   if (!contactId || !attachmentIngress.acceptFiles(files)) return
   await mobileHistory.pushOverlay(contactId, 'attachment')
+}
+
+function prepareVoiceRecording() {
+  if (emojiOpen.value) closeOverlay('emoji')
+  inputEl.value?.blur()
+}
+
+async function onVoiceRecorded(file: File) {
+  await attachments.uploadFiles([file])
 }
 
 async function confirmAttachment() {

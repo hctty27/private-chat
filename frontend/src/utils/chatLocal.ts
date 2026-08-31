@@ -22,7 +22,7 @@ export function conversationIdFor(a: number, b: number) {
 export function createLocalMessage(options: {
   currentUserId: number
   receiverId: number
-  msgType: 1 | 2 | 3 | 4 | 5
+  msgType: 1 | 2 | 3 | 4 | 5 | 6
   content: string | null
   fileId?: number | null
   fileUrl: string | null

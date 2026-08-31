@@ -133,6 +133,7 @@ function previewText(c: Contact): string {
   if (!c.lastMessage) return '暂无消息'
   if (c.lastMessage.startsWith('[图片]')) return '📷 [图片]'
   if (c.lastMessage.startsWith('[视频]')) return '🎬 [视频]'
+  if (c.lastMessage.startsWith('[语音]')) return '🎤 [语音]'
   if (c.lastMessage.startsWith('[文件]')) return '📎 [文件]'
   return c.lastMessage.length > 20 ? c.lastMessage.slice(0, 20) + '...' : c.lastMessage
 }

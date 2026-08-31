@@ -217,7 +217,7 @@ func (a *App) kickUser(userID int64, message string) {
 }
 
 func isFileMessageType(msgType int) bool {
-	return msgType == 2 || msgType == 3 || msgType == 5
+	return msgType == 2 || msgType == 3 || msgType == 5 || msgType == 6
 }
 
 type wsChatPayload struct {

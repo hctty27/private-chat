@@ -112,6 +112,12 @@
                       @open="openPreview(message.fileUrl!, 'video', videoPosterUrl(message))"
                     />
                   </template>
+                  <template v-else-if="message.msgType === 6 && message.fileUrl">
+                    <AudioMessageCard
+                      :url="message.fileUrl"
+                      :file-name="message.fileName"
+                    />
+                  </template>
                   <template v-else-if="message.msgType === 3 && message.fileUrl">
                     <a :href="message.fileUrl ?? undefined" target="_blank" download class="file-link">
                       📎 {{ message.fileName }}
@@ -166,6 +172,12 @@
           />
           <div class="input-row">
             <button class="ibtn tap-target" :class="{ on: emojiOpen }" type="button" @click="emojiOpen = !emojiOpen">😊</button>
+            <VoiceRecorderButton
+              compact
+              @recording-start="emojiOpen = false"
+              @recorded="onVoiceRecorded"
+              @warning="ElMessage.warning($event)"
+            />
             <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
             <input ref="fileEl" type="file" multiple hidden @change="onFile" />
             <textarea
@@ -244,6 +256,8 @@ import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import VideoMessageCard from '../components/VideoMessageCard.vue'
+import AudioMessageCard from '../components/AudioMessageCard.vue'
+import VoiceRecorderButton from '../components/VoiceRecorderButton.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
@@ -367,6 +381,10 @@ function onFile(event: Event) {
   input.value = ''
   if (files.length === 0) return
   attachmentIngress.acceptFiles(files)
+}
+
+async function onVoiceRecorded(file: File) {
+  await attachments.uploadFiles([file])
 }
 
 function onPaste(event: ClipboardEvent) {

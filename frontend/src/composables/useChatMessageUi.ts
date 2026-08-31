@@ -32,12 +32,13 @@ export function useChatMessageUi(uid: Ref<number>) {
   }
 
   function isPendingMediaMessage(message: Message) {
-    return (message.msgType === 2 || message.msgType === 3 || message.msgType === 5) && !message.fileUrl
+    return (message.msgType === 2 || message.msgType === 3 || message.msgType === 5 || message.msgType === 6) && !message.fileUrl
   }
 
   function pendingMediaText(message: Message) {
     if (message.msgType === 2) return '📷 图片准备中'
     if (message.msgType === 5) return '🎬 视频准备中'
+    if (message.msgType === 6) return '🎤 语音准备中'
     return `📎 ${message.fileName || '文件准备中'}`
   }
 
