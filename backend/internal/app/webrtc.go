@@ -80,7 +80,6 @@ func (a *App) iceConfigHandler(c *gin.Context) {
 	respondSuccess(c, payload)
 }
 
-
 func (a *App) webRTCStatusHandler(c *gin.Context) {
 	respondSuccess(c, gin.H{"enabled": a.cfg.WebRTCEnabled})
 }
