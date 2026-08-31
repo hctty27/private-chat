@@ -66,6 +66,16 @@ watch(() => props.posterUrl, () => {
   background: #111;
 }
 
+.video-poster::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
 .video-poster img {
   width: 100%;
   height: 100%;

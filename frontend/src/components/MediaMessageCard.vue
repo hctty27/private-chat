@@ -225,6 +225,16 @@ watch(
   background: #e8e8e8;
 }
 
+.image-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
 .image-shell img {
   width: 100%;
   height: 100%;
@@ -259,6 +269,16 @@ watch(
     linear-gradient(145deg, #2d2d2d, #151515);
 }
 
+.video-pending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+}
+
 .video-pending-icon {
   position: absolute;
   left: 50%;
@@ -284,7 +304,7 @@ watch(
 
 .audio-pending {
   width: 154px;
-  height: 38px;
+  height: 42px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -413,6 +433,10 @@ watch(
   .image-card,
   .video-pending {
     width: min(68vw, 240px, 56dvh);
+  }
+
+  .audio-pending {
+    height: 44px;
   }
 }
 </style>

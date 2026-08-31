@@ -78,7 +78,7 @@
               @pointerup="doubleTap.end($event)"
               @pointercancel="doubleTap.cancel"
             >
-              <div class="bubble" :class="[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message) }]">
+              <div class="bubble" :class="[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message), 'voice-media': isStandaloneVoiceMessage(message) }]">
                 <MessageReplyQuote
                   v-if="message.replyTo"
                   :reply="message.replyTo"
@@ -300,6 +300,7 @@ const {
   isPendingMediaMessage,
   isRichMediaMessage,
   isStandaloneVisualMedia,
+  isStandaloneVoiceMessage,
   hasInlineMediaStatus,
   pendingMediaText,
   bubbleType,
@@ -838,6 +839,7 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 6px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
 .bubble.emoji { background: transparent; padding: 2px 4px; box-shadow: none; }
 .bubble.visual-media { max-width: none; padding: 0; background: transparent; box-shadow: none; }
+.bubble.voice-media { padding-top: 0; padding-bottom: 0; padding-left: 10px; padding-right: 10px; }
 .message-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
