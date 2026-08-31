@@ -9,66 +9,66 @@ import (
 )
 
 type Config struct {
-	ListenAddr          string
-	GinMode             string
-	TrustedProxies      []string
-	AllowedOrigins      []string
-	AuthCookieSecure    bool
-	PostgresHost        string
-	PostgresPort        string
-	PostgresUser        string
-	PostgresPassword    string
-	PostgresDatabase    string
-	PostgresSSLMode     string
-	RedisAddr           string
-	RedisPassword       string
-	StorageEndpoint     string
-	StorageAccessKey    string
-	StorageSecretKey    string
-	StorageBucket       string
-	ObjectStoragePrefix string
-	JWTSecret           string
-	JWTExpiration       time.Duration
-	MessagePageSize     int
-	TimeZone                 string
-	WebRTCEnabled            bool
-	WebRTCICEPolicy          string
-	WebRTCStunURL            string
-	WebRTCTurnURLs           []string
-	WebRTCTurnSecret         string
-	WebRTCTurnCredentialTTL  time.Duration
+	ListenAddr              string
+	GinMode                 string
+	TrustedProxies          []string
+	AllowedOrigins          []string
+	AuthCookieSecure        bool
+	PostgresHost            string
+	PostgresPort            string
+	PostgresUser            string
+	PostgresPassword        string
+	PostgresDatabase        string
+	PostgresSSLMode         string
+	RedisAddr               string
+	RedisPassword           string
+	StorageEndpoint         string
+	StorageAccessKey        string
+	StorageSecretKey        string
+	StorageBucket           string
+	ObjectStoragePrefix     string
+	JWTSecret               string
+	JWTExpiration           time.Duration
+	MessagePageSize         int
+	TimeZone                string
+	WebRTCEnabled           bool
+	WebRTCICEPolicy         string
+	WebRTCStunURL           string
+	WebRTCTurnURLs          []string
+	WebRTCTurnSecret        string
+	WebRTCTurnCredentialTTL time.Duration
 }
 
 func Load() Config {
 	return Config{
-		ListenAddr:          envOrDefault("LISTEN_ADDR", ":8080"),
-		GinMode:             envOrDefault("GIN_MODE", "release"),
-		TrustedProxies:      envList("TRUSTED_PROXIES"),
-		AllowedOrigins:      envList("WS_ALLOWED_ORIGINS"),
-		AuthCookieSecure:    envBoolOrDefault("AUTH_COOKIE_SECURE", true),
-		PostgresHost:        envOrDefault("POSTGRES_HOST", "postgres_db"),
-		PostgresPort:        envOrDefault("POSTGRES_PORT", "5432"),
-		PostgresUser:        envOrDefault("POSTGRES_USER", "admin"),
-		PostgresPassword:    envOrDefault("POSTGRES_PASSWORD", "postgres"),
-		PostgresDatabase:    envOrDefault("POSTGRES_DB", "private_chat"),
-		PostgresSSLMode:     envOrDefault("POSTGRES_SSLMODE", "disable"),
-		RedisAddr:           envOrDefault("REDIS_ADDR", "redis:6379"),
-		RedisPassword:       envOrDefault("REDIS_PASSWORD", ""),
-		StorageEndpoint:     envOrDefault("R2_ENDPOINT", ""),
-		StorageAccessKey:    envOrDefault("R2_ACCESS_KEY", ""),
-		StorageSecretKey:    envOrDefault("R2_SECRET_KEY", ""),
-		StorageBucket:       envOrDefault("R2_BUCKET", ""),
-		ObjectStoragePrefix: envOrDefault("R2_OBJECT_PREFIX", ""),
-		JWTSecret:           envOrDefault("JWT_SECRET", ""),
-		JWTExpiration:       envDurationOrDefault("JWT_EXPIRATION", 24*time.Hour),
-		MessagePageSize:     envIntOrDefault("MESSAGE_PAGE_SIZE", 20),
-		TimeZone:                 envOrDefault("TIME_ZONE", "Asia/Shanghai"),
-		WebRTCEnabled:            envBoolOrDefault("WEBRTC_ENABLED", false),
-		WebRTCICEPolicy:          envOrDefault("WEBRTC_ICE_POLICY", "all"),
-		WebRTCStunURL:            envOrDefault("WEBRTC_STUN_URL", ""),
-		WebRTCTurnURLs:           envList("WEBRTC_TURN_URLS"),
-		WebRTCTurnSecret:         envOrDefault("WEBRTC_TURN_SECRET", ""),
-		WebRTCTurnCredentialTTL:  envDurationOrDefault("WEBRTC_TURN_CREDENTIAL_TTL", 10*time.Minute),
+		ListenAddr:              envOrDefault("LISTEN_ADDR", ":8080"),
+		GinMode:                 envOrDefault("GIN_MODE", "release"),
+		TrustedProxies:          envList("TRUSTED_PROXIES"),
+		AllowedOrigins:          envList("WS_ALLOWED_ORIGINS"),
+		AuthCookieSecure:        envBoolOrDefault("AUTH_COOKIE_SECURE", true),
+		PostgresHost:            envOrDefault("POSTGRES_HOST", "postgres_db"),
+		PostgresPort:            envOrDefault("POSTGRES_PORT", "5432"),
+		PostgresUser:            envOrDefault("POSTGRES_USER", "admin"),
+		PostgresPassword:        envOrDefault("POSTGRES_PASSWORD", "postgres"),
+		PostgresDatabase:        envOrDefault("POSTGRES_DB", "private_chat"),
+		PostgresSSLMode:         envOrDefault("POSTGRES_SSLMODE", "disable"),
+		RedisAddr:               envOrDefault("REDIS_ADDR", "redis:6379"),
+		RedisPassword:           envOrDefault("REDIS_PASSWORD", ""),
+		StorageEndpoint:         envOrDefault("R2_ENDPOINT", ""),
+		StorageAccessKey:        envOrDefault("R2_ACCESS_KEY", ""),
+		StorageSecretKey:        envOrDefault("R2_SECRET_KEY", ""),
+		StorageBucket:           envOrDefault("R2_BUCKET", ""),
+		ObjectStoragePrefix:     envOrDefault("R2_OBJECT_PREFIX", ""),
+		JWTSecret:               envOrDefault("JWT_SECRET", ""),
+		JWTExpiration:           envDurationOrDefault("JWT_EXPIRATION", 24*time.Hour),
+		MessagePageSize:         envIntOrDefault("MESSAGE_PAGE_SIZE", 20),
+		TimeZone:                envOrDefault("TIME_ZONE", "Asia/Shanghai"),
+		WebRTCEnabled:           envBoolOrDefault("WEBRTC_ENABLED", false),
+		WebRTCICEPolicy:         envOrDefault("WEBRTC_ICE_POLICY", "all"),
+		WebRTCStunURL:           envOrDefault("WEBRTC_STUN_URL", ""),
+		WebRTCTurnURLs:          envList("WEBRTC_TURN_URLS"),
+		WebRTCTurnSecret:        envOrDefault("WEBRTC_TURN_SECRET", ""),
+		WebRTCTurnCredentialTTL: envDurationOrDefault("WEBRTC_TURN_CREDENTIAL_TTL", 10*time.Minute),
 	}
 }
 
