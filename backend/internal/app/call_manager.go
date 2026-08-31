@@ -150,17 +150,29 @@ func (m *callManager) Cancel(ctx context.Context, userID int64, callID string) e
 	if err != nil {
 		return err
 	}
-	if record.Status != callStatusRinging {
-		return errCallState
-	}
 	if userID != record.CallerID {
 		return errCallRole
 	}
-	if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusRinging); err != nil {
-		return err
+
+	switch record.Status {
+	case callStatusRinging:
+		if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusRinging); err != nil {
+			return err
+		}
+		m.send(record.CalleeID, callMessage("call_cancelled", gin.H{"callId": callID}))
+		return nil
+	case callStatusActive:
+		if _, err := m.store.DeleteIfStatus(ctx, callID, callStatusActive); err != nil {
+			return err
+		}
+		m.send(record.CalleeID, callMessage("call_ended", gin.H{
+			"callId": callID,
+			"reason": "hangup",
+		}))
+		return nil
+	default:
+		return errCallState
 	}
-	m.send(record.CalleeID, callMessage("call_cancelled", gin.H{"callId": callID}))
-	return nil
 }
 
 func (m *callManager) Hangup(ctx context.Context, userID int64, callID, reason string) error {
