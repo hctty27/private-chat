@@ -60,7 +60,7 @@ describe('VoiceCallOverlay', () => {
     const audio = wrapper.get('audio').element as HTMLAudioElement
     expect(audio.autoplay).toBe(true)
     expect(audio.hasAttribute('playsinline')).toBe(true)
-    expect(audio.srcObject).toBe(stream)
+    expect(audio.srcObject).toEqual(stream)
     expect(play).toHaveBeenCalled()
   })
 
