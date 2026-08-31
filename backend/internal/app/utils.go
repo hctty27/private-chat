@@ -240,6 +240,8 @@ func messagePreview(msg model.Message) string {
 		}
 	case 5:
 		return "[视频]"
+	case 6:
+		return "[语音]"
 	}
 	return "[消息]"
 }
