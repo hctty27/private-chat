@@ -143,9 +143,9 @@ export const useCallStore = defineStore('call', () => {
     const chat = useChatStore()
     unsubscribeWs = chat.onWsMessage(handleServerMessage)
     stopWsWatch = watch(
-      () => chat.wsConnected,
-      (connected, previous) => {
-        if (connected || !previous) return
+      () => chat.wsStatus,
+      (status) => {
+        if (status === 'connected') return
         if (phase.value === 'idle' || phase.value === 'ended' || phase.value === 'failed') return
         finish('failed', '网络已断开')
       },
