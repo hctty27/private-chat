@@ -82,7 +82,7 @@
                 @contextmenu="openMessageMenu($event, message)"
                 @keydown.shift.f10.prevent="openMessageMenuFromElement($event, message)"
               >
-                <div class="bubble" :class="[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message) }]">
+                <div class="bubble" :class="[bubbleType(message), { 'visual-media': isStandaloneVisualMedia(message), 'voice-media': isStandaloneVoiceMessage(message) }]">
                   <MessageReplyQuote
                     v-if="message.replyTo"
                     :reply="message.replyTo"
@@ -298,6 +298,7 @@ const {
   isPendingMediaMessage,
   isRichMediaMessage,
   isStandaloneVisualMedia,
+  isStandaloneVoiceMessage,
   hasInlineMediaStatus,
   pendingMediaText,
   bubbleType,
@@ -553,6 +554,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .bubble.his { background: #fff; color: #111; border-bottom-left-radius: 3px; }
 .bubble.emoji { background: transparent; padding: 2px 4px; }
 .bubble.visual-media { max-width: none; padding: 0; background: transparent; box-shadow: none; }
+.bubble.voice-media { padding-top: 0; padding-bottom: 0; padding-left: 11px; padding-right: 11px; }
 .message-text { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 .emoji-big { font-size: 52px; line-height: 1.2; }
 .file-link { color: #576b95; font-size: 14px; text-decoration: none; display: block; }
