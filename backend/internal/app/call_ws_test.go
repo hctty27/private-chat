@@ -78,3 +78,18 @@ func TestIsCallWebSocketType(t *testing.T) {
 		t.Fatal("chat must not be treated as call signaling")
 	}
 }
+
+
+func TestIceCandidateFromDataAcceptsEndOfCandidates(t *testing.T) {
+	candidate, err := iceCandidateFromData(map[string]any{
+		"candidate": map[string]any{
+			"candidate": "",
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected end-of-candidates marker to be accepted: %v", err)
+	}
+	if candidate["candidate"] != "" {
+		t.Fatalf("unexpected candidate: %#v", candidate)
+	}
+}
