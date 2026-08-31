@@ -10,6 +10,7 @@
 
 - **伪装保护** - 外观模拟微博，点击 3 次进入登录页
 - **实时聊天** - WebSocket 双向通信，消息即时送达
+- **语音通话** - 1 对 1 WebRTC 语音通话，复用现有 WebSocket 做信令，P2P 优先并由 Coturn 提供 TURN 兜底
 - **文件分享** - 支持图片、视频、文件后台直传 Cloudflare R2；图片最大 50 MiB，视频/普通文件最大 500 MiB
 - **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
 - **自动数据库迁移** - Docker Compose 部署时先执行未应用的版本化 PostgreSQL migration，成功后才启动后端
@@ -38,6 +39,7 @@
 - PostgreSQL（或使用 Neon 托管）
 - Redis
 - Cloudflare R2 账号
+- 可选：公网可达的 Coturn（启用语音通话时必须配置）
 
 ### 部署步骤
 
@@ -128,6 +130,67 @@ docker compose run --rm migrate
 
 如果 `schema_migrations` 处于 dirty 状态，应用不会自动 `force` 版本。应先确认失败 SQL 和实际数据库结构，再由维护者显式修复 migration 状态；部署流程也不会自动执行 destructive rollback。
 
+### 语音通话与 TURN
+
+语音通话默认关闭，不影响现有部署：
+
+```dotenv
+WEBRTC_ENABLED=false
+```
+
+要启用语音通话，至少配置：
+
+```dotenv
+WEBRTC_ENABLED=true
+WEBRTC_ICE_POLICY=all
+WEBRTC_STUN_URL=stun:turn.example.com:3478
+WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
+WEBRTC_TURN_SECRET=<long-random-shared-secret>
+WEBRTC_TURN_CREDENTIAL_TTL=10m
+```
+
+应用后端与 Coturn 共享 `WEBRTC_TURN_SECRET`，浏览器不会拿到该固定 secret。后端通过 `GET /api/webrtc/ice-config` 为当前登录用户签发短期 TURN credential；username 使用过期时间和用户 ID，credential 使用 HMAC-SHA1 派生。
+
+项目提供可选 Coturn Compose profile：
+
+```dotenv
+WEBRTC_TURN_REALM=turn.example.com
+WEBRTC_TURN_EXTERNAL_IP=<public_ipv4>
+WEBRTC_TURN_MIN_PORT=49160
+WEBRTC_TURN_MAX_PORT=49200
+```
+
+```bash
+docker compose --profile voice up -d --build
+```
+
+自托管 Coturn 时防火墙至少开放：
+
+```text
+TCP 3478
+UDP 3478
+UDP 49160-49200
+```
+
+`WEBRTC_TURN_URLS` 必须使用浏览器能够访问的公网域名/IP，不能填写只在 Docker 网络内部可解析的服务名。第一版 Compose profile 提供 TURN UDP/TCP 3478；如果要增加 `turns:` 5349，必须先为 Coturn 配置有效 TLS 证书和私钥，再把对应 `turns:` URL 下发给浏览器。
+
+默认 `WEBRTC_ICE_POLICY=all`，浏览器会优先尝试直接连接，失败后使用 TURN。改为：
+
+```dotenv
+WEBRTC_ICE_POLICY=relay
+```
+
+会只使用 TURN relay，可减少对端直接看到网络路径的机会，但所有通话媒体都会消耗 TURN 服务器带宽。
+
+浏览器限制：
+
+- 生产必须使用 HTTPS/WSS，才能稳定获取麦克风权限。
+- iPhone Safari 第一版只保证页面处于前台时的呼叫和接听。
+- Safari 后台、锁屏或页面被系统挂起时，不承诺像原生电话/微信一样持续响铃。
+- 通话 Overlay 独立于聊天滚动区和移动端 history/visualViewport 状态机。
+
+通话信令和通话状态不会写入 `t_message`，也没有新增数据库 migration。实时通话状态只保存在 Redis 的短生命周期 key 中；实际音频由 WebRTC 传输。
+
 ### 本地开发
 
 **后端**
@@ -193,6 +256,12 @@ private-chat/
 | GET | `/api/contacts` | 获取联系人列表 |
 | GET | `/api/messages/:targetId` | 获取联系人历史消息（游标分页） |
 
+### WebRTC
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/webrtc/ice-config` | 登录后获取 STUN/TURN ICE 配置和短期 TURN credential；`WEBRTC_ENABLED=false` 时返回不可用 |
+
 ### 文件
 
 | 方法 | 路径 | 说明 |
@@ -218,6 +287,8 @@ HTTP API 和 WebSocket 都只使用浏览器自动携带的 `private_chat_sessio
 - `chat` - 发送消息；图片/文件/视频消息必须包含已确认的 `fileId`
 - `read` - 标记已读
 - `heartbeat` - 心跳保活
+- `call_invite` / `call_accept` / `call_reject` / `call_cancel` / `call_hangup` - 通话生命周期
+- `webrtc_offer` / `webrtc_answer` / `webrtc_ice` - WebRTC SDP/ICE 信令
 
 **服务端消息类型**
 
@@ -226,6 +297,8 @@ HTTP API 和 WebSocket 都只使用浏览器自动携带的 `private_chat_sessio
 - `online` - 联系人在线状态
 - `heartbeat_ack` - 心跳确认
 - `kicked` - 会话失效或被踢下线
+- `call_ringing` / `call_incoming` / `call_unavailable` / `call_busy` / `call_accepted` / `call_rejected` / `call_cancelled` / `call_timeout` / `call_ended` - 通话状态
+- `webrtc_offer` / `webrtc_answer` / `webrtc_ice` - 转发给通话对端的 WebRTC 信令
 
 WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORIGINS` 配置，多个地址使用逗号分隔。单条 WebSocket 消息最大 64 KiB。
 
@@ -241,6 +314,8 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 
 版本化 migration 位于 `backend/internal/migration/sql/`，编译时嵌入后端二进制。新增 schema 变更时应添加新的 `*.up.sql` / `*.down.sql` 版本，而不是修改已经在线上应用过的 migration 内容。
 
+语音通话本身不是 `t_message` 消息类型：呼叫状态存 Redis，SDP/ICE 只经 WebSocket 短暂转发，音频走 WebRTC。
+
 ### 消息类型
 
 | 类型 | 说明 |
@@ -250,6 +325,7 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 | 3 | 文件 |
 | 4 | Emoji |
 | 5 | 视频 |
+| 6 | 语音消息 |
 
 ## 测试账号
 
@@ -274,6 +350,12 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `POSTGRES_*` - PostgreSQL 连接配置；`migrate` 和 backend 共用
 - `REDIS_*` - Redis 连接配置
 - `R2_*` - Cloudflare R2 文件存储配置
+- `WEBRTC_ENABLED` - 是否启用 1 对 1 WebRTC 语音通话，默认 `false`
+- `WEBRTC_ICE_POLICY` - `all`（P2P 优先/TURN 兜底）或 `relay`（强制 TURN）
+- `WEBRTC_STUN_URL` / `WEBRTC_TURN_URLS` - 浏览器可访问的 ICE 服务地址
+- `WEBRTC_TURN_SECRET` - 后端与 Coturn 共用的 shared secret，不得暴露给前端
+- `WEBRTC_TURN_CREDENTIAL_TTL` - 临时 TURN credential 有效期，默认 10 分钟
+- `WEBRTC_TURN_REALM` / `WEBRTC_TURN_EXTERNAL_IP` / `WEBRTC_TURN_MIN_PORT` / `WEBRTC_TURN_MAX_PORT` - 自托管 Coturn profile 配置
 
 ## 质量检查
 
