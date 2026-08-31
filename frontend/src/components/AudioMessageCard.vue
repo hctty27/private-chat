@@ -5,8 +5,7 @@
     :style="{ width: cardWidth }"
     :aria-label="playing ? '暂停语音' : '播放语音'"
     :title="fileName || undefined"
-    @click.stop="togglePlayback"
-    @pointerdown.stop
+    @click.stop="requestTogglePlayback"
   >
     <span class="audio-progress" :style="{ width: progress + '%' }" aria-hidden="true"></span>
     <span class="audio-icon" aria-hidden="true">{{ playing ? 'Ⅱ' : '▶' }}</span>
@@ -33,10 +32,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   url: string
   fileName?: string | null
-}>()
+  tapDelayMs?: number
+  suppressPlaybackUntil?: number
+}>(), {
+  tapDelayMs: 0,
+  suppressPlaybackUntil: 0,
+})
 
 const audioEl = ref<HTMLAudioElement | null>(null)
 const playing = ref(false)
@@ -44,6 +48,7 @@ const failed = ref(false)
 const duration = ref(0)
 const currentTime = ref(0)
 const audioPlayEvent = 'private-chat-audio-play'
+const pendingToggleTimers = new Set<number>()
 
 const durationLabel = computed(() => {
   if (failed.value) return '无法播放'
@@ -78,6 +83,28 @@ function onEnded() {
   if (audioEl.value) audioEl.value.currentTime = 0
 }
 
+function requestTogglePlayback() {
+  const clickAt = Date.now()
+  const delayMs = Math.max(0, props.tapDelayMs)
+
+  if (delayMs === 0) {
+    void togglePlayback()
+    return
+  }
+
+  const timer = window.setTimeout(() => {
+    pendingToggleTimers.delete(timer)
+    if (props.suppressPlaybackUntil > clickAt) return
+    void togglePlayback()
+  }, delayMs)
+  pendingToggleTimers.add(timer)
+}
+
+function clearPendingToggleTimers() {
+  for (const timer of pendingToggleTimers) window.clearTimeout(timer)
+  pendingToggleTimers.clear()
+}
+
 async function togglePlayback() {
   const audio = audioEl.value
   if (!audio || failed.value) return
@@ -103,6 +130,7 @@ function stopForOtherAudio(event: Event) {
 }
 
 watch(() => props.url, () => {
+  clearPendingToggleTimers()
   playing.value = false
   failed.value = false
   duration.value = 0
@@ -115,6 +143,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  clearPendingToggleTimers()
   window.removeEventListener(audioPlayEvent, stopForOtherAudio)
   audioEl.value?.pause()
 })
@@ -137,6 +166,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .audio-progress {
   position: absolute;
