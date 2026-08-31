@@ -125,7 +125,7 @@ onBeforeUnmount(() => {
   position: relative;
   min-width: 126px;
   max-width: min(232px, 64vw);
-  height: 38px;
+  height: 42px;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
 }
 .audio-wave {
   flex: 1;
-  height: 22px;
+  height: 18px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -193,5 +193,11 @@ audio {
 @keyframes audioPlaying {
   from { transform: scaleY(0.55); opacity: 0.55; }
   to { transform: scaleY(1); opacity: 0.9; }
+}
+
+@media (max-width: 767px) {
+  .audio-message {
+    height: 44px;
+  }
 }
 </style>
