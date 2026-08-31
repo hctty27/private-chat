@@ -12,6 +12,7 @@ vi.mock('../api', () => ({
   getMessages: vi.fn(),
   uploadFile: vi.fn(),
   getWebRTCIceConfig: vi.fn(),
+  getWebRTCStatus: vi.fn(),
 }))
 
 vi.mock('../composables/useWebRtcCall', () => ({
@@ -69,6 +70,7 @@ describe('call store', () => {
     chat.wsConnected = true
     chat.contacts = [contact()]
     vi.spyOn(chat, 'sendWsMessage').mockImplementation(() => undefined)
+    useCallStore().available = true
   })
 
   it('does not send call_invite when media preparation fails', async () => {
