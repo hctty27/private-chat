@@ -79,7 +79,6 @@ func TestIsCallWebSocketType(t *testing.T) {
 	}
 }
 
-
 func TestIceCandidateFromDataAcceptsEndOfCandidates(t *testing.T) {
 	candidate, err := iceCandidateFromData(map[string]any{
 		"candidate": map[string]any{
