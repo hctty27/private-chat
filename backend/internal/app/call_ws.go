@@ -57,8 +57,8 @@ func iceCandidateFromData(data map[string]any) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("invalid ice candidate")
 	}
-	candidate, _ := raw["candidate"].(string)
-	if candidate == "" || len(candidate) > maxICECandidateLength {
+	candidate, ok := raw["candidate"].(string)
+	if !ok || len(candidate) > maxICECandidateLength {
 		return nil, fmt.Errorf("invalid ice candidate")
 	}
 
