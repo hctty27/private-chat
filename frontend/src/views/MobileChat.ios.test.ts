@@ -64,6 +64,21 @@ describe('MobileChat iOS viewport layout', () => {
   })
 })
 
+describe('MobileChat message actions', () => {
+  it('opens the existing action menu from a touch double tap for every message type', () => {
+    expect(mobileChatSource).toContain('const doubleTap = useDoubleTap<Message>((message, point) => {')
+    expect(mobileChatSource).toContain('openMessageMenuAt(point.x, point.y, message)')
+    expect(mobileChatSource).toContain('function onMessagePointerDown(event: PointerEvent, message: Message) {\n  doubleTap.start(event, message)')
+    expect(mobileChatSource).not.toContain('message.msgType !== 1 && message.msgType !== 4')
+  })
+
+  it('defers media and file single-tap actions so a double tap can win', () => {
+    expect(mobileChatSource).toContain('const clickAt = Date.now()')
+    expect(mobileChatSource).toContain('if (suppressNativeClickUntil > clickAt) return')
+    expect(mobileChatSource).toContain('}, 340)')
+  })
+})
+
 describe('MobileChat iOS visual polish', () => {
   it('centers the chat identity in a balanced navigation bar', () => {
     expect(mobileChatSource).toContain('class="chat-head-spacer"')

@@ -333,8 +333,9 @@ let historyBackPending = false
 let suppressNativeClickUntil = 0
 const mobileViewportClass = 'mobile-chat-viewport'
 
-const doubleTap = useDoubleTap<Message>((message) => {
-  startReply(message)
+const doubleTap = useDoubleTap<Message>((message, point) => {
+  suppressNativeClickUntil = Date.now() + 600
+  openMessageMenuAt(point.x, point.y, message)
 })
 
 function lockMobileViewport() {
@@ -610,10 +611,28 @@ function cancelUploadByClientId(clientMsgId?: string) {
 }
 
 function guardNativeMessageClick(event: MouseEvent) {
-  if (Date.now() >= suppressNativeClickUntil) return
-  suppressNativeClickUntil = 0
+  const anchor = event.currentTarget instanceof HTMLAnchorElement ? event.currentTarget : null
+  if (!anchor) return
   event.preventDefault()
   event.stopPropagation()
+  const href = anchor.href
+  const fileName = anchor.getAttribute('download') || ''
+  const clickAt = Date.now()
+  window.setTimeout(() => {
+    if (suppressNativeClickUntil > clickAt) return
+    if (isIOS) {
+      window.location.assign(href)
+      return
+    }
+    const delayedAnchor = document.createElement('a')
+    delayedAnchor.href = href
+    delayedAnchor.target = '_blank'
+    delayedAnchor.rel = 'noopener noreferrer'
+    if (fileName) delayedAnchor.download = fileName
+    document.body.appendChild(delayedAnchor)
+    delayedAnchor.click()
+    delayedAnchor.remove()
+  }, 340)
 }
 
 function openPreviewFromBubble(
@@ -622,13 +641,13 @@ function openPreviewFromBubble(
   type: 'image' | 'video',
   posterUrl = '',
 ) {
-  if (Date.now() < suppressNativeClickUntil) {
-    suppressNativeClickUntil = 0
-    event.preventDefault()
-    event.stopPropagation()
-    return
-  }
-  void openPreview(url, type, posterUrl)
+  event.preventDefault()
+  event.stopPropagation()
+  const clickAt = Date.now()
+  window.setTimeout(() => {
+    if (suppressNativeClickUntil > clickAt) return
+    void openPreview(url, type, posterUrl)
+  }, 340)
 }
 
 async function openPreview(url: string, type: 'image' | 'video', posterUrl = '') {
@@ -657,15 +676,6 @@ function startReply(message: Message) {
 }
 
 function onMessagePointerDown(event: PointerEvent, message: Message) {
-  if (message.msgType !== 1 && message.msgType !== 4) {
-    doubleTap.cancel()
-    return
-  }
-  const target = event.target instanceof Element ? event.target : null
-  if (target?.closest('button, a, img, video, [role="button"]')) {
-    doubleTap.cancel()
-    return
-  }
   doubleTap.start(event, message)
 }
 

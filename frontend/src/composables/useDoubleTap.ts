@@ -1,5 +1,7 @@
+export type DoubleTapPoint = { x: number; y: number }
+
 export function useDoubleTap<T>(
-  onTrigger: (payload: T) => void,
+  onTrigger: (payload: T, point: DoubleTapPoint) => void,
   options: { delayMs?: number; movementPx?: number } = {},
 ): {
   start(event: PointerEvent, payload: T): void
@@ -63,7 +65,7 @@ export function useDoubleTap<T>(
     if (isDoubleTap) {
       lastPayload = null
       lastTapAt = 0
-      onTrigger(payload)
+      onTrigger(payload, { x: event.clientX, y: event.clientY })
       return
     }
 
