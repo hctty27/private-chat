@@ -60,6 +60,12 @@ services:
       - R2_OBJECT_PREFIX=${R2_OBJECT_PREFIX:-}
       - JWT_SECRET=${JWT_SECRET:?missing JWT_SECRET}
       - JWT_EXPIRATION=${JWT_EXPIRATION:-24h}
+      - WEBRTC_ENABLED=${WEBRTC_ENABLED:-false}
+      - WEBRTC_ICE_POLICY=${WEBRTC_ICE_POLICY:-all}
+      - WEBRTC_STUN_URL=${WEBRTC_STUN_URL:-}
+      - WEBRTC_TURN_URLS=${WEBRTC_TURN_URLS:-}
+      - WEBRTC_TURN_SECRET=${WEBRTC_TURN_SECRET:-}
+      - WEBRTC_TURN_CREDENTIAL_TTL=${WEBRTC_TURN_CREDENTIAL_TTL:-10m}
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ready || exit 1"]
       interval: 30s
