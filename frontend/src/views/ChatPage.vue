@@ -27,6 +27,11 @@
             <div class="ch-name">{{ chatStore.currentContact.nickname }}</div>
             <div class="ch-status" :title="chatStore.currentContact.availabilityNote || undefined">{{ formatContactPresence(chatStore.currentContact) }}</div>
           </div>
+          <VoiceCallButton
+            class="desktop-call-button"
+            :disabled="!chatStore.wsConnected || callStore.phase !== 'idle'"
+            @call="startCurrentCall"
+          />
         </div>
 
         <ConnectionNotice
@@ -186,6 +191,25 @@
       </div>
     </main>
 
+    <IncomingCallOverlay
+      v-if="callStore.phase === 'incoming'"
+      :peer-name="callStore.peerName"
+      @accept="callStore.acceptCall"
+      @reject="callStore.rejectCall"
+    />
+
+    <VoiceCallOverlay
+      v-if="callStore.phase !== 'idle' && callStore.phase !== 'incoming'"
+      :phase="callStore.phase"
+      :peer-name="callStore.peerName"
+      :duration-seconds="callStore.durationSeconds"
+      :muted="callStore.muted"
+      :error="callStore.error"
+      :remote-stream="callStore.remoteStream"
+      @hangup="endCurrentCall"
+      @toggle-mute="callStore.toggleMute"
+    />
+
     <MediaPreview
       :visible="previewVisible"
       :url="previewUrl"
@@ -223,6 +247,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
+import { useCallStore } from '../stores/call'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
@@ -245,9 +270,13 @@ import MessageActionMenu from '../components/MessageActionMenu.vue'
 import MessageReplyQuote from '../components/MessageReplyQuote.vue'
 import ReplyComposerBar from '../components/ReplyComposerBar.vue'
 import AvailabilityDialog from '../components/AvailabilityDialog.vue'
+import VoiceCallButton from '../components/VoiceCallButton.vue'
+import VoiceCallOverlay from '../components/VoiceCallOverlay.vue'
+import IncomingCallOverlay from '../components/IncomingCallOverlay.vue'
 import type { Message } from '../types'
 
 const chatStore = useChatStore()
+const callStore = useCallStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
@@ -306,6 +335,7 @@ const {
 } = useChatMessageUi(uid)
 
 onMounted(async () => {
+  callStore.ensureBound()
   await chatStore.loadContacts()
   chatStore.connectWs()
 })
@@ -355,7 +385,24 @@ function openMediaFromBubble(
   openPreview(url, type, posterUrl)
 }
 
+function startCurrentCall() {
+  if (chatStore.currentContact) void callStore.startCall(chatStore.currentContact)
+}
+
+function endCurrentCall() {
+  if (callStore.phase === 'outgoing') callStore.cancelCall()
+  else callStore.hangup()
+}
+
+function stopCallBeforeLogout() {
+  if (callStore.phase === 'incoming') callStore.rejectCall()
+  else if (callStore.phase === 'outgoing') callStore.cancelCall()
+  else if (callStore.phase === 'connecting' || callStore.phase === 'connected') callStore.hangup()
+  callStore.dispose()
+}
+
 function logout() {
+  stopCallBeforeLogout()
   drafts.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
@@ -531,6 +578,7 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #e5e5e5; flex-shrink: 0; min-height: 52px; }
 .ch-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #60a5fa, #a78bfa); display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 14px; flex-shrink: 0; }
 .ch-info { display: flex; flex-direction: column; }
+.desktop-call-button { margin-left: auto; }
 .ch-name { font-size: 15px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
 .msg-scroll { flex: 1; overflow-y: auto; padding: 12px; background: #ededed; }
