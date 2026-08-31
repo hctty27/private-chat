@@ -667,8 +667,11 @@ Coturn 可以作为独立容器或外部服务。
 按钮点击：
 
 1. 不立即改变聊天消息区域。
-2. 创建 outgoing call。
-3. 展示通话 Overlay。
+2. 先在当前用户手势内请求麦克风权限并取得本地音频 Track。
+3. 麦克风成功后才发送 `call_invite` 并创建 outgoing call。
+4. 展示通话 Overlay。
+
+如果麦克风权限失败，不发送 `call_invite`，避免对端收到一个本机无法完成的呼叫。
 
 ### 10.2 移动端
 
@@ -698,6 +701,8 @@ Coturn 可以作为独立容器或外部服务。
 - 接听。
 - 拒绝。
 
+被叫点击“接听”后，先在该用户手势内请求麦克风权限；只有 `getUserMedia()` 成功后才发送 `call_accept`。如果权限失败，则保持服务端 call 为 ringing 并立即发送 `call_reject`（reason 为 `media_unavailable`），让主叫明确结束等待。
+
 第一版不加入扬声器路由选择，因为移动 Safari 对音频输出设备控制能力有限且行为依设备不同。
 
 ## 11. iOS Safari 行为
@@ -724,9 +729,20 @@ Coturn 可以作为独立容器或外部服务。
 
 ### 麦克风拒绝
 
-- 不进入 connecting。
-- 通知对端 call ended/cancelled。
+发起方：
+
+- 在发送 `call_invite` 之前请求麦克风。
+- 权限失败时不创建服务端 call。
 - 显示“无法访问麦克风，请检查浏览器权限”。
+
+被叫方：
+
+- 点击接听后先请求麦克风。
+- 权限失败时不发送 `call_accept`。
+- 向服务端发送拒绝，reason 为 `media_unavailable`，结束 ringing call。
+- 显示“无法访问麦克风，请检查浏览器权限”。
+
+通话已经进入 active 后如果本地媒体意外失效，则按连接失败流程结束 call。
 
 ### ICE disconnected
 
