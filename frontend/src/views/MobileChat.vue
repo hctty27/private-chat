@@ -19,7 +19,11 @@
           <div class="ch-name">{{ chatStore.currentContact?.nickname }}</div>
           <div class="ch-status" :title="chatStore.currentContact?.availabilityNote || undefined">{{ chatStore.currentContact ? formatContactPresence(chatStore.currentContact) : '' }}</div>
         </div>
-        <div class="chat-head-spacer" aria-hidden="true"></div>
+        <VoiceCallButton
+          class="mobile-call-button"
+          :disabled="!chatStore.wsConnected || callStore.phase !== 'idle'"
+          @call="startCurrentCall"
+        />
       </div>
 
       <div class="connection-notice-layer">
@@ -205,6 +209,25 @@
       />
     </div>
 
+    <IncomingCallOverlay
+      v-if="callStore.phase === 'incoming'"
+      :peer-name="callStore.peerName"
+      @accept="callStore.acceptCall"
+      @reject="callStore.rejectCall"
+    />
+
+    <VoiceCallOverlay
+      v-if="callStore.phase !== 'idle' && callStore.phase !== 'incoming'"
+      :phase="callStore.phase"
+      :peer-name="callStore.peerName"
+      :duration-seconds="callStore.durationSeconds"
+      :muted="callStore.muted"
+      :error="callStore.error"
+      :remote-stream="callStore.remoteStream"
+      @hangup="endCurrentCall"
+      @toggle-mute="callStore.toggleMute"
+    />
+
     <AvailabilityDialog
       :visible="availabilityVisible"
       @close="availabilityVisible = false"
@@ -217,6 +240,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
+import { useCallStore } from '../stores/call'
 import { useUserStore } from '../stores/user'
 import { useChatScroll } from '../composables/useChatScroll'
 import { useChatComposer } from '../composables/useChatComposer'
@@ -241,9 +265,13 @@ import MessageActionMenu from '../components/MessageActionMenu.vue'
 import MessageReplyQuote from '../components/MessageReplyQuote.vue'
 import ReplyComposerBar from '../components/ReplyComposerBar.vue'
 import AvailabilityDialog from '../components/AvailabilityDialog.vue'
+import VoiceCallButton from '../components/VoiceCallButton.vue'
+import VoiceCallOverlay from '../components/VoiceCallOverlay.vue'
+import IncomingCallOverlay from '../components/IncomingCallOverlay.vue'
 import type { Message } from '../types'
 
 const chatStore = useChatStore()
+const callStore = useCallStore()
 const userStore = useUserStore()
 const router = useRouter()
 const uid = computed(() => userStore.userId)
@@ -347,6 +375,7 @@ function unlockMobileViewport() {
 onMounted(async () => {
   lockMobileViewport()
   installViewportHandler()
+  callStore.ensureBound()
   await chatStore.loadContacts()
   chatStore.connectWs()
   await mobileHistory.replaceList()
@@ -385,6 +414,7 @@ onUnmounted(() => {
     window.visualViewport.removeEventListener('scroll', vvHandler)
   }
   cancelPinnedEndSync()
+  callStore.dispose()
   chatStore.clearState()
 })
 
@@ -772,8 +802,25 @@ async function handleMessageAction(action: MessageAction) {
   }
 }
 
+function startCurrentCall() {
+  if (chatStore.currentContact) void callStore.startCall(chatStore.currentContact)
+}
+
+function endCurrentCall() {
+  if (callStore.phase === 'outgoing') callStore.cancelCall()
+  else callStore.hangup()
+}
+
+function stopCallBeforeLogout() {
+  if (callStore.phase === 'incoming') callStore.rejectCall()
+  else if (callStore.phase === 'outgoing') callStore.cancelCall()
+  else if (callStore.phase === 'connecting' || callStore.phase === 'connected') callStore.hangup()
+  callStore.dispose()
+}
+
 function logout() {
   historySyncSeq += 1
+  stopCallBeforeLogout()
   drafts.clearAll()
   attachmentComposer.cancel()
   closeMessageMenu()
@@ -817,7 +864,7 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 .ch-info { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.15; }
 .ch-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 600; color: #111; }
 .ch-status { margin-top: 3px; font-size: 11px; color: #8e8e93; }
-.chat-head-spacer { width: 44px; height: 44px; }
+.mobile-call-button { justify-self: end; }
 .connection-notice-layer { position: relative; height: 0; flex: 0 0 0; z-index: 25; pointer-events: none; }
 .connection-notice-layer :deep(.connection-notice) { position: absolute; top: 8px; left: calc(12px + env(safe-area-inset-left)); right: calc(12px + env(safe-area-inset-right)); margin: 0 !important; pointer-events: auto; }
 .msg-scroll { flex: 1; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch; padding: 12px; background: #ededed; touch-action: pan-y; overflow-anchor: none; }
