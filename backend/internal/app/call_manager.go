@@ -86,7 +86,7 @@ func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64) erro
 		"userId": calleeID,
 	}))
 	m.send(calleeID, callMessage("call_incoming", gin.H{
-		"callId":  record.ID,
+		"callId":   record.ID,
 		"callerId": callerID,
 	}))
 
