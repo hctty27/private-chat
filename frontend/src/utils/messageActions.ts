@@ -14,6 +14,7 @@ export function getMessageActions(message: Message): MessageAction[] {
   if (message.msgType === 1 || message.msgType === 4) return [...replyActions, 'copy']
   if (!message.fileUrl) return replyActions
   if (message.msgType === 2 || message.msgType === 5) return [...replyActions, 'view', 'save']
+  if (message.msgType === 6) return [...replyActions, 'save']
   if (message.msgType === 3) return [...replyActions, 'open', 'save']
   return replyActions
 }
