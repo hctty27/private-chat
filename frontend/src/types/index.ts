@@ -1,3 +1,6 @@
+import type { WsCallClientMessage, WsCallServerMessage } from './call'
+export * from './call'
+
 export interface ApiResponse<T> {
   code: number
   data: T
@@ -136,7 +139,7 @@ export interface WsKickedMessage {
   data: { message: string }
 }
 
-export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsAvailabilityMessage | WsHeartbeatAck | WsKickedMessage
+export type WsServerMessage = WsChatMessage | WsReadMessage | WsOnlineMessage | WsAvailabilityMessage | WsHeartbeatAck | WsKickedMessage | WsCallServerMessage
 
 export interface WsClientChat {
   type: 'chat'
@@ -163,4 +166,4 @@ export interface WsClientRead {
   data: { targetId: number }
 }
 
-export type WsClientMessage = WsClientChat | WsClientHeartbeat | WsClientRead
+export type WsClientMessage = WsClientChat | WsClientHeartbeat | WsClientRead | WsCallClientMessage
