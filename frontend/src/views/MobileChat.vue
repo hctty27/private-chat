@@ -415,7 +415,7 @@ onUnmounted(() => {
     window.visualViewport.removeEventListener('scroll', vvHandler)
   }
   cancelPinnedEndSync()
-  callStore.dispose()
+  stopCallBeforeLogout()
   chatStore.clearState()
 })
 
