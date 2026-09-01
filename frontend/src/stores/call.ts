@@ -134,6 +134,8 @@ export const useCallStore = defineStore('call', () => {
   }
 
   function finish(target: 'ended' | 'failed', message = '') {
+    if (phase.value === 'preparing') outgoingPrepareSeq += 1
+    preparingOutgoing = false
     cleanupLocal()
     phase.value = target
     error.value = message
@@ -178,6 +180,7 @@ export const useCallStore = defineStore('call', () => {
     error.value = ''
     peerUserId.value = contact.userId
     peerName.value = contact.nickname
+    phase.value = 'preparing'
     preparingOutgoing = true
     const prepareSeq = ++outgoingPrepareSeq
 
@@ -192,14 +195,14 @@ export const useCallStore = defineStore('call', () => {
 
     if (
       prepareSeq !== outgoingPrepareSeq ||
-      phase.value !== 'idle' ||
+      phase.value !== 'preparing' ||
       !chat.wsConnected ||
       chat.wsStatus !== 'connected'
     ) {
       preparingOutgoing = false
       rtc.cleanup()
-      if (prepareSeq === outgoingPrepareSeq && phase.value === 'idle') {
-        error.value = '网络已断开'
+      if (prepareSeq === outgoingPrepareSeq && phase.value === 'preparing') {
+        finish('failed', '网络已断开')
       }
       return
     }
@@ -248,6 +251,12 @@ export const useCallStore = defineStore('call', () => {
   }
 
   function cancelCall() {
+    if (phase.value === 'preparing') {
+      outgoingPrepareSeq += 1
+      preparingOutgoing = false
+      finish('ended')
+      return
+    }
     if (phase.value !== 'outgoing') return
     if (callId.value) {
       useChatStore().sendWsMessage({
