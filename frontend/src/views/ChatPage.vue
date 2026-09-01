@@ -30,7 +30,7 @@
           <VoiceCallButton
             v-if="callStore.available"
             class="desktop-call-button"
-            :disabled="!chatStore.wsConnected || callStore.phase !== 'idle'"
+            :disabled="!chatStore.wsConnected || chatStore.wsStatus !== 'connected' || callStore.phase !== 'idle'"
             @call="startCurrentCall"
           />
         </div>
@@ -393,13 +393,13 @@ function startCurrentCall() {
 }
 
 function endCurrentCall() {
-  if (callStore.phase === 'outgoing') callStore.cancelCall()
+  if (callStore.phase === 'preparing' || callStore.phase === 'outgoing') callStore.cancelCall()
   else callStore.hangup()
 }
 
 function stopCallBeforeLogout() {
   if (callStore.phase === 'incoming') callStore.rejectCall()
-  else if (callStore.phase === 'outgoing') callStore.cancelCall()
+  else if (callStore.phase === 'preparing' || callStore.phase === 'outgoing') callStore.cancelCall()
   else if (callStore.phase === 'connecting' || callStore.phase === 'connected') callStore.hangup()
   callStore.dispose()
 }
