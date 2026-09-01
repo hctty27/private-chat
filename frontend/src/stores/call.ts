@@ -89,7 +89,7 @@ function prepareFailureMessage(error: unknown) {
       return '未检测到可用麦克风'
     case 'NotReadableError':
     case 'AbortError':
-      return '麦克风暂时不可用，请关闭占用麦克风的应用后重试'
+      return '麦克风暂时不可用，请检查设备或关闭占用麦克风的应用'
     case 'TypeError':
       return typeof window !== 'undefined' && !window.isSecureContext
         ? '当前页面无法访问麦克风，请使用 HTTPS 打开'
