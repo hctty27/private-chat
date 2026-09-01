@@ -131,9 +131,18 @@ func messageType(t *testing.T, message sentCallMessage) string {
 	return value
 }
 
+func messageData(t *testing.T, message sentCallMessage) gin.H {
+	t.Helper()
+	value, ok := message.payload["data"].(gin.H)
+	if !ok {
+		t.Fatalf("missing message data: %#v", message.payload)
+	}
+	return value
+}
+
 func TestCallManagerInviteRejectsSelf(t *testing.T) {
 	manager, _, _ := newTestCallManager(newMemoryCallStore())
-	if err := manager.Invite(context.Background(), 1, 1); !errors.Is(err, errCallRole) {
+	if err := manager.Invite(context.Background(), 1, 1, callTypeAudio); !errors.Is(err, errCallRole) {
 		t.Fatalf("expected role error, got %v", err)
 	}
 }
@@ -142,7 +151,7 @@ func TestCallManagerInviteRequiresContact(t *testing.T) {
 	manager, _, _ := newTestCallManager(newMemoryCallStore())
 	manager.requireContact = func(context.Context, int64, int64) error { return errContactForbidden }
 
-	if err := manager.Invite(context.Background(), 1, 2); !errors.Is(err, errContactForbidden) {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); !errors.Is(err, errContactForbidden) {
 		t.Fatalf("expected contact error, got %v", err)
 	}
 }
@@ -151,7 +160,7 @@ func TestCallManagerInviteReturnsUnavailableWhenPeerDisconnected(t *testing.T) {
 	manager, sent, _ := newTestCallManager(newMemoryCallStore())
 	manager.isConnected = func(int64) bool { return false }
 
-	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); err != nil {
 		t.Fatal(err)
 	}
 	if len(*sent) != 1 || (*sent)[0].userID != 1 || messageType(t, (*sent)[0]) != "call_unavailable" {
@@ -163,7 +172,7 @@ func TestCallManagerInviteSendsRingingAndIncoming(t *testing.T) {
 	store := newMemoryCallStore()
 	manager, sent, scheduled := newTestCallManager(store)
 
-	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); err != nil {
 		t.Fatal(err)
 	}
 	if len(*sent) != 2 {
@@ -175,8 +184,32 @@ func TestCallManagerInviteSendsRingingAndIncoming(t *testing.T) {
 	if (*sent)[1].userID != 2 || messageType(t, (*sent)[1]) != "call_incoming" {
 		t.Fatalf("unexpected callee message: %#v", (*sent)[1])
 	}
+	if messageData(t, (*sent)[0])["callType"] != callTypeAudio || messageData(t, (*sent)[1])["callType"] != callTypeAudio {
+		t.Fatalf("expected audio type in signaling: %#v", *sent)
+	}
 	if *scheduled == nil {
 		t.Fatal("expected timeout to be scheduled")
+	}
+}
+
+func TestCallManagerInvitePropagatesVideoType(t *testing.T) {
+	store := newMemoryCallStore()
+	manager, sent, _ := newTestCallManager(store)
+
+	if err := manager.Invite(context.Background(), 1, 2, callTypeVideo); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Get(context.Background(), "call-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.CallType != callTypeVideo {
+		t.Fatalf("expected video call record, got %q", record.CallType)
+	}
+	for _, message := range *sent {
+		if messageData(t, message)["callType"] != callTypeVideo {
+			t.Fatalf("expected video type in signaling: %#v", message.payload)
+		}
 	}
 }
 
@@ -188,7 +221,7 @@ func TestCallManagerInviteReturnsBusyWhenStoreIsBusy(t *testing.T) {
 	manager, sent, _ := newTestCallManager(store)
 	manager.newID = func() string { return "call-2" }
 
-	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); err != nil {
 		t.Fatal(err)
 	}
 	if len(*sent) != 1 || messageType(t, (*sent)[0]) != "call_busy" {
@@ -209,6 +242,9 @@ func TestCallManagerAcceptOnlyAllowsCallee(t *testing.T) {
 	}
 	if len(*sent) != 2 || messageType(t, (*sent)[0]) != "call_accepted" || messageType(t, (*sent)[1]) != "call_accepted" {
 		t.Fatalf("unexpected messages: %#v", *sent)
+	}
+	if messageData(t, (*sent)[0])["callType"] != callTypeAudio || messageData(t, (*sent)[1])["callType"] != callTypeAudio {
+		t.Fatalf("expected accepted payload to preserve call type: %#v", *sent)
 	}
 }
 
@@ -289,7 +325,7 @@ func TestCallManagerOfferAnswerAndICEEnforceRoles(t *testing.T) {
 func TestCallManagerTimeoutDeletesOnlyStillRingingCall(t *testing.T) {
 	store := newMemoryCallStore()
 	manager, sent, scheduled := newTestCallManager(store)
-	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); err != nil {
 		t.Fatal(err)
 	}
 	*sent = nil
@@ -318,7 +354,7 @@ func TestCallManagerDisconnectEndsCurrentCall(t *testing.T) {
 func TestCallManagerTimeoutDoesNotDeleteAcceptedCall(t *testing.T) {
 	store := newMemoryCallStore()
 	manager, sent, scheduled := newTestCallManager(store)
-	if err := manager.Invite(context.Background(), 1, 2); err != nil {
+	if err := manager.Invite(context.Background(), 1, 2, callTypeAudio); err != nil {
 		t.Fatal(err)
 	}
 	if err := manager.Accept(context.Background(), 2, "call-1"); err != nil {
