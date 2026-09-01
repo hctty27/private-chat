@@ -138,10 +138,33 @@ describe('call store', () => {
 
     await call.startCall(contact())
 
-    expect(call.error).toBe('麦克风权限未授权，请在浏览器网站设置中允许麦克风')
+    expect(call.error).toBe('无法使用麦克风，请检查浏览器权限')
     consoleError.mockRestore()
   })
 
+  it('shows missing microphone guidance for NotFoundError', async () => {
+    const originalError = Object.assign(new Error('device not found'), { name: 'NotFoundError' })
+    rtc.prepare.mockRejectedValueOnce(prepareError('media', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact())
+
+    expect(call.error).toBe('未检测到可用麦克风')
+    consoleError.mockRestore()
+  })
+
+  it('shows microphone device troubleshooting guidance for NotReadableError', async () => {
+    const originalError = Object.assign(new Error('audio source unavailable'), { name: 'NotReadableError' })
+    rtc.prepare.mockRejectedValueOnce(prepareError('media', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact())
+
+    expect(call.error).toBe('麦克风暂时不可用，请检查设备或关闭占用麦克风的应用')
+    consoleError.mockRestore()
+  })
   it('distinguishes ICE config service failures from microphone failures', async () => {
     const originalError = Object.assign(new Error('service unavailable'), {
       response: { status: 503 },

@@ -84,12 +84,12 @@ function prepareFailureMessage(error: unknown) {
   switch (details.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return '麦克风权限未授权，请在浏览器网站设置中允许麦克风'
+      return '无法使用麦克风，请检查浏览器权限'
     case 'NotFoundError':
       return '未检测到可用麦克风'
     case 'NotReadableError':
     case 'AbortError':
-      return '麦克风暂时不可用，请关闭占用麦克风的应用后重试'
+      return '麦克风暂时不可用，请检查设备或关闭占用麦克风的应用'
     case 'TypeError':
       return typeof window !== 'undefined' && !window.isSecureContext
         ? '当前页面无法访问麦克风，请使用 HTTPS 打开'
