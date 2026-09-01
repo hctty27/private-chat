@@ -23,6 +23,12 @@ describe('voice call view integration', () => {
     expect(mobile).toContain('grid-template-columns: 44px minmax(0, 1fr) 44px')
   })
 
+  it('disables call buttons unless websocket is fully connected', () => {
+    for (const source of [desktop, mobile]) {
+      expect(source).toContain("chatStore.wsStatus !== 'connected'")
+    }
+  })
+
   it('cleans call state before logout on both layouts', () => {
     for (const source of [desktop, mobile]) {
       expect(source).toContain('function stopCallBeforeLogout()')
