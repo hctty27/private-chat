@@ -1,14 +1,14 @@
 <template>
   <div
     class="voice-call-overlay"
-    :class="{ video: callType === 'video' }"
+    :class="{ video: callStore.callType === 'video' }"
     role="dialog"
     aria-modal="true"
-    :aria-label="callType === 'video' ? '视频通话' : '语音通话'"
+    :aria-label="callStore.callType === 'video' ? '视频通话' : '语音通话'"
   >
-    <audio v-if="callType === 'audio'" ref="remoteAudioEl" autoplay playsinline></audio>
+    <audio v-if="callStore.callType === 'audio'" ref="remoteAudioEl" autoplay playsinline></audio>
 
-    <template v-if="callType === 'video'">
+    <template v-if="callStore.callType === 'video'">
       <video
         ref="remoteVideoEl"
         class="remote-video"
@@ -19,7 +19,7 @@
         <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
       </div>
       <video
-        v-if="localStream && !cameraOff"
+        v-if="callStore.localStream && !callStore.cameraOff"
         ref="localVideoEl"
         class="local-video"
         autoplay
@@ -28,8 +28,8 @@
       ></video>
     </template>
 
-    <div class="call-card" :class="{ 'video-card': callType === 'video' }">
-      <template v-if="callType === 'audio'">
+    <div class="call-card" :class="{ 'video-card': callStore.callType === 'video' }">
+      <template v-if="callStore.callType === 'audio'">
         <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
         <div class="name">{{ peerName || '联系人' }}</div>
       </template>
@@ -62,22 +62,22 @@
         </button>
 
         <button
-          v-if="callType === 'video' && (phase === 'connecting' || phase === 'connected')"
+          v-if="callStore.callType === 'video' && (phase === 'connecting' || phase === 'connected')"
           type="button"
           class="control"
-          :aria-label="cameraOff ? '打开摄像头' : '关闭摄像头'"
-          @click="emit('toggle-camera')"
+          :aria-label="callStore.cameraOff ? '打开摄像头' : '关闭摄像头'"
+          @click="callStore.toggleCamera"
         >
-          <span class="control-circle">{{ cameraOff ? '关' : '像' }}</span>
-          <small>{{ cameraOff ? '打开摄像头' : '关闭摄像头' }}</small>
+          <span class="control-circle">{{ callStore.cameraOff ? '关' : '像' }}</span>
+          <small>{{ callStore.cameraOff ? '打开摄像头' : '关闭摄像头' }}</small>
         </button>
 
         <button
-          v-if="callType === 'video' && !cameraOff && (phase === 'connecting' || phase === 'connected')"
+          v-if="callStore.callType === 'video' && !callStore.cameraOff && (phase === 'connecting' || phase === 'connected')"
           type="button"
           class="control"
           aria-label="切换摄像头"
-          @click="emit('switch-camera')"
+          @click="callStore.switchCamera"
         >
           <span class="control-circle">↻</span>
           <small>切换镜头</small>
@@ -86,7 +86,7 @@
         <button
           type="button"
           class="control"
-          :aria-label="callType === 'video' ? '挂断视频通话' : '挂断语音通话'"
+          :aria-label="callStore.callType === 'video' ? '挂断视频通话' : '挂断语音通话'"
           @click="emit('hangup')"
         >
           <span class="control-circle hangup">✕</span>
@@ -99,27 +99,24 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { CallPhase, CallType } from '../types'
+import type { CallPhase } from '../types'
+import { useCallStore } from '../stores/call'
 
 const props = defineProps<{
   phase: CallPhase
-  callType: CallType
   peerName: string
   durationSeconds: number
   muted: boolean
-  cameraOff: boolean
   error: string
-  localStream: MediaStream | null
   remoteStream: MediaStream | null
 }>()
 
 const emit = defineEmits<{
   hangup: []
   'toggle-mute': []
-  'toggle-camera': []
-  'switch-camera': []
 }>()
 
+const callStore = useCallStore()
 const remoteAudioEl = ref<HTMLAudioElement | null>(null)
 const remoteVideoEl = ref<HTMLVideoElement | null>(null)
 const localVideoEl = ref<HTMLVideoElement | null>(null)
@@ -149,7 +146,7 @@ function formatDuration(seconds: number) {
 async function syncMedia() {
   await nextTick()
 
-  const remote = props.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
+  const remote = callStore.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
   if (remote) {
     remote.srcObject = props.remoteStream
     if (!props.remoteStream) {
@@ -166,8 +163,8 @@ async function syncMedia() {
 
   const local = localVideoEl.value
   if (local) {
-    local.srcObject = props.localStream
-    if (props.localStream) {
+    local.srcObject = callStore.localStream
+    if (callStore.localStream) {
       try {
         await local.play()
       } catch {
@@ -178,7 +175,7 @@ async function syncMedia() {
 }
 
 async function playRemoteMedia() {
-  const remote = props.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
+  const remote = callStore.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
   if (!remote) return
   try {
     await remote.play()
@@ -189,7 +186,7 @@ async function playRemoteMedia() {
 }
 
 watch(
-  () => [props.remoteStream, props.localStream, props.callType, props.cameraOff],
+  () => [props.remoteStream, callStore.localStream, callStore.callType, callStore.cameraOff],
   () => { void syncMedia() },
 )
 onMounted(() => { void syncMedia() })
@@ -284,14 +281,9 @@ onBeforeUnmount(() => {
   font-size: 38px;
   font-weight: 600;
 }
-.remote-placeholder .avatar {
-  margin: 0;
-}
+.remote-placeholder .avatar { margin: 0; }
 .name { font-size: 25px; font-weight: 600; }
-.video-header {
-  margin-top: 4px;
-  pointer-events: none;
-}
+.video-header { margin-top: 4px; pointer-events: none; }
 .video-header .name {
   font-size: 20px;
   text-shadow: 0 1px 6px rgba(0,0,0,0.5);
