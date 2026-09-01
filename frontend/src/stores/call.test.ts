@@ -288,6 +288,11 @@ describe('call store', () => {
     const pending = call.startCall(contact())
     chat.wsStatus = 'reconnecting'
     chat.wsConnected = false
+    await nextTick()
+
+    expect(call.phase).toBe('failed')
+    expect(call.error).toBe('网络已断开')
+
     resolvePrepare()
     await pending
 
@@ -296,8 +301,7 @@ describe('call store', () => {
       data: { receiverId: 2 },
     })
     expect(rtc.cleanup).toHaveBeenCalled()
-    expect(call.phase).toBe('idle')
-    expect(call.error).toBe('网络已断开')
+    expect(call.phase).toBe('failed')
   })
 
   it('does not resurrect an outbound call after dispose during preparation', async () => {
