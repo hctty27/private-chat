@@ -49,6 +49,8 @@ describe('call store', () => {
     applyAnswer: ReturnType<typeof vi.fn>
     addRemoteIce: ReturnType<typeof vi.fn>
     setMuted: ReturnType<typeof vi.fn>
+    setVideoEnabled: ReturnType<typeof vi.fn>
+    switchCamera: ReturnType<typeof vi.fn>
     cleanup: ReturnType<typeof vi.fn>
   }
   let rtcCallbacks: any
@@ -66,6 +68,8 @@ describe('call store', () => {
       applyAnswer: vi.fn(async () => undefined),
       addRemoteIce: vi.fn(async () => undefined),
       setMuted: vi.fn(),
+      setVideoEnabled: vi.fn(),
+      switchCamera: vi.fn(async () => undefined),
       cleanup: vi.fn(),
     }
     vi.mocked(useWebRtcCall).mockImplementation((_getConfig, callbacks) => {
@@ -90,8 +94,22 @@ describe('call store', () => {
 
     await call.startCall(contact())
 
-    expect(rtc.prepare).toHaveBeenCalledTimes(1)
+    expect(rtc.prepare).toHaveBeenCalledWith('audio')
     expect(call.phase).toBe('outgoing')
+  })
+
+  it('starts video calls with camera media and video signaling', async () => {
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    await call.startCall(contact(), 'video')
+
+    expect(call.callType).toBe('video')
+    expect(rtc.prepare).toHaveBeenCalledWith('video')
+    expect(chat.sendWsMessage).toHaveBeenCalledWith({
+      type: 'call_invite',
+      data: { receiverId: 2, callType: 'video' },
+    })
   })
 
   it('does not send call_invite when media preparation fails', async () => {
@@ -122,6 +140,7 @@ describe('call store', () => {
       '[voice-call] preparation failed',
       expect.objectContaining({
         direction: 'outgoing',
+        callType: 'audio',
         stage: 'media',
         name: 'NotAllowedError',
         message: 'No AVAudioSessionCaptureDevice device',
@@ -165,6 +184,19 @@ describe('call store', () => {
     expect(call.error).toBe('麦克风暂时不可用，请检查设备或关闭占用麦克风的应用')
     consoleError.mockRestore()
   })
+
+  it('shows camera and microphone guidance for video permission failures', async () => {
+    const originalError = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
+    rtc.prepare.mockRejectedValueOnce(prepareError('media', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact(), 'video')
+
+    expect(call.error).toBe('无法使用摄像头或麦克风，请检查浏览器权限')
+    consoleError.mockRestore()
+  })
+
   it('distinguishes ICE config service failures from microphone failures', async () => {
     const originalError = Object.assign(new Error('service unavailable'), {
       response: { status: 503 },
@@ -187,7 +219,7 @@ describe('call store', () => {
     consoleError.mockRestore()
   })
 
-  it('shows preparing state immediately while microphone and ICE are pending', async () => {
+  it('shows preparing state immediately while media and ICE are pending', async () => {
     let resolvePrepare!: () => void
     rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
       resolvePrepare = resolve
@@ -224,7 +256,7 @@ describe('call store', () => {
 
     expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
       type: 'call_invite',
-      data: { receiverId: 2 },
+      data: { receiverId: 2, callType: 'audio' },
     })
   })
 
@@ -234,10 +266,10 @@ describe('call store', () => {
 
     await call.startCall(contact())
 
-    expect(rtc.prepare).toHaveBeenCalledTimes(1)
+    expect(rtc.prepare).toHaveBeenCalledWith('audio')
     expect(chat.sendWsMessage).toHaveBeenCalledWith({
       type: 'call_invite',
-      data: { receiverId: 2 },
+      data: { receiverId: 2, callType: 'audio' },
     })
     expect(call.phase).toBe('outgoing')
   })
@@ -246,27 +278,29 @@ describe('call store', () => {
     const call = useCallStore()
     const message: WsServerMessage = {
       type: 'call_incoming',
-      data: { callId: 'call-1', callerId: 2 },
+      data: { callId: 'call-1', callerId: 2, callType: 'audio' },
     }
 
     call.handleServerMessage(message)
 
     expect(call.phase).toBe('incoming')
     expect(call.callId).toBe('call-1')
+    expect(call.callType).toBe('audio')
     expect(call.peerName).toBe('Alice')
   })
 
-  it('prepares media before accepting an incoming call', async () => {
+  it('prepares video media before accepting an incoming video call', async () => {
     const chat = useChatStore()
     const call = useCallStore()
     call.handleServerMessage({
       type: 'call_incoming',
-      data: { callId: 'call-1', callerId: 2 },
+      data: { callId: 'call-1', callerId: 2, callType: 'video' },
     })
 
     await call.acceptCall()
 
-    expect(rtc.prepare).toHaveBeenCalledTimes(1)
+    expect(call.callType).toBe('video')
+    expect(rtc.prepare).toHaveBeenCalledWith('video')
     expect(chat.sendWsMessage).toHaveBeenCalledWith({
       type: 'call_accept',
       data: { callId: 'call-1' },
@@ -280,7 +314,7 @@ describe('call store', () => {
     const call = useCallStore()
     call.handleServerMessage({
       type: 'call_incoming',
-      data: { callId: 'call-1', callerId: 2 },
+      data: { callId: 'call-1', callerId: 2, callType: 'audio' },
     })
 
     await call.acceptCall()
@@ -297,13 +331,13 @@ describe('call store', () => {
     await call.startCall(contact())
     call.handleServerMessage({
       type: 'call_ringing',
-      data: { callId: 'call-1', userId: 2 },
+      data: { callId: 'call-1', userId: 2, callType: 'audio' },
     })
     expect(rtc.startCaller).not.toHaveBeenCalled()
 
     call.handleServerMessage({
       type: 'call_accepted',
-      data: { callId: 'call-1' },
+      data: { callId: 'call-1', callType: 'audio' },
     })
     await Promise.resolve()
 
@@ -314,8 +348,14 @@ describe('call store', () => {
   it('routes offer answer and ice into the rtc controller', async () => {
     const call = useCallStore()
     await call.startCall(contact())
-    call.handleServerMessage({ type: 'call_ringing', data: { callId: 'call-1', userId: 2 } })
-    call.handleServerMessage({ type: 'call_accepted', data: { callId: 'call-1' } })
+    call.handleServerMessage({
+      type: 'call_ringing',
+      data: { callId: 'call-1', userId: 2, callType: 'audio' },
+    })
+    call.handleServerMessage({
+      type: 'call_accepted',
+      data: { callId: 'call-1', callType: 'audio' },
+    })
 
     call.handleServerMessage({
       type: 'webrtc_offer',
@@ -340,8 +380,14 @@ describe('call store', () => {
     const chat = useChatStore()
     const call = useCallStore()
     await call.startCall(contact())
-    call.handleServerMessage({ type: 'call_ringing', data: { callId: 'call-1', userId: 2 } })
-    call.handleServerMessage({ type: 'call_accepted', data: { callId: 'call-1' } })
+    call.handleServerMessage({
+      type: 'call_ringing',
+      data: { callId: 'call-1', userId: 2, callType: 'audio' },
+    })
+    call.handleServerMessage({
+      type: 'call_accepted',
+      data: { callId: 'call-1', callType: 'audio' },
+    })
 
     rtcCallbacks.onFailed('通话连接失败')
 
@@ -351,6 +397,18 @@ describe('call store', () => {
     })
     expect(call.phase).toBe('failed')
     expect(rtc.cleanup).toHaveBeenCalled()
+  })
+
+  it('keeps local and remote streams in store callbacks', () => {
+    const call = useCallStore()
+    const local = {} as MediaStream
+    const remote = {} as MediaStream
+
+    rtcCallbacks.onLocalStream(local)
+    rtcCallbacks.onRemoteStream(remote)
+
+    expect(call.localStream).toBe(local)
+    expect(call.remoteStream).toBe(remote)
   })
 
   it('cleans local media immediately when kicked', async () => {
@@ -370,7 +428,7 @@ describe('call store', () => {
     const call = useCallStore()
     call.handleServerMessage({
       type: 'call_incoming',
-      data: { callId: 'call-1', callerId: 2 },
+      data: { callId: 'call-1', callerId: 2, callType: 'audio' },
     })
     call.phase = 'connecting'
 
@@ -378,6 +436,37 @@ describe('call store', () => {
     expect(call.muted).toBe(true)
     expect(rtc.setMuted).toHaveBeenCalledWith(true)
   })
+
+  it('toggles the local camera only for video calls', () => {
+    const call = useCallStore()
+    call.handleServerMessage({
+      type: 'call_incoming',
+      data: { callId: 'call-1', callerId: 2, callType: 'video' },
+    })
+    call.phase = 'connecting'
+
+    call.toggleCamera()
+    expect(call.cameraOff).toBe(true)
+    expect(rtc.setVideoEnabled).toHaveBeenCalledWith(false)
+
+    call.toggleCamera()
+    expect(call.cameraOff).toBe(false)
+    expect(rtc.setVideoEnabled).toHaveBeenCalledWith(true)
+  })
+
+  it('switches camera through the rtc controller for video calls', async () => {
+    const call = useCallStore()
+    call.handleServerMessage({
+      type: 'call_incoming',
+      data: { callId: 'call-1', callerId: 2, callType: 'video' },
+    })
+    call.phase = 'connected'
+
+    await call.switchCamera()
+
+    expect(rtc.switchCamera).toHaveBeenCalledTimes(1)
+  })
+
   it('does not send invite if websocket disconnects during preparation', async () => {
     let resolvePrepare!: () => void
     rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
@@ -399,7 +488,7 @@ describe('call store', () => {
 
     expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
       type: 'call_invite',
-      data: { receiverId: 2 },
+      data: { receiverId: 2, callType: 'audio' },
     })
     expect(rtc.cleanup).toHaveBeenCalled()
     expect(call.phase).toBe('failed')
@@ -420,7 +509,7 @@ describe('call store', () => {
 
     expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
       type: 'call_invite',
-      data: { receiverId: 2 },
+      data: { receiverId: 2, callType: 'audio' },
     })
     expect(rtc.cleanup).toHaveBeenCalled()
     expect(call.phase).toBe('idle')
