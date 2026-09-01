@@ -17,12 +17,14 @@ describe('chat media loading', () => {
     }
   })
 
-  it('reserves image space before loading and falls back from thumbnail to original', () => {
+  it('keeps thumbnail failures from automatically downloading the original image', () => {
     expect(mediaMessageSource).toContain('aspect-ratio: 4 / 3')
     expect(mediaMessageSource).toContain('object-fit: contain')
     expect(mediaMessageSource).toContain(':src="imageSrc"')
-    expect(mediaMessageSource).toContain('fallbackOriginal.value = true')
+    expect(mediaMessageSource).not.toContain('fallbackOriginal')
     expect(mediaMessageSource).toContain('imageFailed.value = true')
+    expect(mediaMessageSource).toContain('点击查看原图')
+    expect(mediaMessageSource).toContain(':disabled="!message.fileUrl"')
     expect(mediaMessageSource).toContain(':class="{ loaded: imageLoaded }"')
   })
 
