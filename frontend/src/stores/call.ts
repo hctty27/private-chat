@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, watch, type WatchStopHandle } from 'vue'
+import { ref, shallowRef, watch, type WatchStopHandle } from 'vue'
 import { getWebRTCIceConfig, getWebRTCStatus } from '../api'
 import { useWebRtcCall, type WebRtcPrepareError } from '../composables/useWebRtcCall'
 import type {
@@ -137,8 +137,8 @@ export const useCallStore = defineStore('call', () => {
   const connectedAt = ref<number | null>(null)
   const durationSeconds = ref(0)
   const error = ref('')
-  const localStream = ref<MediaStream | null>(null)
-  const remoteStream = ref<MediaStream | null>(null)
+  const localStream = shallowRef<MediaStream | null>(null)
+  const remoteStream = shallowRef<MediaStream | null>(null)
 
   let cancelPendingInvite = false
   let preparingOutgoing = false
