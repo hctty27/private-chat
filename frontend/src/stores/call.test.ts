@@ -32,6 +32,15 @@ function contact(userId = 2, nickname = 'Alice'): Contact {
   }
 }
 
+function prepareError(stage: 'media' | 'ice-config', originalError: unknown) {
+  const message = originalError instanceof Error ? originalError.message : 'prepare failed'
+  return Object.assign(new Error(message), {
+    name: 'WebRtcPrepareError',
+    stage,
+    originalError,
+  })
+}
+
 describe('call store', () => {
   let rtc: {
     prepare: ReturnType<typeof vi.fn>
@@ -94,6 +103,65 @@ describe('call store', () => {
 
     expect(chat.sendWsMessage).not.toHaveBeenCalled()
     expect(call.phase).toBe('failed')
+  })
+
+  it('shows iOS Safari recovery guidance for AVAudioSession capture failures', async () => {
+    const originalError = Object.assign(
+      new Error('No AVAudioSessionCaptureDevice device'),
+      { name: 'NotAllowedError' },
+    )
+    rtc.prepare.mockRejectedValueOnce(prepareError('media', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact())
+
+    expect(call.phase).toBe('failed')
+    expect(call.error).toBe('iOS 麦克风服务异常，请完全关闭 Safari 后重新打开')
+    expect(consoleError).toHaveBeenCalledWith(
+      '[voice-call] preparation failed',
+      expect.objectContaining({
+        direction: 'outgoing',
+        stage: 'media',
+        name: 'NotAllowedError',
+        message: 'No AVAudioSessionCaptureDevice device',
+      }),
+    )
+    consoleError.mockRestore()
+  })
+
+  it('shows microphone permission guidance for NotAllowedError', async () => {
+    const originalError = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
+    rtc.prepare.mockRejectedValueOnce(prepareError('media', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact())
+
+    expect(call.error).toBe('麦克风权限未授权，请在浏览器网站设置中允许麦克风')
+    consoleError.mockRestore()
+  })
+
+  it('distinguishes ICE config service failures from microphone failures', async () => {
+    const originalError = Object.assign(new Error('service unavailable'), {
+      response: { status: 503 },
+    })
+    rtc.prepare.mockRejectedValueOnce(prepareError('ice-config', originalError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const call = useCallStore()
+
+    await call.startCall(contact())
+
+    expect(call.phase).toBe('failed')
+    expect(call.error).toBe('通话服务暂不可用')
+    expect(consoleError).toHaveBeenCalledWith(
+      '[voice-call] preparation failed',
+      expect.objectContaining({
+        stage: 'ice-config',
+        httpStatus: 503,
+      }),
+    )
+    consoleError.mockRestore()
   })
 
   it('shows preparing state immediately while microphone and ICE are pending', async () => {

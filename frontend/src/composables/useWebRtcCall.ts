@@ -17,6 +17,14 @@ export interface WebRtcBrowserDeps {
   clearTimeout(timer: ReturnType<typeof setTimeout>): void
 }
 
+export type WebRtcPrepareStage = 'media' | 'ice-config'
+
+export interface WebRtcPrepareError extends Error {
+  stage: WebRtcPrepareStage
+  originalError: unknown
+  secondaryError?: unknown
+}
+
 export interface WebRtcCallController {
   prepare(): Promise<void>
   startCaller(): Promise<void>
@@ -33,6 +41,24 @@ const defaultDeps: WebRtcBrowserDeps = {
   createMediaStream: (tracks) => new MediaStream(tracks),
   setTimeout: (callback, delay) => setTimeout(callback, delay),
   clearTimeout: (timer) => clearTimeout(timer),
+}
+
+function toPrepareError(
+  stage: WebRtcPrepareStage,
+  originalError: unknown,
+  secondaryError?: unknown,
+): WebRtcPrepareError {
+  const message = originalError instanceof Error
+    ? originalError.message
+    : stage === 'media'
+      ? 'microphone preparation failed'
+      : 'ice config preparation failed'
+  const error = new Error(message) as WebRtcPrepareError
+  error.name = 'WebRtcPrepareError'
+  error.stage = stage
+  error.originalError = originalError
+  if (secondaryError !== undefined) error.secondaryError = secondaryError
+  return error
 }
 
 export function useWebRtcCall(
@@ -52,20 +78,20 @@ export function useWebRtcCall(
     if (localStream && iceConfig) return
 
     const [mediaResult, configResult] = await Promise.allSettled([
-      deps.getUserMedia({ audio: true }),
-      getIceConfig(),
+      Promise.resolve().then(() => deps.getUserMedia({ audio: true })),
+      Promise.resolve().then(() => getIceConfig()),
     ])
 
     if (mediaResult.status === 'rejected') {
-      throw mediaResult.reason instanceof Error
-        ? mediaResult.reason
-        : new Error('voice call preparation failed')
+      throw toPrepareError(
+        'media',
+        mediaResult.reason,
+        configResult.status === 'rejected' ? configResult.reason : undefined,
+      )
     }
     if (configResult.status === 'rejected') {
       for (const track of mediaResult.value.getTracks()) track.stop()
-      throw configResult.reason instanceof Error
-        ? configResult.reason
-        : new Error('voice call preparation failed')
+      throw toPrepareError('ice-config', configResult.reason)
     }
 
     localStream = mediaResult.value
