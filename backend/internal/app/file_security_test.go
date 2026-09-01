@@ -119,6 +119,10 @@ func (s *fakeFileStorage) ReadPrefix(_ context.Context, _ string, maxBytes int64
 	return append([]byte(nil), s.prefix...), nil
 }
 
+func (s *fakeFileStorage) EnsureImageThumbnail(_ context.Context, _, _ string, _ int64) error {
+	return nil
+}
+
 func (s *fakeFileStorage) PresignGet(_ context.Context, objectKey, contentType, disposition string, expiry time.Duration) (string, error) {
 	s.lastGetKey = objectKey
 	s.lastGetType = contentType
