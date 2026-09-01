@@ -36,8 +36,6 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useCallStore } from '../stores/call'
-import { useChatStore } from '../stores/chat'
 import type { CallType } from '../types'
 
 const props = withDefaults(defineProps<{
@@ -50,12 +48,10 @@ const props = withDefaults(defineProps<{
   callType: 'audio',
 })
 
-defineEmits<{
-  call: []
+const emit = defineEmits<{
+  call: [callType: CallType]
 }>()
 
-const callStore = useCallStore()
-const chatStore = useChatStore()
 const rootEl = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 
@@ -66,9 +62,8 @@ function toggleMenu() {
 
 function startCall(kind: CallType) {
   menuOpen.value = false
-  const contact = chatStore.currentContact
-  if (!contact || props.disabled) return
-  void callStore.startCall(contact, kind)
+  if (props.disabled) return
+  emit('call', kind)
 }
 
 function closeOnOutsidePointer(event: PointerEvent) {
