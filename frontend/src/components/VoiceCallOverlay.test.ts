@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { markRaw } from 'vue'
 import VoiceCallOverlay from './VoiceCallOverlay.vue'
 import IncomingCallOverlay from './IncomingCallOverlay.vue'
 import { useCallStore } from '../stores/call'
@@ -97,8 +98,8 @@ describe('VoiceCallOverlay', () => {
     const call = useCallStore()
     call.callType = 'video'
     call.phase = 'connected'
-    call.localStream = {} as MediaStream
-    const remoteStream = {} as MediaStream
+    call.localStream = markRaw({} as MediaStream)
+    const remoteStream = markRaw({} as MediaStream)
 
     const wrapper = mountVoice({ phase: 'connected', remoteStream })
     await flushPromises()
