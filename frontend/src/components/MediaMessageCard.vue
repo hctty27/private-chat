@@ -4,8 +4,8 @@
       v-if="message.msgType === 2"
       class="image-card"
       type="button"
-      :disabled="!message.fileUrl || imageFailed"
-      aria-label="查看图片"
+      :disabled="!message.fileUrl"
+      :aria-label="imageFailed ? '查看原图' : '查看图片'"
       @click.stop="openImage"
     >
       <span class="image-shell">
@@ -20,7 +20,7 @@
           @error="onImageError"
         />
         <span v-if="!imageLoaded || imageFailed" class="media-placeholder image-placeholder" aria-hidden="true">
-          <span v-if="imageFailed">图片加载失败</span>
+          <span v-if="imageFailed">点击查看原图</span>
           <span v-else-if="!message.fileUrl">图片</span>
         </span>
       </span>
@@ -112,15 +112,13 @@ const emit = defineEmits<{
 
 const imageLoaded = ref(false)
 const imageFailed = ref(false)
-const fallbackOriginal = ref(false)
-
 const posterUrl = computed(() => (
   props.message.fileId ? `/api/files/${props.message.fileId}/thumbnail` : ''
 ))
 
 const imageSrc = computed(() => {
   if (!props.message.fileUrl) return ''
-  if (fallbackOriginal.value || !props.message.fileId) return props.message.fileUrl
+  if (!props.message.fileId) return props.message.fileUrl
   return `/api/files/${props.message.fileId}/thumbnail`
 })
 
@@ -158,7 +156,7 @@ const mediaClass = computed(() => ({
 }))
 
 function openImage(event: MouseEvent) {
-  if (!props.message.fileUrl || imageFailed.value) return
+  if (!props.message.fileUrl) return
   emit('open', event, 'image', props.message.fileUrl, '')
 }
 
@@ -173,11 +171,6 @@ function onImageLoad() {
 }
 
 function onImageError() {
-  if (!fallbackOriginal.value && props.message.fileId && props.message.fileUrl) {
-    fallbackOriginal.value = true
-    imageLoaded.value = false
-    return
-  }
   imageLoaded.value = false
   imageFailed.value = true
 }
@@ -187,7 +180,6 @@ watch(
   () => {
     imageLoaded.value = false
     imageFailed.value = false
-    fallbackOriginal.value = false
   }
 )
 </script>
