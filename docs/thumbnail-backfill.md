@@ -1,6 +1,6 @@
 # Historical Thumbnail Backfill
 
-历史图片在没有 `.thumb.jpg` 对象时仍会由 `/api/files/{fileId}/thumbnail` 回退到原图。为了让旧聊天图片也获得缩略图加载性能，可以在部署新版本后手动执行一次：
+聊天列表只自动加载 `.thumb.jpg` 缩略图；缩略图缺失或加载失败时不会自动下载原图，用户仍可点击失败占位主动查看原图。为了让旧聊天图片也获得缩略图加载性能，可以在部署新版本后手动执行一次：
 
 ```bash
 cd backend
@@ -18,6 +18,7 @@ go run ./cmd/privatechat backfill-thumbnails
 - 仅扫描 `t_file.status = ready` 的历史文件，按 ID 分批处理。
 - 识别 JPEG、PNG、GIF、WebP 历史图片。
 - 缩略图固定写入 `<objectKey>.thumb.jpg`，最长边 640px，JPEG quality 80。
+- 新上传且后端可解码的图片，如果客户端缩略图缺失，会在上传完成阶段由后端尝试补生成；历史文件仍建议运行本命令。
 - 已存在缩略图会直接跳过，不会覆盖，因此命令可重复执行。
 - 不修改原图、不修改消息、不修改 `fileId`，也不需要数据库 migration。
 - 单个对象损坏、缺失或无法解码时会记录失败并继续处理其他文件；命令最终以非零状态返回，方便发现残留失败项。
