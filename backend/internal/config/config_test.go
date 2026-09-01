@@ -203,7 +203,6 @@ func TestConfigLoadUsesWebRTCDefaults(t *testing.T) {
 	}
 }
 
-
 func TestConfigLoadUsesCloudflareTurnDefaults(t *testing.T) {
 	t.Setenv("WEBRTC_TURN_PROVIDER", "")
 	t.Setenv("CLOUDFLARE_TURN_KEY_ID", "")
