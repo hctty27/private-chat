@@ -151,7 +151,7 @@ func Backfill(ctx context.Context, repo fileRepository, storage objectStorage, o
 				result.addFailure(file, fmt.Errorf("read source: %w", err))
 				continue
 			}
-			thumbnail, err := makeThumbnail(source, options)
+			thumbnail, err := MakeThumbnail(source, options)
 			if err != nil {
 				result.addFailure(file, err)
 				continue
@@ -217,7 +217,7 @@ func isImageExtension(name string) bool {
 	}
 }
 
-func makeThumbnail(source []byte, options Options) ([]byte, error) {
+func MakeThumbnail(source []byte, options Options) ([]byte, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(source))
 	if err != nil {
 		return nil, fmt.Errorf("decode image header: %w", err)
