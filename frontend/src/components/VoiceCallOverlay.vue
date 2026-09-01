@@ -35,7 +35,7 @@
           @click="emit('hangup')"
         >
           <span class="control-circle hangup">✕</span>
-          <small>{{ phase === 'outgoing' ? '取消' : '挂断' }}</small>
+          <small>{{ phase === 'preparing' || phase === 'outgoing' ? '取消' : '挂断' }}</small>
         </button>
       </div>
     </div>
@@ -64,6 +64,7 @@ const remoteAudioEl = ref<HTMLAudioElement | null>(null)
 const resumeAudioVisible = ref(false)
 
 const statusText = computed(() => {
+  if (props.phase === 'preparing') return '正在准备通话…'
   if (props.phase === 'outgoing') return '正在呼叫…'
   if (props.phase === 'connecting') return '正在连接…'
   if (props.phase === 'connected') return formatDuration(props.durationSeconds)
@@ -73,7 +74,7 @@ const statusText = computed(() => {
 })
 
 const showControls = computed(() =>
-  props.phase === 'outgoing' || props.phase === 'connecting' || props.phase === 'connected'
+  props.phase === 'preparing' || props.phase === 'outgoing' || props.phase === 'connecting' || props.phase === 'connected'
 )
 
 function formatDuration(seconds: number) {
