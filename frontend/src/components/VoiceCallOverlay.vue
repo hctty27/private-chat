@@ -1,10 +1,42 @@
 <template>
-  <div class="voice-call-overlay" role="dialog" aria-modal="true" aria-label="语音通话">
-    <audio ref="remoteAudioEl" autoplay playsinline></audio>
+  <div
+    class="voice-call-overlay"
+    :class="{ video: callType === 'video' }"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="callType === 'video' ? '视频通话' : '语音通话'"
+  >
+    <audio v-if="callType === 'audio'" ref="remoteAudioEl" autoplay playsinline></audio>
 
-    <div class="call-card">
-      <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
-      <div class="name">{{ peerName || '联系人' }}</div>
+    <template v-if="callType === 'video'">
+      <video
+        ref="remoteVideoEl"
+        class="remote-video"
+        autoplay
+        playsinline
+      ></video>
+      <div v-if="!remoteStream" class="remote-placeholder">
+        <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
+      </div>
+      <video
+        v-if="localStream && !cameraOff"
+        ref="localVideoEl"
+        class="local-video"
+        autoplay
+        playsinline
+        muted
+      ></video>
+    </template>
+
+    <div class="call-card" :class="{ 'video-card': callType === 'video' }">
+      <template v-if="callType === 'audio'">
+        <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
+        <div class="name">{{ peerName || '联系人' }}</div>
+      </template>
+      <div v-else class="video-header">
+        <div class="name">{{ peerName || '联系人' }}</div>
+      </div>
+
       <div class="status">{{ statusText }}</div>
       <div v-if="error" class="error">{{ error }}</div>
 
@@ -12,7 +44,7 @@
         v-if="resumeAudioVisible"
         type="button"
         class="resume-audio"
-        @click="playRemoteAudio"
+        @click="playRemoteMedia"
       >
         点击恢复声音
       </button>
@@ -28,10 +60,33 @@
           <span class="control-circle">{{ muted ? '静' : '麦' }}</span>
           <small>{{ muted ? '取消静音' : '静音' }}</small>
         </button>
+
+        <button
+          v-if="callType === 'video' && (phase === 'connecting' || phase === 'connected')"
+          type="button"
+          class="control"
+          :aria-label="cameraOff ? '打开摄像头' : '关闭摄像头'"
+          @click="emit('toggle-camera')"
+        >
+          <span class="control-circle">{{ cameraOff ? '关' : '像' }}</span>
+          <small>{{ cameraOff ? '打开摄像头' : '关闭摄像头' }}</small>
+        </button>
+
+        <button
+          v-if="callType === 'video' && !cameraOff && (phase === 'connecting' || phase === 'connected')"
+          type="button"
+          class="control"
+          aria-label="切换摄像头"
+          @click="emit('switch-camera')"
+        >
+          <span class="control-circle">↻</span>
+          <small>切换镜头</small>
+        </button>
+
         <button
           type="button"
           class="control"
-          aria-label="挂断语音通话"
+          :aria-label="callType === 'video' ? '挂断视频通话' : '挂断语音通话'"
           @click="emit('hangup')"
         >
           <span class="control-circle hangup">✕</span>
@@ -44,23 +99,30 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { CallPhase } from '../types'
+import type { CallPhase, CallType } from '../types'
 
 const props = defineProps<{
   phase: CallPhase
+  callType: CallType
   peerName: string
   durationSeconds: number
   muted: boolean
+  cameraOff: boolean
   error: string
+  localStream: MediaStream | null
   remoteStream: MediaStream | null
 }>()
 
 const emit = defineEmits<{
   hangup: []
   'toggle-mute': []
+  'toggle-camera': []
+  'switch-camera': []
 }>()
 
 const remoteAudioEl = ref<HTMLAudioElement | null>(null)
+const remoteVideoEl = ref<HTMLVideoElement | null>(null)
+const localVideoEl = ref<HTMLVideoElement | null>(null)
 const resumeAudioVisible = ref(false)
 
 const statusText = computed(() => {
@@ -84,38 +146,57 @@ function formatDuration(seconds: number) {
   return String(minutes).padStart(2, '0') + ':' + String(remainder).padStart(2, '0')
 }
 
-async function syncRemoteAudio() {
+async function syncMedia() {
   await nextTick()
-  const audio = remoteAudioEl.value
-  if (!audio) return
-  audio.srcObject = props.remoteStream
-  if (!props.remoteStream) {
-    resumeAudioVisible.value = false
-    return
+
+  const remote = props.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
+  if (remote) {
+    remote.srcObject = props.remoteStream
+    if (!props.remoteStream) {
+      resumeAudioVisible.value = false
+    } else {
+      try {
+        await remote.play()
+        resumeAudioVisible.value = false
+      } catch {
+        resumeAudioVisible.value = true
+      }
+    }
   }
+
+  const local = localVideoEl.value
+  if (local) {
+    local.srcObject = props.localStream
+    if (props.localStream) {
+      try {
+        await local.play()
+      } catch {
+        // Local preview is muted; failure is non-fatal and the stream remains attached.
+      }
+    }
+  }
+}
+
+async function playRemoteMedia() {
+  const remote = props.callType === 'video' ? remoteVideoEl.value : remoteAudioEl.value
+  if (!remote) return
   try {
-    await audio.play()
+    await remote.play()
     resumeAudioVisible.value = false
   } catch {
     resumeAudioVisible.value = true
   }
 }
 
-async function playRemoteAudio() {
-  const audio = remoteAudioEl.value
-  if (!audio) return
-  try {
-    await audio.play()
-    resumeAudioVisible.value = false
-  } catch {
-    resumeAudioVisible.value = true
-  }
-}
-
-watch(() => props.remoteStream, () => { void syncRemoteAudio() })
-onMounted(() => { void syncRemoteAudio() })
+watch(
+  () => [props.remoteStream, props.localStream, props.callType, props.cameraOff],
+  () => { void syncMedia() },
+)
+onMounted(() => { void syncMedia() })
 onBeforeUnmount(() => {
   if (remoteAudioEl.value) remoteAudioEl.value.srcObject = null
+  if (remoteVideoEl.value) remoteVideoEl.value.srcObject = null
+  if (localVideoEl.value) localVideoEl.value.srcObject = null
 })
 </script>
 
@@ -133,6 +214,13 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
+.voice-call-overlay.video {
+  padding: 0;
+  overflow: hidden;
+  background: #111;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 .voice-call-overlay audio {
   position: absolute;
   width: 1px;
@@ -140,7 +228,50 @@ onBeforeUnmount(() => {
   opacity: 0;
   pointer-events: none;
 }
+.remote-video,
+.remote-placeholder {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.remote-video {
+  object-fit: cover;
+  background: #111;
+}
+.remote-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #36363b, #161618 68%);
+}
+.local-video {
+  position: absolute;
+  z-index: 2;
+  top: max(18px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  width: min(28vw, 170px);
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 16px;
+  background: #222;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  transform: scaleX(-1);
+}
 .call-card { width: min(380px, 100%); text-align: center; color: #fff; }
+.call-card.video-card {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.42), transparent 22%, transparent 64%, rgba(0,0,0,0.58));
+}
 .avatar {
   width: 92px;
   height: 92px;
@@ -153,20 +284,57 @@ onBeforeUnmount(() => {
   font-size: 38px;
   font-weight: 600;
 }
+.remote-placeholder .avatar {
+  margin: 0;
+}
 .name { font-size: 25px; font-weight: 600; }
-.status { margin-top: 9px; min-height: 22px; color: rgba(255,255,255,0.74); font-size: 15px; font-variant-numeric: tabular-nums; }
+.video-header {
+  margin-top: 4px;
+  pointer-events: none;
+}
+.video-header .name {
+  font-size: 20px;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.5);
+}
+.status {
+  margin-top: 9px;
+  min-height: 22px;
+  color: rgba(255,255,255,0.74);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.video-card .status {
+  margin-top: 5px;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 5px rgba(0,0,0,0.5);
+}
 .error { margin-top: 10px; color: #ffb4ae; font-size: 14px; }
 .resume-audio {
+  position: relative;
+  z-index: 5;
   margin-top: 18px;
   min-height: 44px;
   padding: 0 18px;
   border: 1px solid rgba(255,255,255,0.28);
   border-radius: 22px;
-  background: rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.38);
   color: #fff;
   cursor: pointer;
+  pointer-events: auto;
 }
-.controls { min-height: 110px; margin-top: 68px; display: flex; justify-content: center; gap: 52px; }
+.controls {
+  min-height: 110px;
+  margin-top: 68px;
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  pointer-events: auto;
+}
+.video-card .controls {
+  margin-top: auto;
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+}
 .control {
   width: 76px;
   border: 0;
@@ -187,7 +355,16 @@ onBeforeUnmount(() => {
   justify-content: center;
   background: rgba(255,255,255,0.18);
   font-size: 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 .control-circle.hangup { background: #ff3b30; font-size: 25px; }
-.control small { font-size: 13px; }
+.control small { font-size: 13px; text-shadow: 0 1px 4px rgba(0,0,0,0.45); }
+
+@media (max-width: 480px) {
+  .controls { gap: 10px; }
+  .control { width: 68px; }
+  .control-circle { width: 58px; height: 58px; }
+  .local-video { width: 28vw; max-width: 120px; border-radius: 14px; }
+}
 </style>
