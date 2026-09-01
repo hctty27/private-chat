@@ -1,3 +1,5 @@
+export type CallType = 'audio' | 'video'
+
 export type CallPhase =
   | 'idle'
   | 'preparing'
@@ -22,12 +24,12 @@ export interface WebRTCIceConfig {
 
 export interface WsCallRinging {
   type: 'call_ringing'
-  data: { callId: string; userId: number }
+  data: { callId: string; userId: number; callType: CallType }
 }
 
 export interface WsCallIncoming {
   type: 'call_incoming'
-  data: { callId: string; callerId: number }
+  data: { callId: string; callerId: number; callType: CallType }
 }
 
 export interface WsCallUnavailable {
@@ -42,7 +44,7 @@ export interface WsCallBusy {
 
 export interface WsCallAccepted {
   type: 'call_accepted'
-  data: { callId: string }
+  data: { callId: string; callType: CallType }
 }
 
 export interface WsCallRejected {
@@ -96,7 +98,7 @@ export type WsCallServerMessage =
 
 export interface WsCallInvite {
   type: 'call_invite'
-  data: { receiverId: number }
+  data: { receiverId: number; callType: CallType }
 }
 
 export interface WsCallAccept {
