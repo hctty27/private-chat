@@ -274,7 +274,7 @@ import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import VoiceCallButton from '../components/VoiceCallButton.vue'
 import VoiceCallOverlay from '../components/VoiceCallOverlay.vue'
 import IncomingCallOverlay from '../components/IncomingCallOverlay.vue'
-import type { Message } from '../types'
+import type { CallType, Message } from '../types'
 
 const chatStore = useChatStore()
 const callStore = useCallStore()
@@ -388,8 +388,8 @@ function openMediaFromBubble(
   openPreview(url, type, posterUrl)
 }
 
-function startCurrentCall() {
-  if (chatStore.currentContact) void callStore.startCall(chatStore.currentContact)
+function startCurrentCall(kind: CallType) {
+  if (chatStore.currentContact) void callStore.startCall(chatStore.currentContact, kind)
 }
 
 function endCurrentCall() {
