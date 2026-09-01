@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"unicode"
 
 	"privatechat/internal/model"
+	"privatechat/internal/thumbnailbackfill"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -83,6 +85,7 @@ type fileObjectStorage interface {
 	AbortMultipart(context.Context, string, string) error
 	Stat(context.Context, string) (int64, error)
 	ReadPrefix(context.Context, string, int64) ([]byte, error)
+	EnsureImageThumbnail(context.Context, string, string, int64) error
 	PresignGet(context.Context, string, string, string, time.Duration) (string, error)
 }
 
@@ -171,6 +174,55 @@ func (s minioFileStorage) ReadPrefix(ctx context.Context, objectKey string, maxB
 	return io.ReadAll(io.LimitReader(obj, maxBytes))
 }
 
+func (s minioFileStorage) EnsureImageThumbnail(ctx context.Context, sourceKey, thumbnailKey string, sourceSize int64) error {
+	stat, err := s.client.StatObject(ctx, s.bucket, s.key(thumbnailKey), minio.StatObjectOptions{})
+	if err == nil && stat.Size > 0 {
+		return nil
+	}
+	if err != nil {
+		response := minio.ToErrorResponse(err)
+		missing := response.StatusCode == http.StatusNotFound ||
+			response.Code == "NoSuchKey" ||
+			response.Code == "NoSuchObject" ||
+			response.Code == "NotFound"
+		if !missing {
+			return err
+		}
+	}
+
+	if sourceSize <= 0 || sourceSize > thumbnailbackfill.DefaultMaxSourceBytes {
+		return fmt.Errorf("thumbnail source size %d exceeds limit", sourceSize)
+	}
+
+	obj, err := s.client.GetObject(ctx, s.bucket, s.key(sourceKey), minio.GetObjectOptions{})
+	if err != nil {
+		return err
+	}
+	defer obj.Close()
+
+	source, err := io.ReadAll(io.LimitReader(obj, sourceSize+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(source)) != sourceSize {
+		return fmt.Errorf("thumbnail source size mismatch: expected %d got %d", sourceSize, len(source))
+	}
+
+	thumbnail, err := thumbnailbackfill.MakeThumbnail(source, thumbnailbackfill.Options{})
+	if err != nil {
+		return err
+	}
+	_, err = s.client.PutObject(
+		ctx,
+		s.bucket,
+		s.key(thumbnailKey),
+		bytes.NewReader(thumbnail),
+		int64(len(thumbnail)),
+		minio.PutObjectOptions{ContentType: "image/jpeg"},
+	)
+	return err
+}
+
 func (s minioFileStorage) PresignGet(ctx context.Context, objectKey, contentType, disposition string, expiry time.Duration) (string, error) {
 	params := url.Values{}
 	params.Set("response-content-type", contentType)
@@ -200,9 +252,14 @@ func thumbnailObjectKey(objectKey string) string {
 	return objectKey + ".thumb.jpg"
 }
 
+func isImageContentType(contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return strings.HasPrefix(contentType, "image/")
+}
+
 func supportsThumbnailUpload(contentType string) bool {
 	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	return strings.HasPrefix(contentType, "image/") || strings.HasPrefix(contentType, "video/")
+	return isImageContentType(contentType) || strings.HasPrefix(contentType, "video/")
 }
 
 func normalizeUploadContentType(fileName, contentType string) string {
@@ -392,6 +449,9 @@ func (m *fileManager) Confirm(ctx context.Context, userID, fileID int64) (model.
 		return model.FileUploadDTO{}, err
 	}
 	detected := http.DetectContentType(prefix)
+	if isImageContentType(detected) {
+		_ = m.storage.EnsureImageThumbnail(ctx, file.ObjectKey, thumbnailObjectKey(file.ObjectKey), actualSize)
+	}
 	ready, err := m.repo.MarkReady(ctx, file.ID, actualSize, detected, time.Now().UTC())
 	if err != nil {
 		return model.FileUploadDTO{}, err
