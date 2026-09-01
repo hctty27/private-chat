@@ -70,7 +70,6 @@ func TestBuildWebRTCIceConfigRelayOmitsStunServer(t *testing.T) {
 	}
 }
 
-
 func TestFetchCloudflareIceServersUsesShortLivedCredentialsAndFiltersPort53(t *testing.T) {
 	var receivedTTL int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
