@@ -22,6 +22,20 @@ type countingFileStorage struct {
 	putTypes []string
 }
 
+type ensureThumbnailStorage struct {
+	*fakeFileStorage
+	ensuredSourceKey    string
+	ensuredThumbnailKey string
+	ensuredSourceSize   int64
+}
+
+func (s *ensureThumbnailStorage) EnsureImageThumbnail(_ context.Context, sourceKey, thumbnailKey string, sourceSize int64) error {
+	s.ensuredSourceKey = sourceKey
+	s.ensuredThumbnailKey = thumbnailKey
+	s.ensuredSourceSize = sourceSize
+	return nil
+}
+
 func (s *countingFileStorage) PresignPut(ctx context.Context, objectKey, contentType string, expiry time.Duration) (string, error) {
 	s.putKeys = append(s.putKeys, objectKey)
 	s.putTypes = append(s.putTypes, contentType)
@@ -99,6 +113,37 @@ func TestVideoUploadPresignsOriginalAndThumbnail(t *testing.T) {
 	}
 	if storage.putKeys[1] != storage.putKeys[0]+".thumb.jpg" {
 		t.Fatalf("unexpected thumbnail key %q for original %q", storage.putKeys[1], storage.putKeys[0])
+	}
+}
+
+func TestConfirmImageEnsuresServerThumbnail(t *testing.T) {
+	jpegHeader := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00, 0x01}
+	storage := &ensureThumbnailStorage{fakeFileStorage: &fakeFileStorage{
+		statSize: int64(len(jpegHeader)),
+		prefix:   jpegHeader,
+	}}
+	repo := newFakeFileRepository(model.File{
+		ID:             12,
+		ObjectKey:      "photo.jpg",
+		OwnerID:        1,
+		ConversationID: "1_2",
+		OriginalName:   "photo.jpg",
+		ExpectedSize:   int64(len(jpegHeader)),
+		Status:         model.FileStatusPending,
+	})
+	manager := newFileManager(repo, storage)
+
+	if _, err := manager.Confirm(context.Background(), 1, 12); err != nil {
+		t.Fatalf("confirm image: %v", err)
+	}
+	if storage.ensuredSourceKey != "photo.jpg" {
+		t.Fatalf("expected original image to be used for thumbnail fallback, got %q", storage.ensuredSourceKey)
+	}
+	if storage.ensuredThumbnailKey != "photo.jpg.thumb.jpg" {
+		t.Fatalf("expected thumbnail object key, got %q", storage.ensuredThumbnailKey)
+	}
+	if storage.ensuredSourceSize != int64(len(jpegHeader)) {
+		t.Fatalf("expected source size %d, got %d", len(jpegHeader), storage.ensuredSourceSize)
 	}
 }
 
