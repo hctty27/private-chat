@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch, type WatchStopHandle } from 'vue'
 import { getWebRTCIceConfig, getWebRTCStatus } from '../api'
-import { useWebRtcCall } from '../composables/useWebRtcCall'
+import { useWebRtcCall, type WebRtcPrepareError } from '../composables/useWebRtcCall'
 import type {
   CallPhase,
   Contact,
@@ -12,9 +12,106 @@ import type {
 import { useChatStore } from './chat'
 
 const terminalDisplayMs = 1200
+const iosAudioDeviceErrorPattern = /No AVAudioSessionCaptureDevice/i
+
+interface PrepareFailureDetails {
+  stage: WebRtcPrepareError['stage'] | 'unknown'
+  name: string
+  message: string
+  httpStatus?: number
+}
 
 function isCallServerMessage(message: WsServerMessage): message is WsCallServerMessage {
   return message.type.startsWith('call_') || message.type.startsWith('webrtc_')
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? value as Record<string, unknown>
+    : null
+}
+
+function readHttpStatus(error: unknown) {
+  const response = asRecord(asRecord(error)?.response)
+  return typeof response?.status === 'number' ? response.status : undefined
+}
+
+function getPrepareFailureDetails(error: unknown): PrepareFailureDetails {
+  const wrapper = asRecord(error)
+  const stage = wrapper?.stage === 'media' || wrapper?.stage === 'ice-config'
+    ? wrapper.stage
+    : 'unknown'
+  const originalError = 'originalError' in (wrapper ?? {})
+    ? wrapper?.originalError
+    : error
+  const original = asRecord(originalError)
+  const name = typeof original?.name === 'string'
+    ? original.name
+    : originalError instanceof Error
+      ? originalError.name
+      : 'UnknownError'
+  const message = typeof original?.message === 'string'
+    ? original.message
+    : originalError instanceof Error
+      ? originalError.message
+      : String(originalError ?? '')
+
+  return {
+    stage,
+    name,
+    message,
+    httpStatus: readHttpStatus(originalError),
+  }
+}
+
+function prepareFailureMessage(error: unknown) {
+  const details = getPrepareFailureDetails(error)
+
+  if (details.stage === 'ice-config') {
+    if (details.httpStatus === 401 || details.httpStatus === 403) {
+      return '登录状态已失效，请重新进入'
+    }
+    if (details.httpStatus === 503) {
+      return '通话服务暂不可用'
+    }
+    return '无法获取通话配置，请检查网络后重试'
+  }
+
+  if (iosAudioDeviceErrorPattern.test(details.message)) {
+    return 'iOS 麦克风服务异常，请完全关闭 Safari 后重新打开'
+  }
+
+  switch (details.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return '麦克风权限未授权，请在浏览器网站设置中允许麦克风'
+    case 'NotFoundError':
+      return '未检测到可用麦克风'
+    case 'NotReadableError':
+    case 'AbortError':
+      return '麦克风暂时不可用，请关闭占用麦克风的应用后重试'
+    case 'TypeError':
+      return typeof window !== 'undefined' && !window.isSecureContext
+        ? '当前页面无法访问麦克风，请使用 HTTPS 打开'
+        : '浏览器无法初始化麦克风'
+    default:
+      return details.stage === 'media'
+        ? '麦克风初始化失败，请重试'
+        : '通话初始化失败，请重试'
+  }
+}
+
+function logPrepareFailure(direction: 'outgoing' | 'incoming', error: unknown) {
+  const details = getPrepareFailureDetails(error)
+  console.error('[voice-call] preparation failed', {
+    direction,
+    stage: details.stage,
+    name: details.name,
+    message: details.message,
+    httpStatus: details.httpStatus,
+    secureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+  })
 }
 
 export const useCallStore = defineStore('call', () => {
@@ -186,10 +283,11 @@ export const useCallStore = defineStore('call', () => {
 
     try {
       await rtc.prepare()
-    } catch {
+    } catch (prepareError) {
       if (prepareSeq !== outgoingPrepareSeq) return
       preparingOutgoing = false
-      finish('failed', '无法访问麦克风或通话服务不可用')
+      logPrepareFailure('outgoing', prepareError)
+      finish('failed', prepareFailureMessage(prepareError))
       return
     }
 
@@ -221,12 +319,13 @@ export const useCallStore = defineStore('call', () => {
     const activeCallId = callId.value
     try {
       await rtc.prepare()
-    } catch {
+    } catch (prepareError) {
+      logPrepareFailure('incoming', prepareError)
       useChatStore().sendWsMessage({
         type: 'call_reject',
         data: { callId: activeCallId, reason: 'media_unavailable' },
       })
-      finish('failed', '无法访问麦克风或通话服务不可用')
+      finish('failed', prepareFailureMessage(prepareError))
       return
     }
 
