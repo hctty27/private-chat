@@ -13,6 +13,20 @@ func TestCallIDFromDataRejectsEmptyAndOversizedValues(t *testing.T) {
 	}
 }
 
+func TestCallTypeFromDataDefaultsToAudioAndAcceptsVideo(t *testing.T) {
+	kind, err := callTypeFromData(map[string]any{})
+	if err != nil || kind != callTypeAudio {
+		t.Fatalf("expected audio default, got %q err=%v", kind, err)
+	}
+	kind, err = callTypeFromData(map[string]any{"callType": "video"})
+	if err != nil || kind != callTypeVideo {
+		t.Fatalf("expected video, got %q err=%v", kind, err)
+	}
+	if _, err := callTypeFromData(map[string]any{"callType": "screen"}); err == nil {
+		t.Fatal("expected invalid call type to be rejected")
+	}
+}
+
 func TestSessionDescriptionFromDataRejectsOversizedSDP(t *testing.T) {
 	_, err := sessionDescriptionFromData(map[string]any{
 		"sdp": map[string]any{
