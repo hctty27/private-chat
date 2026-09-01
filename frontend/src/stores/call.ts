@@ -169,7 +169,7 @@ export const useCallStore = defineStore('call', () => {
 
   async function startCall(contact: Contact) {
     ensureBound()
-    if (!available.value || phase.value !== 'idle' || preparingOutgoing) return
+    if (phase.value !== 'idle' || preparingOutgoing) return
     const chat = useChatStore()
     if (!chat.wsConnected || chat.wsStatus !== 'connected') {
       error.value = '网络未连接'
