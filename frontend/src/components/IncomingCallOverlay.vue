@@ -1,15 +1,15 @@
 <template>
-  <div class="incoming-call-overlay" role="dialog" aria-modal="true" aria-label="语音来电">
+  <div class="incoming-call-overlay" role="dialog" aria-modal="true" :aria-label="dialogLabel">
     <div class="incoming-card">
       <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
       <div class="name">{{ peerName || '联系人' }}</div>
-      <div class="label">邀请你语音通话</div>
+      <div class="label">邀请你{{ callType === 'video' ? '视频' : '语音' }}通话</div>
       <div class="actions">
-        <button type="button" class="action reject" aria-label="拒绝语音通话" @click="reject">
+        <button type="button" class="action reject" :aria-label="rejectLabel" @click="reject">
           <span>✕</span>
           <small>拒绝</small>
         </button>
-        <button type="button" class="action accept" aria-label="接听语音通话" @click="accept">
+        <button type="button" class="action accept" :aria-label="acceptLabel" @click="accept">
           <span>✓</span>
           <small>接听</small>
         </button>
@@ -19,16 +19,24 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useIncomingCallAlert } from '../composables/useIncomingCallAlert'
+import type { CallType } from '../types'
 
-defineProps<{ peerName: string }>()
+const props = defineProps<{
+  peerName: string
+  callType: CallType
+}>()
+
 const emit = defineEmits<{
   accept: []
   reject: []
 }>()
 
 const alert = useIncomingCallAlert()
+const dialogLabel = computed(() => props.callType === 'video' ? '视频来电' : '语音来电')
+const acceptLabel = computed(() => props.callType === 'video' ? '接听视频通话' : '接听语音通话')
+const rejectLabel = computed(() => props.callType === 'video' ? '拒绝视频通话' : '拒绝语音通话')
 
 function accept() {
   alert.stop()
