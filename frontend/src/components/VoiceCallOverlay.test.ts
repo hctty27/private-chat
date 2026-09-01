@@ -27,6 +27,12 @@ function mountVoice(props: Partial<InstanceType<typeof VoiceCallOverlay>['$props
 }
 
 describe('VoiceCallOverlay', () => {
+  it('shows preparing state before outgoing call', () => {
+    const wrapper = mountVoice({ phase: 'preparing' as any })
+    expect(wrapper.text()).toContain('正在准备通话…')
+    expect(wrapper.get('[aria-label="挂断语音通话"]').text()).toContain('取消')
+  })
+
   it('shows outgoing and connected call status', async () => {
     const wrapper = mountVoice()
     expect(wrapper.text()).toContain('正在呼叫…')
