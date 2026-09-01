@@ -21,16 +21,31 @@
       </svg>
     </button>
 
-    <div v-if="menuOpen" class="call-menu" role="menu" aria-label="选择通话方式">
-      <button type="button" role="menuitem" @click="startCall('audio')">
-        <span class="menu-icon">☎</span>
-        <span>语音通话</span>
-      </button>
-      <button type="button" role="menuitem" @click="startCall('video')">
-        <span class="menu-icon video-icon">▣</span>
-        <span>视频通话</span>
-      </button>
-    </div>
+    <Teleport to="body">
+      <div
+        v-if="menuOpen"
+        class="call-menu-layer"
+        aria-label="通话方式选择层"
+        @click.self="closeMenu"
+      >
+        <div
+          class="call-menu"
+          :style="menuPosition"
+          role="menu"
+          aria-label="选择通话方式"
+          @click.stop
+        >
+          <button type="button" role="menuitem" @click="startCall('audio')">
+            <span class="menu-icon">☎</span>
+            <span>语音通话</span>
+          </button>
+          <button type="button" role="menuitem" @click="startCall('video')">
+            <span class="menu-icon video-icon">▣</span>
+            <span>视频通话</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -54,29 +69,64 @@ const emit = defineEmits<{
 
 const rootEl = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
+const menuPosition = ref<Record<string, string>>({})
+
+function updateMenuPosition() {
+  const rect = rootEl.value?.getBoundingClientRect()
+  if (!rect) return
+
+  const viewportWidth = document.documentElement.clientWidth
+  menuPosition.value = {
+    '--call-menu-top': `${Math.round(rect.bottom + 6)}px`,
+    '--call-menu-right': `${Math.max(12, Math.round(viewportWidth - rect.right))}px`,
+  }
+}
 
 function toggleMenu() {
   if (props.disabled) return
-  menuOpen.value = !menuOpen.value
+  if (menuOpen.value) {
+    closeMenu()
+    return
+  }
+  updateMenuPosition()
+  menuOpen.value = true
+}
+
+function closeMenu() {
+  menuOpen.value = false
 }
 
 function startCall(kind: CallType) {
-  menuOpen.value = false
+  closeMenu()
   if (props.disabled) return
   emit('call', kind)
 }
 
-function closeOnOutsidePointer(event: PointerEvent) {
-  if (!menuOpen.value || rootEl.value?.contains(event.target as Node)) return
-  menuOpen.value = false
+function handleViewportChange() {
+  if (menuOpen.value) updateMenuPosition()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeMenu()
 }
 
 watch(() => props.disabled, (disabled) => {
-  if (disabled) menuOpen.value = false
+  if (disabled) closeMenu()
 })
 
-onMounted(() => document.addEventListener('pointerdown', closeOnOutsidePointer))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutsidePointer))
+onMounted(() => {
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('orientationchange', handleViewportChange)
+  window.visualViewport?.addEventListener('resize', handleViewportChange)
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('orientationchange', handleViewportChange)
+  window.visualViewport?.removeEventListener('resize', handleViewportChange)
+  document.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <style scoped>
@@ -104,11 +154,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
 .voice-call-button:active:not(:disabled) { background: rgba(0,0,0,0.09); }
 .voice-call-button:disabled { opacity: 0.35; cursor: default; }
 .voice-call-button svg { width: 23px; height: 23px; }
+
+.call-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+}
 .call-menu {
-  position: absolute;
-  z-index: 3050;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
+  top: var(--call-menu-top, 64px);
+  right: var(--call-menu-right, 16px);
   width: 156px;
   padding: 6px;
   border: 1px solid rgba(60,60,67,0.16);
@@ -132,6 +187,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
 .call-menu button:hover,
@@ -143,4 +199,39 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', closeOnOutside
   line-height: 1;
 }
 .video-icon { font-size: 17px; }
+
+@media (max-width: 767px) {
+  .call-menu-layer {
+    display: flex;
+    align-items: flex-end;
+    padding:
+      12px
+      max(12px, env(safe-area-inset-right))
+      calc(12px + env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.18);
+  }
+  .call-menu {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 100%;
+    padding: 8px;
+    border-radius: 16px;
+    box-sizing: border-box;
+    box-shadow: 0 12px 36px rgba(0,0,0,0.22);
+  }
+  .call-menu button {
+    min-height: 52px;
+    padding: 0 14px;
+    font-size: 16px;
+    border-radius: 12px;
+  }
+  .menu-icon {
+    width: 26px;
+    font-size: 20px;
+  }
+  .video-icon { font-size: 19px; }
+}
 </style>
