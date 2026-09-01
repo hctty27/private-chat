@@ -51,9 +51,12 @@ func callMessage(msgType string, data gin.H) gin.H {
 	return gin.H{"type": msgType, "data": data}
 }
 
-func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64) error {
+func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64, kind callType) error {
 	if callerID <= 0 || calleeID <= 0 || callerID == calleeID {
 		return errCallRole
+	}
+	if !validCallType(kind) {
+		return errCallState
 	}
 	if err := m.requireContact(ctx, callerID, calleeID); err != nil {
 		return err
@@ -70,6 +73,7 @@ func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64) erro
 		ID:        m.newID(),
 		CallerID:  callerID,
 		CalleeID:  calleeID,
+		CallType:  kind,
 		Status:    callStatusRinging,
 		CreatedAt: m.now().UTC(),
 	}
@@ -82,12 +86,14 @@ func (m *callManager) Invite(ctx context.Context, callerID, calleeID int64) erro
 	}
 
 	m.send(callerID, callMessage("call_ringing", gin.H{
-		"callId": record.ID,
-		"userId": calleeID,
+		"callId":   record.ID,
+		"userId":   calleeID,
+		"callType": record.CallType,
 	}))
 	m.send(calleeID, callMessage("call_incoming", gin.H{
 		"callId":   record.ID,
 		"callerId": callerID,
+		"callType": record.CallType,
 	}))
 
 	m.schedule(m.ringingTTL, func() {
@@ -112,7 +118,10 @@ func (m *callManager) Accept(ctx context.Context, userID int64, callID string) e
 	if err != nil {
 		return err
 	}
-	payload := callMessage("call_accepted", gin.H{"callId": callID})
+	payload := callMessage("call_accepted", gin.H{
+		"callId":   callID,
+		"callType": record.CallType,
+	})
 	m.send(record.CallerID, payload)
 	m.send(record.CalleeID, payload)
 	return nil

@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, watch, type WatchStopHandle } from 'vue'
+import { ref, shallowRef, watch, type WatchStopHandle } from 'vue'
 import { getWebRTCIceConfig, getWebRTCStatus } from '../api'
 import { useWebRtcCall, type WebRtcPrepareError } from '../composables/useWebRtcCall'
 import type {
   CallPhase,
+  CallType,
   Contact,
   WsServerMessage,
   WsCallServerMessage,
@@ -36,6 +37,10 @@ function readHttpStatus(error: unknown) {
   return typeof response?.status === 'number' ? response.status : undefined
 }
 
+function normalizeCallType(value: unknown): CallType {
+  return value === 'video' ? 'video' : 'audio'
+}
+
 function getPrepareFailureDetails(error: unknown): PrepareFailureDetails {
   const wrapper = asRecord(error)
   const stage = wrapper?.stage === 'media' || wrapper?.stage === 'ice-config'
@@ -64,8 +69,9 @@ function getPrepareFailureDetails(error: unknown): PrepareFailureDetails {
   }
 }
 
-function prepareFailureMessage(error: unknown) {
+function prepareFailureMessage(error: unknown, kind: CallType) {
   const details = getPrepareFailureDetails(error)
+  const video = kind === 'video'
 
   if (details.stage === 'ice-config') {
     if (details.httpStatus === 401 || details.httpStatus === 403) {
@@ -84,27 +90,32 @@ function prepareFailureMessage(error: unknown) {
   switch (details.name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return '无法使用麦克风，请检查浏览器权限'
+      return video
+        ? '无法使用摄像头或麦克风，请检查浏览器权限'
+        : '无法使用麦克风，请检查浏览器权限'
     case 'NotFoundError':
-      return '未检测到可用麦克风'
+      return video ? '未检测到可用摄像头或麦克风' : '未检测到可用麦克风'
     case 'NotReadableError':
     case 'AbortError':
-      return '麦克风暂时不可用，请检查设备或关闭占用麦克风的应用'
+      return video
+        ? '摄像头或麦克风暂时不可用，请检查设备或关闭占用设备的应用'
+        : '麦克风暂时不可用，请检查设备或关闭占用麦克风的应用'
     case 'TypeError':
       return typeof window !== 'undefined' && !window.isSecureContext
-        ? '当前页面无法访问麦克风，请使用 HTTPS 打开'
-        : '浏览器无法初始化麦克风'
+        ? (video ? '当前页面无法访问摄像头和麦克风，请使用 HTTPS 打开' : '当前页面无法访问麦克风，请使用 HTTPS 打开')
+        : (video ? '浏览器无法初始化摄像头或麦克风' : '浏览器无法初始化麦克风')
     default:
       return details.stage === 'media'
-        ? '麦克风初始化失败，请重试'
+        ? (video ? '摄像头或麦克风初始化失败，请重试' : '麦克风初始化失败，请重试')
         : '通话初始化失败，请重试'
   }
 }
 
-function logPrepareFailure(direction: 'outgoing' | 'incoming', error: unknown) {
+function logPrepareFailure(direction: 'outgoing' | 'incoming', error: unknown, kind: CallType) {
   const details = getPrepareFailureDetails(error)
   console.error('[voice-call] preparation failed', {
     direction,
+    callType: kind,
     stage: details.stage,
     name: details.name,
     message: details.message,
@@ -117,14 +128,17 @@ function logPrepareFailure(direction: 'outgoing' | 'incoming', error: unknown) {
 export const useCallStore = defineStore('call', () => {
   const available = ref(false)
   const phase = ref<CallPhase>('idle')
+  const callType = ref<CallType>('audio')
   const callId = ref<string | null>(null)
   const peerUserId = ref<number | null>(null)
   const peerName = ref('')
   const muted = ref(false)
+  const cameraOff = ref(false)
   const connectedAt = ref<number | null>(null)
   const durationSeconds = ref(0)
   const error = ref('')
-  const remoteStream = ref<MediaStream | null>(null)
+  const localStream = shallowRef<MediaStream | null>(null)
+  const remoteStream = shallowRef<MediaStream | null>(null)
 
   let cancelPendingInvite = false
   let preparingOutgoing = false
@@ -179,6 +193,9 @@ export const useCallStore = defineStore('call', () => {
         }
         finish('failed', '通话连接失败')
       },
+      onLocalStream: (stream) => {
+        localStream.value = stream
+      },
       onRemoteStream: (stream) => {
         remoteStream.value = stream
       },
@@ -212,8 +229,10 @@ export const useCallStore = defineStore('call', () => {
     rtc.cleanup()
     stopDurationTimer()
     muted.value = false
+    cameraOff.value = false
     connectedAt.value = null
     durationSeconds.value = 0
+    localStream.value = null
     remoteStream.value = null
   }
 
@@ -223,6 +242,7 @@ export const useCallStore = defineStore('call', () => {
     preparingOutgoing = false
     cleanupLocal()
     phase.value = 'idle'
+    callType.value = 'audio'
     callId.value = null
     peerUserId.value = null
     peerName.value = ''
@@ -264,7 +284,7 @@ export const useCallStore = defineStore('call', () => {
     }
   }
 
-  async function startCall(contact: Contact) {
+  async function startCall(contact: Contact, kind: CallType = 'audio') {
     ensureBound()
     if (phase.value !== 'idle' || preparingOutgoing) return
     const chat = useChatStore()
@@ -275,6 +295,7 @@ export const useCallStore = defineStore('call', () => {
 
     clearResetTimer()
     error.value = ''
+    callType.value = kind
     peerUserId.value = contact.userId
     peerName.value = contact.nickname
     phase.value = 'preparing'
@@ -282,12 +303,12 @@ export const useCallStore = defineStore('call', () => {
     const prepareSeq = ++outgoingPrepareSeq
 
     try {
-      await rtc.prepare()
+      await rtc.prepare(kind)
     } catch (prepareError) {
       if (prepareSeq !== outgoingPrepareSeq) return
       preparingOutgoing = false
-      logPrepareFailure('outgoing', prepareError)
-      finish('failed', prepareFailureMessage(prepareError))
+      logPrepareFailure('outgoing', prepareError, kind)
+      finish('failed', prepareFailureMessage(prepareError, kind))
       return
     }
 
@@ -309,7 +330,7 @@ export const useCallStore = defineStore('call', () => {
     phase.value = 'outgoing'
     chat.sendWsMessage({
       type: 'call_invite',
-      data: { receiverId: contact.userId },
+      data: { receiverId: contact.userId, callType: kind },
     })
   }
 
@@ -317,15 +338,16 @@ export const useCallStore = defineStore('call', () => {
     ensureBound()
     if (phase.value !== 'incoming' || !callId.value) return
     const activeCallId = callId.value
+    const kind = callType.value
     try {
-      await rtc.prepare()
+      await rtc.prepare(kind)
     } catch (prepareError) {
-      logPrepareFailure('incoming', prepareError)
+      logPrepareFailure('incoming', prepareError, kind)
       useChatStore().sendWsMessage({
         type: 'call_reject',
         data: { callId: activeCallId, reason: 'media_unavailable' },
       })
-      finish('failed', prepareFailureMessage(prepareError))
+      finish('failed', prepareFailureMessage(prepareError, kind))
       return
     }
 
@@ -390,6 +412,24 @@ export const useCallStore = defineStore('call', () => {
     rtc.setMuted(muted.value)
   }
 
+  function toggleCamera() {
+    if (callType.value !== 'video') return
+    if (phase.value !== 'connected' && phase.value !== 'connecting') return
+    cameraOff.value = !cameraOff.value
+    rtc.setVideoEnabled(!cameraOff.value)
+  }
+
+  async function switchCamera() {
+    if (callType.value !== 'video') return
+    if (phase.value !== 'connected' && phase.value !== 'connecting') return
+    try {
+      await rtc.switchCamera()
+    } catch (switchError) {
+      console.error('[video-call] switch camera failed', switchError)
+      error.value = '切换摄像头失败'
+    }
+  }
+
   function matchesCall(messageCallId: string) {
     return !!callId.value && callId.value === messageCallId
   }
@@ -424,6 +464,7 @@ export const useCallStore = defineStore('call', () => {
         clearResetTimer()
         error.value = ''
         callId.value = message.data.callId
+        callType.value = normalizeCallType(message.data.callType)
         peerUserId.value = message.data.callerId
         peerName.value = resolvePeerName(message.data.callerId)
         phase.value = 'incoming'
@@ -432,6 +473,7 @@ export const useCallStore = defineStore('call', () => {
       case 'call_ringing': {
         if (peerUserId.value !== message.data.userId) return
         callId.value = message.data.callId
+        callType.value = normalizeCallType(message.data.callType)
         if (cancelPendingInvite) {
           useChatStore().sendWsMessage({
             type: 'call_cancel',
@@ -450,12 +492,16 @@ export const useCallStore = defineStore('call', () => {
         return
       case 'call_accepted':
         if (!matchesCall(message.data.callId) || phase.value !== 'outgoing') return
+        callType.value = normalizeCallType(message.data.callType)
         phase.value = 'connecting'
         void rtc.startCaller().catch(handleAsyncFailure)
         return
       case 'call_rejected':
         if (matchesCall(message.data.callId)) {
-          finish('ended', message.data.reason === 'media_unavailable' ? '对方麦克风不可用' : '对方已拒绝')
+          const mediaUnavailable = callType.value === 'video'
+            ? '对方摄像头或麦克风不可用'
+            : '对方麦克风不可用'
+          finish('ended', message.data.reason === 'media_unavailable' ? mediaUnavailable : '对方已拒绝')
         }
         return
       case 'call_cancelled':
@@ -499,13 +545,16 @@ export const useCallStore = defineStore('call', () => {
   return {
     available,
     phase,
+    callType,
     callId,
     peerUserId,
     peerName,
     muted,
+    cameraOff,
     connectedAt,
     durationSeconds,
     error,
+    localStream,
     remoteStream,
     ensureBound,
     checkAvailability,
@@ -515,6 +564,8 @@ export const useCallStore = defineStore('call', () => {
     cancelCall,
     hangup,
     toggleMute,
+    toggleCamera,
+    switchCamera,
     cleanupLocal,
     resetToIdle,
     handleServerMessage,

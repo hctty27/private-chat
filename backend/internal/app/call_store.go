@@ -12,11 +12,26 @@ import (
 )
 
 type callStatus string
+type callType string
 
 const (
 	callStatusRinging callStatus = "ringing"
 	callStatusActive  callStatus = "active"
+
+	callTypeAudio callType = "audio"
+	callTypeVideo callType = "video"
 )
+
+func validCallType(value callType) bool {
+	return value == callTypeAudio || value == callTypeVideo
+}
+
+func normalizeCallType(value callType) callType {
+	if value == "" {
+		return callTypeAudio
+	}
+	return value
+}
 
 var (
 	errCallNotFound = errors.New("call not found")
@@ -29,6 +44,7 @@ type callRecord struct {
 	ID         string     `json:"id"`
 	CallerID   int64      `json:"callerId"`
 	CalleeID   int64      `json:"calleeId"`
+	CallType   callType   `json:"callType"`
 	Status     callStatus `json:"status"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
@@ -63,7 +79,7 @@ func (s *redisCallStore) CreateRinging(ctx context.Context, record callRecord, t
 	if record.ID == "" || record.CallerID <= 0 || record.CalleeID <= 0 || record.CallerID == record.CalleeID {
 		return errCallRole
 	}
-	if record.Status != callStatusRinging || ttl <= 0 {
+	if !validCallType(record.CallType) || record.Status != callStatusRinging || ttl <= 0 {
 		return errCallState
 	}
 
@@ -117,6 +133,7 @@ func (s *redisCallStore) Get(ctx context.Context, callID string) (callRecord, er
 	if err := json.Unmarshal(raw, &record); err != nil {
 		return callRecord{}, fmt.Errorf("unmarshal call: %w", err)
 	}
+	record.CallType = normalizeCallType(record.CallType)
 	return record, nil
 }
 
@@ -168,6 +185,7 @@ func (s *redisCallStore) MarkActive(
 			if err := json.Unmarshal(raw, &record); err != nil {
 				return fmt.Errorf("unmarshal call: %w", err)
 			}
+			record.CallType = normalizeCallType(record.CallType)
 			if record.Status != callStatusRinging {
 				return errCallState
 			}
@@ -253,6 +271,7 @@ func (s *redisCallStore) delete(
 			if err := json.Unmarshal(raw, &record); err != nil {
 				return fmt.Errorf("unmarshal call: %w", err)
 			}
+			record.CallType = normalizeCallType(record.CallType)
 			if record.ID != callID {
 				return errCallState
 			}

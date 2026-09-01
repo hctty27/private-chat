@@ -39,6 +39,25 @@ func receiverIDFromData(data map[string]any) (int64, error) {
 	return int64(value), nil
 }
 
+func callTypeFromData(data map[string]any) (callType, error) {
+	raw, exists := data["callType"]
+	if !exists || raw == nil {
+		return callTypeAudio, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("invalid call type")
+	}
+	kind := callType(strings.TrimSpace(value))
+	if kind == "" {
+		return callTypeAudio, nil
+	}
+	if !validCallType(kind) {
+		return "", fmt.Errorf("invalid call type")
+	}
+	return kind, nil
+}
+
 func sessionDescriptionFromData(data map[string]any, expectedType string) (map[string]any, error) {
 	raw, ok := data["sdp"].(map[string]any)
 	if !ok {
@@ -99,7 +118,11 @@ func (a *App) handleWsCall(userID int64, msgType string, data map[string]any) er
 		if err != nil {
 			return err
 		}
-		return a.calls.Invite(ctx, userID, receiverID)
+		kind, err := callTypeFromData(data)
+		if err != nil {
+			return err
+		}
+		return a.calls.Invite(ctx, userID, receiverID, kind)
 	case "call_accept":
 		callID, err := callIDFromData(data)
 		if err != nil {
