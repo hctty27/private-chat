@@ -3,7 +3,7 @@
     <div class="incoming-card">
       <div class="avatar">{{ peerName.slice(0, 1) || '联' }}</div>
       <div class="name">{{ peerName || '联系人' }}</div>
-      <div class="label">邀请你{{ callType === 'video' ? '视频' : '语音' }}通话</div>
+      <div class="label">邀请你{{ callStore.callType === 'video' ? '视频' : '语音' }}通话</div>
       <div class="actions">
         <button type="button" class="action reject" :aria-label="rejectLabel" @click="reject">
           <span>✕</span>
@@ -21,22 +21,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useIncomingCallAlert } from '../composables/useIncomingCallAlert'
-import type { CallType } from '../types'
+import { useCallStore } from '../stores/call'
 
-const props = defineProps<{
-  peerName: string
-  callType: CallType
-}>()
+defineProps<{ peerName: string }>()
 
 const emit = defineEmits<{
   accept: []
   reject: []
 }>()
 
+const callStore = useCallStore()
 const alert = useIncomingCallAlert()
-const dialogLabel = computed(() => props.callType === 'video' ? '视频来电' : '语音来电')
-const acceptLabel = computed(() => props.callType === 'video' ? '接听视频通话' : '接听语音通话')
-const rejectLabel = computed(() => props.callType === 'video' ? '拒绝视频通话' : '拒绝语音通话')
+const dialogLabel = computed(() => callStore.callType === 'video' ? '视频来电' : '语音来电')
+const acceptLabel = computed(() => callStore.callType === 'video' ? '接听视频通话' : '接听语音通话')
+const rejectLabel = computed(() => callStore.callType === 'video' ? '拒绝视频通话' : '拒绝语音通话')
 
 function accept() {
   alert.stop()
