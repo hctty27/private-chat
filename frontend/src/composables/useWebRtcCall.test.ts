@@ -86,6 +86,35 @@ describe('useWebRtcCall', () => {
     expect(getIceConfig).toHaveBeenCalledTimes(1)
   })
 
+  it('labels microphone preparation failures separately from ICE config failures', async () => {
+    const { controller, deps } = setup()
+    const mediaError = Object.assign(new Error('permission denied'), { name: 'NotAllowedError' })
+    vi.mocked(deps.getUserMedia).mockRejectedValueOnce(mediaError)
+
+    const failure = await controller.prepare().catch((error) => error)
+
+    expect(failure).toMatchObject({
+      name: 'WebRtcPrepareError',
+      stage: 'media',
+      originalError: mediaError,
+    })
+  })
+
+  it('captures synchronous microphone initialization errors as media failures', async () => {
+    const { controller, deps } = setup()
+    const mediaError = new TypeError('mediaDevices is unavailable')
+    vi.mocked(deps.getUserMedia).mockImplementationOnce(() => {
+      throw mediaError
+    })
+
+    const failure = await controller.prepare().catch((error) => error)
+
+    expect(failure).toMatchObject({
+      stage: 'media',
+      originalError: mediaError,
+    })
+  })
+
   it('stops acquired media when ice config preparation fails', async () => {
     const track = createTrack()
     const stream = createStream(track)
@@ -96,8 +125,9 @@ describe('useWebRtcCall', () => {
       setTimeout: (callback, delay) => setTimeout(callback, delay),
       clearTimeout: (timer) => clearTimeout(timer),
     }
+    const configError = new Error('config failed')
     const controller = useWebRtcCall(
-      async () => { throw new Error('config failed') },
+      async () => { throw configError },
       {
         sendOffer: vi.fn(),
         sendAnswer: vi.fn(),
@@ -108,7 +138,14 @@ describe('useWebRtcCall', () => {
       },
       deps,
     )
-    await expect(controller.prepare()).rejects.toThrow('config failed')
+
+    const failure = await controller.prepare().catch((error) => error)
+
+    expect(failure).toMatchObject({
+      name: 'WebRtcPrepareError',
+      stage: 'ice-config',
+      originalError: configError,
+    })
     expect(track.stop).toHaveBeenCalledTimes(1)
   })
 
