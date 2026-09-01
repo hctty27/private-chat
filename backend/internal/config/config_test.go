@@ -202,3 +202,60 @@ func TestConfigLoadUsesWebRTCDefaults(t *testing.T) {
 		t.Fatalf("expected 10m credential TTL, got %v", cfg.WebRTCTurnCredentialTTL)
 	}
 }
+
+func TestConfigLoadUsesCloudflareTurnDefaults(t *testing.T) {
+	t.Setenv("WEBRTC_TURN_PROVIDER", "")
+	t.Setenv("CLOUDFLARE_TURN_KEY_ID", "")
+	t.Setenv("CLOUDFLARE_TURN_API_TOKEN", "")
+
+	cfg := Load()
+
+	if cfg.WebRTCTurnProvider != "cloudflare" {
+		t.Fatalf("expected cloudflare TURN provider by default, got %q", cfg.WebRTCTurnProvider)
+	}
+}
+
+func TestConfigValidateAcceptsCloudflareTurn(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "all"
+	cfg.WebRTCTurnProvider = "cloudflare"
+	cfg.CloudflareTurnKeyID = "0123456789abcdef0123456789abcdef"
+	cfg.CloudflareTurnAPIToken = "server-only-token"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Cloudflare TURN config to validate: %v", err)
+	}
+}
+
+func TestConfigValidateRequiresCloudflareTurnCredentials(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "all"
+	cfg.WebRTCTurnProvider = "cloudflare"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "CLOUDFLARE_TURN_KEY_ID") {
+		t.Fatalf("expected Cloudflare TURN key validation error, got %v", err)
+	}
+
+	cfg.CloudflareTurnKeyID = "0123456789abcdef0123456789abcdef"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "CLOUDFLARE_TURN_API_TOKEN") {
+		t.Fatalf("expected Cloudflare TURN token validation error, got %v", err)
+	}
+}
+
+func TestConfigValidateStillSupportsCoturn(t *testing.T) {
+	cfg := validWebRTCTestConfig()
+	cfg.WebRTCEnabled = true
+	cfg.WebRTCICEPolicy = "relay"
+	cfg.WebRTCTurnProvider = "coturn"
+	cfg.WebRTCTurnURLs = []string{"turn:turn.example.com:3478?transport=udp"}
+	cfg.WebRTCTurnSecret = "shared-secret"
+	cfg.WebRTCTurnCredentialTTL = 10 * time.Minute
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Coturn config to remain valid: %v", err)
+	}
+}

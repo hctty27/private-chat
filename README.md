@@ -10,7 +10,7 @@
 
 - **伪装保护** - 外观模拟微博，点击 3 次进入登录页
 - **实时聊天** - WebSocket 双向通信，消息即时送达
-- **语音通话** - 1 对 1 WebRTC 语音通话，复用现有 WebSocket 做信令，P2P 优先并由 Coturn 提供 TURN 兜底
+- **语音通话** - 1 对 1 WebRTC 语音通话，复用现有 WebSocket 做信令，P2P 优先并默认使用 Cloudflare Realtime TURN 兜底（可切换自托管 Coturn）
 - **文件分享** - 支持图片、视频、文件后台直传 Cloudflare R2；图片最大 50 MiB，视频/普通文件最大 500 MiB
 - **文件会话授权** - 上传文件绑定发送者和会话，确认真实对象后才允许发送或访问
 - **自动数据库迁移** - Docker Compose 部署时先执行未应用的版本化 PostgreSQL migration，成功后才启动后端
@@ -39,7 +39,7 @@
 - PostgreSQL（或使用 Neon 托管）
 - Redis
 - Cloudflare R2 账号
-- 可选：公网可达的 Coturn（启用语音通话时必须配置）
+- 启用语音通话时：Cloudflare Realtime TURN key（推荐），或可选自托管 Coturn
 
 ### 部署步骤
 
@@ -138,20 +138,30 @@ docker compose run --rm migrate
 WEBRTC_ENABLED=false
 ```
 
-要启用语音通话，至少配置：
+推荐直接使用 Cloudflare Realtime TURN，只需要服务端保存一个 TURN key：
 
 ```dotenv
 WEBRTC_ENABLED=true
 WEBRTC_ICE_POLICY=all
+WEBRTC_TURN_PROVIDER=cloudflare
+CLOUDFLARE_TURN_KEY_ID=<turn-key-uid>
+CLOUDFLARE_TURN_API_TOKEN=<turn-key-bearer-token>
+WEBRTC_TURN_CREDENTIAL_TTL=10m
+```
+
+`CLOUDFLARE_TURN_KEY_ID` 和 `CLOUDFLARE_TURN_API_TOKEN` 只保存在后端环境变量中。后端通过 Cloudflare 的 `generate-ice-servers` 接口获取短期 ICE credential，再通过 `GET /api/webrtc/ice-config` 返回给当前登录用户；长期 TURN key 不会下发给浏览器。为减少浏览器等待，后端会过滤 Cloudflare 返回的 53 端口 ICE URL。
+
+如果要继续使用自托管 Coturn，把 provider 改成：
+
+```dotenv
+WEBRTC_TURN_PROVIDER=coturn
 WEBRTC_STUN_URL=stun:turn.example.com:3478
 WEBRTC_TURN_URLS=turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp
 WEBRTC_TURN_SECRET=<long-random-shared-secret>
 WEBRTC_TURN_CREDENTIAL_TTL=10m
 ```
 
-应用后端与 Coturn 共享 `WEBRTC_TURN_SECRET`，浏览器不会拿到该固定 secret。后端通过 `GET /api/webrtc/ice-config` 为当前登录用户签发短期 TURN credential；username 使用过期时间和用户 ID，credential 使用 HMAC-SHA1 派生。
-
-项目提供可选 Coturn Compose profile：
+Coturn 模式下，应用后端与 Coturn 共享 `WEBRTC_TURN_SECRET`，浏览器不会拿到固定 secret。项目仍提供可选 Coturn Compose profile：
 
 ```dotenv
 WEBRTC_TURN_REALM=turn.example.com
@@ -352,9 +362,10 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `R2_*` - Cloudflare R2 文件存储配置
 - `WEBRTC_ENABLED` - 是否启用 1 对 1 WebRTC 语音通话，默认 `false`
 - `WEBRTC_ICE_POLICY` - `all`（P2P 优先/TURN 兜底）或 `relay`（强制 TURN）
-- `WEBRTC_STUN_URL` / `WEBRTC_TURN_URLS` - 浏览器可访问的 ICE 服务地址
-- `WEBRTC_TURN_SECRET` - 后端与 Coturn 共用的 shared secret，不得暴露给前端
+- `WEBRTC_TURN_PROVIDER` - `cloudflare`（默认/推荐）或 `coturn`
+- `CLOUDFLARE_TURN_KEY_ID` / `CLOUDFLARE_TURN_API_TOKEN` - Cloudflare Realtime TURN 的服务端长期 key；不得暴露给前端
 - `WEBRTC_TURN_CREDENTIAL_TTL` - 临时 TURN credential 有效期，默认 10 分钟
+- `WEBRTC_STUN_URL` / `WEBRTC_TURN_URLS` / `WEBRTC_TURN_SECRET` - 仅自托管 Coturn 模式使用
 - `WEBRTC_TURN_REALM` / `WEBRTC_TURN_EXTERNAL_IP` / `WEBRTC_TURN_MIN_PORT` / `WEBRTC_TURN_MAX_PORT` - 自托管 Coturn profile 配置
 
 ## 质量检查

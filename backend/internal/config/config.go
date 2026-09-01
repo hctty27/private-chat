@@ -33,6 +33,9 @@ type Config struct {
 	TimeZone                string
 	WebRTCEnabled           bool
 	WebRTCICEPolicy         string
+	WebRTCTurnProvider      string
+	CloudflareTurnKeyID     string
+	CloudflareTurnAPIToken  string
 	WebRTCStunURL           string
 	WebRTCTurnURLs          []string
 	WebRTCTurnSecret        string
@@ -65,6 +68,9 @@ func Load() Config {
 		TimeZone:                envOrDefault("TIME_ZONE", "Asia/Shanghai"),
 		WebRTCEnabled:           envBoolOrDefault("WEBRTC_ENABLED", false),
 		WebRTCICEPolicy:         envOrDefault("WEBRTC_ICE_POLICY", "all"),
+		WebRTCTurnProvider:      envOrDefault("WEBRTC_TURN_PROVIDER", "cloudflare"),
+		CloudflareTurnKeyID:     envOrDefault("CLOUDFLARE_TURN_KEY_ID", ""),
+		CloudflareTurnAPIToken:  envOrDefault("CLOUDFLARE_TURN_API_TOKEN", ""),
 		WebRTCStunURL:           envOrDefault("WEBRTC_STUN_URL", ""),
 		WebRTCTurnURLs:          envList("WEBRTC_TURN_URLS"),
 		WebRTCTurnSecret:        envOrDefault("WEBRTC_TURN_SECRET", ""),
@@ -86,18 +92,37 @@ func (c Config) Validate() error {
 	if c.WebRTCICEPolicy != "all" && c.WebRTCICEPolicy != "relay" {
 		return fmt.Errorf("WEBRTC_ICE_POLICY must be all or relay")
 	}
-	if c.WebRTCICEPolicy == "all" && strings.TrimSpace(c.WebRTCStunURL) == "" {
-		return fmt.Errorf("WEBRTC_STUN_URL is required when WEBRTC_ICE_POLICY=all")
-	}
-	if len(c.WebRTCTurnURLs) == 0 {
-		return fmt.Errorf("WEBRTC_TURN_URLS is required when WEBRTC_ENABLED=true")
-	}
-	if strings.TrimSpace(c.WebRTCTurnSecret) == "" {
-		return fmt.Errorf("WEBRTC_TURN_SECRET is required when WEBRTC_ENABLED=true")
-	}
 	if c.WebRTCTurnCredentialTTL <= 0 {
 		return fmt.Errorf("WEBRTC_TURN_CREDENTIAL_TTL must be positive")
 	}
+
+	provider := strings.TrimSpace(c.WebRTCTurnProvider)
+	if provider == "" {
+		provider = "coturn"
+	}
+
+	switch provider {
+	case "cloudflare":
+		if strings.TrimSpace(c.CloudflareTurnKeyID) == "" {
+			return fmt.Errorf("CLOUDFLARE_TURN_KEY_ID is required when WEBRTC_TURN_PROVIDER=cloudflare")
+		}
+		if strings.TrimSpace(c.CloudflareTurnAPIToken) == "" {
+			return fmt.Errorf("CLOUDFLARE_TURN_API_TOKEN is required when WEBRTC_TURN_PROVIDER=cloudflare")
+		}
+	case "coturn":
+		if c.WebRTCICEPolicy == "all" && strings.TrimSpace(c.WebRTCStunURL) == "" {
+			return fmt.Errorf("WEBRTC_STUN_URL is required when WEBRTC_ICE_POLICY=all")
+		}
+		if len(c.WebRTCTurnURLs) == 0 {
+			return fmt.Errorf("WEBRTC_TURN_URLS is required when WEBRTC_ENABLED=true")
+		}
+		if strings.TrimSpace(c.WebRTCTurnSecret) == "" {
+			return fmt.Errorf("WEBRTC_TURN_SECRET is required when WEBRTC_ENABLED=true")
+		}
+	default:
+		return fmt.Errorf("WEBRTC_TURN_PROVIDER must be cloudflare or coturn")
+	}
+
 	return nil
 }
 
