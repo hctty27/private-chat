@@ -1,5 +1,6 @@
 export type CallPhase =
   | 'idle'
+  | 'preparing'
   | 'outgoing'
   | 'incoming'
   | 'connecting'

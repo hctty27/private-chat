@@ -86,6 +86,47 @@ describe('call store', () => {
     expect(call.phase).toBe('failed')
   })
 
+  it('shows preparing state immediately while microphone and ICE are pending', async () => {
+    let resolvePrepare!: () => void
+    rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve
+    }))
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+
+    expect(call.phase).toBe('preparing')
+    expect(call.peerName).toBe('Alice')
+
+    resolvePrepare()
+    await pending
+
+    expect(call.phase).toBe('outgoing')
+  })
+
+  it('cancels preparation without sending any call signal', async () => {
+    let resolvePrepare!: () => void
+    rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      resolvePrepare = resolve
+    }))
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+    expect(call.phase).toBe('preparing')
+
+    call.cancelCall()
+    expect(call.phase).toBe('ended')
+
+    resolvePrepare()
+    await pending
+
+    expect(chat.sendWsMessage).not.toHaveBeenCalledWith({
+      type: 'call_invite',
+      data: { receiverId: 2 },
+    })
+  })
+
   it('sends call_invite only after preparation succeeds', async () => {
     const chat = useChatStore()
     const call = useCallStore()
@@ -247,6 +288,11 @@ describe('call store', () => {
     const pending = call.startCall(contact())
     chat.wsStatus = 'reconnecting'
     chat.wsConnected = false
+    await nextTick()
+
+    expect(call.phase).toBe('failed')
+    expect(call.error).toBe('网络已断开')
+
     resolvePrepare()
     await pending
 
@@ -255,8 +301,7 @@ describe('call store', () => {
       data: { receiverId: 2 },
     })
     expect(rtc.cleanup).toHaveBeenCalled()
-    expect(call.phase).toBe('idle')
-    expect(call.error).toBe('网络已断开')
+    expect(call.phase).toBe('failed')
   })
 
   it('does not resurrect an outbound call after dispose during preparation', async () => {
