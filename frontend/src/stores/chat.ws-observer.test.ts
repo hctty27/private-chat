@@ -47,7 +47,7 @@ describe('chat websocket observers', () => {
     const socket = FakeWebSocket.instances[0]
     const incoming: WsServerMessage = {
       type: 'call_incoming',
-      data: { callId: 'call-1', callerId: 2 },
+      data: { callId: 'call-1', callerId: 2, callType: 'video' },
     }
     socket.onmessage?.({ data: JSON.stringify(incoming) } as MessageEvent)
 
