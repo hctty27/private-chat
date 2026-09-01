@@ -62,31 +62,57 @@ export function getMessages(targetId: number, cursor?: string, size = 20, mode: 
   return api.get<ApiResponse<MessagesResponse>>(`/api/messages/${targetId}`, { params })
 }
 
+function createThumbnailBlob(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+): Promise<Blob | null> {
+  if (!sourceWidth || !sourceHeight) return Promise.resolve(null)
+
+  const longestEdge = Math.max(sourceWidth, sourceHeight)
+  const scale = longestEdge > thumbnailMaxEdge ? thumbnailMaxEdge / longestEdge : 1
+  const width = Math.max(1, Math.round(sourceWidth * scale))
+  const height = Math.max(1, Math.round(sourceHeight * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return Promise.resolve(null)
+  context.drawImage(source, 0, 0, width, height)
+
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', thumbnailQuality)
+  })
+}
+
 async function createImageThumbnail(file: File): Promise<Blob | null> {
-  if (!file.type.startsWith('image/') || typeof createImageBitmap !== 'function') return null
+  if (!file.type.startsWith('image/')) return null
 
   let bitmap: ImageBitmap | null = null
+  if (typeof createImageBitmap === 'function') {
+    try {
+      bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      return await createThumbnailBlob(bitmap, bitmap.width, bitmap.height)
+    } catch {
+      // Safari can expose createImageBitmap while failing on some camera/library images.
+    } finally {
+      bitmap?.close()
+    }
+  }
+
+  if (typeof URL.createObjectURL !== 'function') return null
+  const objectUrl = URL.createObjectURL(file)
   try {
-    bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
-    const longestEdge = Math.max(bitmap.width, bitmap.height)
-    const scale = longestEdge > thumbnailMaxEdge ? thumbnailMaxEdge / longestEdge : 1
-    const width = Math.max(1, Math.round(bitmap.width * scale))
-    const height = Math.max(1, Math.round(bitmap.height * scale))
-
-    const canvas = document.createElement('canvas')
-    canvas.width = width
-    canvas.height = height
-    const context = canvas.getContext('2d')
-    if (!context) return null
-    context.drawImage(bitmap, 0, 0, width, height)
-
-    return await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', thumbnailQuality)
-    })
+    const image = new Image()
+    image.decoding = 'async'
+    image.src = objectUrl
+    await image.decode()
+    return await createThumbnailBlob(image, image.naturalWidth, image.naturalHeight)
   } catch {
     return null
   } finally {
-    bitmap?.close()
+    URL.revokeObjectURL(objectUrl)
   }
 }
 
