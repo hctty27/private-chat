@@ -37,6 +37,10 @@ function readHttpStatus(error: unknown) {
   return typeof response?.status === 'number' ? response.status : undefined
 }
 
+function normalizeCallType(value: unknown): CallType {
+  return value === 'video' ? 'video' : 'audio'
+}
+
 function getPrepareFailureDetails(error: unknown): PrepareFailureDetails {
   const wrapper = asRecord(error)
   const stage = wrapper?.stage === 'media' || wrapper?.stage === 'ice-config'
@@ -87,15 +91,15 @@ function prepareFailureMessage(error: unknown, kind: CallType) {
     case 'NotAllowedError':
     case 'SecurityError':
       return video
-        ? '摄像头或麦克风权限未授权，请在浏览器网站设置中允许访问'
-        : '麦克风权限未授权，请在浏览器网站设置中允许麦克风'
+        ? '无法使用摄像头或麦克风，请检查浏览器权限'
+        : '无法使用麦克风，请检查浏览器权限'
     case 'NotFoundError':
       return video ? '未检测到可用摄像头或麦克风' : '未检测到可用麦克风'
     case 'NotReadableError':
     case 'AbortError':
       return video
-        ? '摄像头或麦克风暂时不可用，请关闭占用设备的应用后重试'
-        : '麦克风暂时不可用，请关闭占用麦克风的应用后重试'
+        ? '摄像头或麦克风暂时不可用，请检查设备或关闭占用设备的应用'
+        : '麦克风暂时不可用，请检查设备或关闭占用麦克风的应用'
     case 'TypeError':
       return typeof window !== 'undefined' && !window.isSecureContext
         ? (video ? '当前页面无法访问摄像头和麦克风，请使用 HTTPS 打开' : '当前页面无法访问麦克风，请使用 HTTPS 打开')
@@ -460,7 +464,7 @@ export const useCallStore = defineStore('call', () => {
         clearResetTimer()
         error.value = ''
         callId.value = message.data.callId
-        callType.value = message.data.callType
+        callType.value = normalizeCallType(message.data.callType)
         peerUserId.value = message.data.callerId
         peerName.value = resolvePeerName(message.data.callerId)
         phase.value = 'incoming'
@@ -469,7 +473,7 @@ export const useCallStore = defineStore('call', () => {
       case 'call_ringing': {
         if (peerUserId.value !== message.data.userId) return
         callId.value = message.data.callId
-        callType.value = message.data.callType
+        callType.value = normalizeCallType(message.data.callType)
         if (cancelPendingInvite) {
           useChatStore().sendWsMessage({
             type: 'call_cancel',
@@ -488,7 +492,7 @@ export const useCallStore = defineStore('call', () => {
         return
       case 'call_accepted':
         if (!matchesCall(message.data.callId) || phase.value !== 'outgoing') return
-        callType.value = message.data.callType
+        callType.value = normalizeCallType(message.data.callType)
         phase.value = 'connecting'
         void rtc.startCaller().catch(handleAsyncFailure)
         return
