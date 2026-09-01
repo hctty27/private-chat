@@ -3,10 +3,14 @@
     type="button"
     class="voice-call-button"
     :disabled="disabled"
-    :aria-label="label"
+    :aria-label="resolvedLabel"
     @click="emit('call')"
   >
-    <svg viewBox="0 0 24 24" aria-hidden="true">
+    <svg v-if="callType === 'video'" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3.5" y="6" width="12.5" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8" />
+      <path d="m16 10 4-2.5v9L16 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+    </svg>
+    <svg v-else viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M6.6 2.8 9.2 2a1.4 1.4 0 0 1 1.7.8l1.2 3a1.4 1.4 0 0 1-.4 1.6L10 8.8a14 14 0 0 0 5.2 5.2l1.4-1.7a1.4 1.4 0 0 1 1.6-.4l3 1.2a1.4 1.4 0 0 1 .8 1.7l-.8 2.6a3 3 0 0 1-3.2 2.1C10.7 18.6 5.4 13.3 4.5 6A3 3 0 0 1 6.6 2.8Z"
         fill="none"
@@ -20,17 +24,26 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{
+import { computed } from 'vue'
+import type { CallType } from '../types'
+
+const props = withDefaults(defineProps<{
   disabled?: boolean
   label?: string
+  callType?: CallType
 }>(), {
   disabled: false,
-  label: '语音通话',
+  label: '',
+  callType: 'audio',
 })
 
 const emit = defineEmits<{
   call: []
 }>()
+
+const resolvedLabel = computed(() =>
+  props.label || (props.callType === 'video' ? '视频通话' : '语音通话'),
+)
 </script>
 
 <style scoped>
