@@ -75,6 +75,16 @@ describe('call store', () => {
     useCallStore().available = true
   })
 
+  it('does not silently ignore a user-initiated call when availability probe is false', async () => {
+    const call = useCallStore()
+    call.available = false
+
+    await call.startCall(contact())
+
+    expect(rtc.prepare).toHaveBeenCalledTimes(1)
+    expect(call.phase).toBe('outgoing')
+  })
+
   it('does not send call_invite when media preparation fails', async () => {
     rtc.prepare.mockRejectedValueOnce(new Error('denied'))
     const chat = useChatStore()
