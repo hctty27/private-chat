@@ -2,22 +2,38 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useWebRtcCall, type WebRtcBrowserDeps } from './useWebRtcCall'
 import type { WebRTCIceConfig } from '../types'
 
-function createTrack() {
+function createTrack(kind: 'audio' | 'video' = 'audio') {
   return {
+    kind,
     enabled: true,
     stop: vi.fn(),
   } as unknown as MediaStreamTrack
 }
 
-function createStream(track = createTrack()) {
+function createStream(initialTracks: MediaStreamTrack[] = [createTrack()]) {
+  const tracks = [...initialTracks]
   return {
-    getAudioTracks: () => [track],
-    getTracks: () => [track],
+    getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
+    getVideoTracks: () => tracks.filter((track) => track.kind === 'video'),
+    getTracks: () => [...tracks],
+    addTrack: (track: MediaStreamTrack) => {
+      if (!tracks.includes(track)) tracks.push(track)
+    },
+    removeTrack: (track: MediaStreamTrack) => {
+      const index = tracks.indexOf(track)
+      if (index >= 0) tracks.splice(index, 1)
+    },
   } as unknown as MediaStream
 }
 
 function createPeer() {
   const addedIce: RTCIceCandidateInit[] = []
+  const sender = {
+    track: null as MediaStreamTrack | null,
+    replaceTrack: vi.fn(async (track: MediaStreamTrack | null) => {
+      sender.track = track
+    }),
+  }
   const peer = {
     localDescription: null as RTCSessionDescriptionInit | null,
     remoteDescription: null as RTCSessionDescriptionInit | null,
@@ -27,7 +43,11 @@ function createPeer() {
     ontrack: null as RTCPeerConnection['ontrack'],
     onconnectionstatechange: null as RTCPeerConnection['onconnectionstatechange'],
     oniceconnectionstatechange: null as RTCPeerConnection['oniceconnectionstatechange'],
-    addTrack: vi.fn(),
+    addTrack: vi.fn((track: MediaStreamTrack) => {
+      if (track.kind === 'video') sender.track = track
+      return sender as unknown as RTCRtpSender
+    }),
+    getSenders: vi.fn(() => sender.track ? [sender as unknown as RTCRtpSender] : []),
     createOffer: vi.fn(async () => ({ type: 'offer', sdp: 'offer-sdp' } as RTCSessionDescriptionInit)),
     createAnswer: vi.fn(async () => ({ type: 'answer', sdp: 'answer-sdp' } as RTCSessionDescriptionInit)),
     setLocalDescription: vi.fn(async (description: RTCSessionDescriptionInit) => {
@@ -43,13 +63,11 @@ function createPeer() {
       peer.connectionState = 'closed'
     }),
   }
-  return { peer: peer as unknown as RTCPeerConnection, raw: peer, addedIce }
+  return { peer: peer as unknown as RTCPeerConnection, raw: peer, sender, addedIce }
 }
 
-function setup() {
-  const track = createTrack()
-  const stream = createStream(track)
-  const { peer, raw, addedIce } = createPeer()
+function setup(stream = createStream()) {
+  const { peer, raw, sender, addedIce } = createPeer()
   const iceConfig: WebRTCIceConfig = {
     iceServers: [{ urls: ['turn:turn.example.com:3478'], username: 'u', credential: 'c' }],
     iceTransportPolicy: 'all',
@@ -60,6 +78,7 @@ function setup() {
     sendIce: vi.fn(),
     onConnected: vi.fn(),
     onFailed: vi.fn(),
+    onLocalStream: vi.fn(),
     onRemoteStream: vi.fn(),
   }
   const deps: WebRtcBrowserDeps = {
@@ -71,7 +90,7 @@ function setup() {
   }
   const getIceConfig = vi.fn(async () => iceConfig)
   const controller = useWebRtcCall(getIceConfig, callbacks, deps)
-  return { controller, callbacks, deps, getIceConfig, track, stream, raw, addedIce }
+  return { controller, callbacks, deps, getIceConfig, stream, raw, sender, addedIce }
 }
 
 afterEach(() => {
@@ -79,19 +98,39 @@ afterEach(() => {
 })
 
 describe('useWebRtcCall', () => {
-  it('prepares microphone and ice config before signaling', async () => {
-    const { controller, deps, getIceConfig } = setup()
-    await controller.prepare()
+  it('prepares microphone and ice config before audio signaling', async () => {
+    const { controller, deps, getIceConfig, callbacks } = setup()
+    await controller.prepare('audio')
     expect(deps.getUserMedia).toHaveBeenCalledWith({ audio: true })
     expect(getIceConfig).toHaveBeenCalledTimes(1)
+    expect(callbacks.onLocalStream).toHaveBeenCalledTimes(1)
   })
 
-  it('labels microphone preparation failures separately from ICE config failures', async () => {
+  it('prepares camera and microphone for video calls and adds both tracks', async () => {
+    const audioTrack = createTrack('audio')
+    const videoTrack = createTrack('video')
+    const stream = createStream([audioTrack, videoTrack])
+    const { controller, deps, raw } = setup(stream)
+
+    await controller.prepare('video')
+    await controller.startCaller()
+
+    expect(deps.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
+      audio: true,
+      video: expect.objectContaining({
+        facingMode: { ideal: 'user' },
+      }),
+    }))
+    expect(raw.addTrack).toHaveBeenCalledWith(audioTrack, stream)
+    expect(raw.addTrack).toHaveBeenCalledWith(videoTrack, stream)
+  })
+
+  it('labels media preparation failures separately from ICE config failures', async () => {
     const { controller, deps } = setup()
     const mediaError = Object.assign(new Error('permission denied'), { name: 'NotAllowedError' })
     vi.mocked(deps.getUserMedia).mockRejectedValueOnce(mediaError)
 
-    const failure = await controller.prepare().catch((error) => error)
+    const failure = await controller.prepare('audio').catch((error) => error)
 
     expect(failure).toMatchObject({
       name: 'WebRtcPrepareError',
@@ -100,14 +139,14 @@ describe('useWebRtcCall', () => {
     })
   })
 
-  it('captures synchronous microphone initialization errors as media failures', async () => {
+  it('captures synchronous media initialization errors as media failures', async () => {
     const { controller, deps } = setup()
     const mediaError = new TypeError('mediaDevices is unavailable')
     vi.mocked(deps.getUserMedia).mockImplementationOnce(() => {
       throw mediaError
     })
 
-    const failure = await controller.prepare().catch((error) => error)
+    const failure = await controller.prepare('audio').catch((error) => error)
 
     expect(failure).toMatchObject({
       stage: 'media',
@@ -117,7 +156,7 @@ describe('useWebRtcCall', () => {
 
   it('stops acquired media when ice config preparation fails', async () => {
     const track = createTrack()
-    const stream = createStream(track)
+    const stream = createStream([track])
     const deps: WebRtcBrowserDeps = {
       getUserMedia: vi.fn(async () => stream),
       createPeerConnection: vi.fn(),
@@ -134,12 +173,13 @@ describe('useWebRtcCall', () => {
         sendIce: vi.fn(),
         onConnected: vi.fn(),
         onFailed: vi.fn(),
+        onLocalStream: vi.fn(),
         onRemoteStream: vi.fn(),
       },
       deps,
     )
 
-    const failure = await controller.prepare().catch((error) => error)
+    const failure = await controller.prepare('audio').catch((error) => error)
 
     expect(failure).toMatchObject({
       name: 'WebRtcPrepareError',
@@ -151,7 +191,7 @@ describe('useWebRtcCall', () => {
 
   it('caller sets local offer then emits it', async () => {
     const { controller, callbacks, raw } = setup()
-    await controller.prepare()
+    await controller.prepare('audio')
     await controller.startCaller()
     expect(raw.setLocalDescription).toHaveBeenCalledWith({ type: 'offer', sdp: 'offer-sdp' })
     expect(callbacks.sendOffer).toHaveBeenCalledWith({ type: 'offer', sdp: 'offer-sdp' })
@@ -159,7 +199,7 @@ describe('useWebRtcCall', () => {
 
   it('callee sets remote offer before creating answer', async () => {
     const { controller, callbacks, raw } = setup()
-    await controller.prepare()
+    await controller.prepare('audio')
     await controller.acceptOffer({ type: 'offer', sdp: 'remote-offer' })
     expect(raw.setRemoteDescription).toHaveBeenCalledWith({ type: 'offer', sdp: 'remote-offer' })
     expect(raw.createAnswer).toHaveBeenCalledTimes(1)
@@ -168,7 +208,7 @@ describe('useWebRtcCall', () => {
 
   it('queues remote ice until remote description exists and flushes in order', async () => {
     const { controller, addedIce } = setup()
-    await controller.prepare()
+    await controller.prepare('audio')
     await controller.addRemoteIce({ candidate: 'first', sdpMid: '0' })
     await controller.addRemoteIce({ candidate: 'second', sdpMid: '0' })
     expect(addedIce).toEqual([])
@@ -178,17 +218,62 @@ describe('useWebRtcCall', () => {
   })
 
   it('mutes only local audio tracks', async () => {
-    const { controller, track } = setup()
-    await controller.prepare()
+    const audioTrack = createTrack('audio')
+    const videoTrack = createTrack('video')
+    const { controller } = setup(createStream([audioTrack, videoTrack]))
+    await controller.prepare('video')
+
     controller.setMuted(true)
-    expect(track.enabled).toBe(false)
+    expect(audioTrack.enabled).toBe(false)
+    expect(videoTrack.enabled).toBe(true)
+
     controller.setMuted(false)
-    expect(track.enabled).toBe(true)
+    expect(audioTrack.enabled).toBe(true)
+  })
+
+  it('toggles only local video tracks', async () => {
+    const audioTrack = createTrack('audio')
+    const videoTrack = createTrack('video')
+    const { controller } = setup(createStream([audioTrack, videoTrack]))
+    await controller.prepare('video')
+
+    controller.setVideoEnabled(false)
+    expect(videoTrack.enabled).toBe(false)
+    expect(audioTrack.enabled).toBe(true)
+
+    controller.setVideoEnabled(true)
+    expect(videoTrack.enabled).toBe(true)
+  })
+
+  it('switches camera by replacing the active video sender track', async () => {
+    const audioTrack = createTrack('audio')
+    const frontTrack = createTrack('video')
+    const rearTrack = createTrack('video')
+    const stream = createStream([audioTrack, frontTrack])
+    const { controller, deps, sender, callbacks } = setup(stream)
+
+    await controller.prepare('video')
+    await controller.startCaller()
+    vi.mocked(deps.getUserMedia).mockResolvedValueOnce(createStream([rearTrack]))
+
+    await controller.switchCamera()
+
+    expect(deps.getUserMedia).toHaveBeenLastCalledWith(expect.objectContaining({
+      audio: false,
+      video: expect.objectContaining({
+        facingMode: { ideal: 'environment' },
+      }),
+    }))
+    expect(sender.replaceTrack).toHaveBeenCalledWith(rearTrack)
+    expect(frontTrack.stop).toHaveBeenCalledTimes(1)
+    expect(stream.getVideoTracks()).toEqual([rearTrack])
+    expect(callbacks.onLocalStream).toHaveBeenCalledTimes(2)
   })
 
   it('cleanup stops tracks and closes peer exactly once', async () => {
-    const { controller, track, raw } = setup()
-    await controller.prepare()
+    const track = createTrack()
+    const { controller, raw } = setup(createStream([track]))
+    await controller.prepare('audio')
     await controller.startCaller()
     controller.cleanup()
     controller.cleanup()
@@ -199,7 +284,7 @@ describe('useWebRtcCall', () => {
   it('waits ten seconds before failing a disconnected ice state', async () => {
     vi.useFakeTimers()
     const { controller, callbacks, raw } = setup()
-    await controller.prepare()
+    await controller.prepare('audio')
     await controller.startCaller()
     raw.iceConnectionState = 'disconnected'
     raw.oniceconnectionstatechange?.(new Event('iceconnectionstatechange'))
@@ -211,7 +296,7 @@ describe('useWebRtcCall', () => {
   it('cancels disconnect failure when connection recovers', async () => {
     vi.useFakeTimers()
     const { controller, callbacks, raw } = setup()
-    await controller.prepare()
+    await controller.prepare('audio')
     await controller.startCaller()
     raw.iceConnectionState = 'disconnected'
     raw.oniceconnectionstatechange?.(new Event('iceconnectionstatechange'))
