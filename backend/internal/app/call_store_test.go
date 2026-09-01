@@ -24,6 +24,7 @@ func testRingingCall(id string, callerID, calleeID int64) callRecord {
 		ID:        id,
 		CallerID:  callerID,
 		CalleeID:  calleeID,
+		CallType:  callTypeAudio,
 		Status:    callStatusRinging,
 		CreatedAt: time.Unix(100, 0).UTC(),
 	}
@@ -41,6 +42,23 @@ func TestRedisCallStoreCreateRingingClaimsBothUsers(t *testing.T) {
 	mini.CheckGet(t, callUserKey(2), "call-1")
 	if ttl := mini.TTL(callSessionKey("call-1")); ttl != time.Minute {
 		t.Fatalf("expected session TTL 1m, got %v", ttl)
+	}
+}
+
+func TestRedisCallStorePreservesVideoCallType(t *testing.T) {
+	store, _ := newTestCallStore(t)
+	record := testRingingCall("call-video", 1, 2)
+	record.CallType = callTypeVideo
+
+	if err := store.CreateRinging(context.Background(), record, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Get(context.Background(), record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.CallType != callTypeVideo {
+		t.Fatalf("expected video call type, got %q", stored.CallType)
 	}
 }
 
