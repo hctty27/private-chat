@@ -9,37 +9,37 @@ import (
 )
 
 type Config struct {
-	ListenAddr                 string
-	GinMode                    string
-	TrustedProxies             []string
-	AllowedOrigins             []string
-	AuthCookieSecure           bool
-	PostgresHost               string
-	PostgresPort               string
-	PostgresUser               string
-	PostgresPassword           string
-	PostgresDatabase           string
-	PostgresSSLMode            string
-	RedisAddr                  string
-	RedisPassword              string
-	StorageEndpoint            string
-	StorageAccessKey           string
-	StorageSecretKey           string
-	StorageBucket              string
-	ObjectStoragePrefix        string
-	JWTSecret                  string
-	JWTExpiration              time.Duration
-	MessagePageSize            int
-	TimeZone                   string
-	WebRTCEnabled              bool
-	WebRTCICEPolicy            string
-	WebRTCTurnProvider         string
-	CloudflareTurnKeyID        string
-	CloudflareTurnAPIToken     string
-	WebRTCStunURL              string
-	WebRTCTurnURLs             []string
-	WebRTCTurnSecret           string
-	WebRTCTurnCredentialTTL    time.Duration
+	ListenAddr              string
+	GinMode                 string
+	TrustedProxies          []string
+	AllowedOrigins          []string
+	AuthCookieSecure        bool
+	PostgresHost            string
+	PostgresPort            string
+	PostgresUser            string
+	PostgresPassword        string
+	PostgresDatabase        string
+	PostgresSSLMode         string
+	RedisAddr               string
+	RedisPassword           string
+	StorageEndpoint         string
+	StorageAccessKey        string
+	StorageSecretKey        string
+	StorageBucket           string
+	ObjectStoragePrefix     string
+	JWTSecret               string
+	JWTExpiration           time.Duration
+	MessagePageSize         int
+	TimeZone                string
+	WebRTCEnabled           bool
+	WebRTCICEPolicy         string
+	WebRTCTurnProvider      string
+	CloudflareTurnKeyID     string
+	CloudflareTurnAPIToken  string
+	WebRTCStunURL           string
+	WebRTCTurnURLs          []string
+	WebRTCTurnSecret        string
+	WebRTCTurnCredentialTTL time.Duration
 }
 
 func Load() Config {
