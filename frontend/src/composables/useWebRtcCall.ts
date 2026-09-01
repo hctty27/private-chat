@@ -1,4 +1,4 @@
-import type { WebRTCIceConfig } from '../types'
+import type { CallType, WebRTCIceConfig } from '../types'
 
 export interface WebRtcCallCallbacks {
   sendOffer(sdp: RTCSessionDescriptionInit): void
@@ -6,6 +6,7 @@ export interface WebRtcCallCallbacks {
   sendIce(candidate: RTCIceCandidateInit): void
   onConnected(): void
   onFailed(message: string): void
+  onLocalStream(stream: MediaStream): void
   onRemoteStream(stream: MediaStream): void
 }
 
@@ -26,12 +27,14 @@ export interface WebRtcPrepareError extends Error {
 }
 
 export interface WebRtcCallController {
-  prepare(): Promise<void>
+  prepare(callType: CallType): Promise<void>
   startCaller(): Promise<void>
   acceptOffer(offer: RTCSessionDescriptionInit): Promise<void>
   applyAnswer(answer: RTCSessionDescriptionInit): Promise<void>
   addRemoteIce(candidate: RTCIceCandidateInit): Promise<void>
   setMuted(muted: boolean): void
+  setVideoEnabled(enabled: boolean): void
+  switchCamera(): Promise<void>
   cleanup(): void
 }
 
@@ -51,7 +54,7 @@ function toPrepareError(
   const message = originalError instanceof Error
     ? originalError.message
     : stage === 'media'
-      ? 'microphone preparation failed'
+      ? 'media preparation failed'
       : 'ice config preparation failed'
   const error = new Error(message) as WebRtcPrepareError
   error.name = 'WebRtcPrepareError'
@@ -61,12 +64,27 @@ function toPrepareError(
   return error
 }
 
+function mediaConstraints(callType: CallType, facingMode: 'user' | 'environment'): MediaStreamConstraints {
+  if (callType === 'audio') return { audio: true }
+  return {
+    audio: true,
+    video: {
+      facingMode: { ideal: facingMode },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 24, max: 30 },
+    },
+  }
+}
+
 export function useWebRtcCall(
   getIceConfig: () => Promise<WebRTCIceConfig>,
   callbacks: WebRtcCallCallbacks,
   deps: WebRtcBrowserDeps = defaultDeps,
 ): WebRtcCallController {
   let localStream: MediaStream | null = null
+  let localCallType: CallType | null = null
+  let facingMode: 'user' | 'environment' = 'user'
   let iceConfig: WebRTCIceConfig | null = null
   let peer: RTCPeerConnection | null = null
   let pendingRemoteIce: RTCIceCandidateInit[] = []
@@ -74,11 +92,13 @@ export function useWebRtcCall(
   let connectedNotified = false
   let failedNotified = false
 
-  async function prepare() {
-    if (localStream && iceConfig) return
+  async function prepare(callType: CallType) {
+    if (localStream && iceConfig && localCallType === callType) return
+    if (localStream || peer) cleanup()
 
+    facingMode = 'user'
     const [mediaResult, configResult] = await Promise.allSettled([
-      Promise.resolve().then(() => deps.getUserMedia({ audio: true })),
+      Promise.resolve().then(() => deps.getUserMedia(mediaConstraints(callType, facingMode))),
       Promise.resolve().then(() => getIceConfig()),
     ])
 
@@ -95,7 +115,9 @@ export function useWebRtcCall(
     }
 
     localStream = mediaResult.value
+    localCallType = callType
     iceConfig = configResult.value
+    callbacks.onLocalStream(localStream)
   }
 
   function clearDisconnectTimer() {
@@ -151,7 +173,7 @@ export function useWebRtcCall(
   function ensurePeer() {
     if (peer) return peer
     if (!localStream || !iceConfig) {
-      throw new Error('voice call is not prepared')
+      throw new Error('call is not prepared')
     }
 
     peer = deps.createPeerConnection({
@@ -159,7 +181,7 @@ export function useWebRtcCall(
       iceTransportPolicy: iceConfig.iceTransportPolicy,
     })
 
-    for (const track of localStream.getAudioTracks()) {
+    for (const track of localStream.getTracks()) {
       peer.addTrack(track, localStream)
     }
 
@@ -221,6 +243,52 @@ export function useWebRtcCall(
     }
   }
 
+  function setVideoEnabled(enabled: boolean) {
+    for (const track of localStream?.getVideoTracks() ?? []) {
+      track.enabled = enabled
+    }
+  }
+
+  async function switchCamera() {
+    if (localCallType !== 'video' || !localStream) return
+
+    const currentTrack = localStream.getVideoTracks()[0]
+    if (!currentTrack) return
+
+    const nextFacingMode = facingMode === 'user' ? 'environment' : 'user'
+    const replacementStream = await deps.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: nextFacingMode },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 24, max: 30 },
+      },
+    })
+    const replacementTrack = replacementStream.getVideoTracks()[0]
+    if (!replacementTrack) {
+      for (const track of replacementStream.getTracks()) track.stop()
+      throw new Error('camera track unavailable')
+    }
+
+    try {
+      const sender = peer?.getSenders().find((item) => item.track?.kind === 'video')
+      if (sender) await sender.replaceTrack(replacementTrack)
+
+      localStream.removeTrack(currentTrack)
+      currentTrack.stop()
+      localStream.addTrack(replacementTrack)
+      for (const track of replacementStream.getTracks()) {
+        if (track !== replacementTrack) track.stop()
+      }
+      facingMode = nextFacingMode
+      callbacks.onLocalStream(localStream)
+    } catch (error) {
+      replacementTrack.stop()
+      throw error
+    }
+  }
+
   function cleanup() {
     clearDisconnectTimer()
     pendingRemoteIce = []
@@ -229,6 +297,8 @@ export function useWebRtcCall(
 
     const stream = localStream
     localStream = null
+    localCallType = null
+    facingMode = 'user'
     iceConfig = null
 
     const currentPeer = peer
@@ -247,6 +317,8 @@ export function useWebRtcCall(
     applyAnswer,
     addRemoteIce,
     setMuted,
+    setVideoEnabled,
+    switchCamera,
     cleanup,
   }
 }
