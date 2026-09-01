@@ -138,7 +138,7 @@ describe('call store', () => {
 
     await call.startCall(contact())
 
-    expect(call.error).toBe('麦克风权限未授权，请在浏览器网站设置中允许麦克风')
+    expect(call.error).toBe('无法使用麦克风，请检查浏览器权限')
     consoleError.mockRestore()
   })
 
