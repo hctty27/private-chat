@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   apiPost: vi.fn(),
@@ -23,6 +23,10 @@ vi.mock('axios', () => ({
 import { uploadFile } from './index'
 
 describe('uploadFile image optimization', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   beforeEach(() => {
     mocks.apiPost.mockReset()
     mocks.put.mockReset()
@@ -67,6 +71,48 @@ describe('uploadFile image optimization', () => {
 
     expect(mocks.put).toHaveBeenCalledTimes(2)
     expect(mocks.put.mock.calls[0][0]).toBe('https://r2.example/original')
+    expect(mocks.put.mock.calls[1][0]).toBe('https://r2.example/thumbnail')
+    expect(mocks.put.mock.calls[1][1]).toBeInstanceOf(Blob)
+  })
+
+  it('falls back to HTMLImageElement decoding when createImageBitmap fails', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('bitmap decode unsupported')))
+    vi.stubGlobal('Image', class {
+      decoding = 'auto'
+      src = ''
+      naturalWidth = 1600
+      naturalHeight = 1200
+      decode = vi.fn().mockResolvedValue(undefined)
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:photo'),
+      revokeObjectURL: vi.fn(),
+    })
+
+    mocks.apiPost
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            fileId: 8,
+            uploadMode: 'single',
+            uploadUrl: 'https://r2.example/original',
+            thumbnailUploadUrl: 'https://r2.example/thumbnail',
+            url: '/api/files/8/content',
+            fileName: 'photo.jpg',
+            fileSize: 1024,
+            headers: { 'Content-Type': 'image/jpeg' },
+            thumbnailHeaders: { 'Content-Type': 'image/jpeg' },
+          },
+        },
+      })
+      .mockResolvedValueOnce({ data: { code: 200, data: {} } })
+
+    const file = new File([new Uint8Array(1024)], 'photo.jpg', { type: 'image/jpeg' })
+
+    await uploadFile(file, 2)
+
+    expect(mocks.put).toHaveBeenCalledTimes(2)
     expect(mocks.put.mock.calls[1][0]).toBe('https://r2.example/thumbnail')
     expect(mocks.put.mock.calls[1][1]).toBeInstanceOf(Blob)
   })
