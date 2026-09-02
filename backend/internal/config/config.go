@@ -30,7 +30,6 @@ type Config struct {
 	JWTSecret               string
 	JWTExpiration           time.Duration
 	JWTAbsoluteExpiration   time.Duration
-	SessionRenewWindow      time.Duration
 	MessagePageSize         int
 	TimeZone                string
 	WebRTCEnabled           bool
@@ -67,7 +66,6 @@ func Load() Config {
 		JWTSecret:               envOrDefault("JWT_SECRET", ""),
 		JWTExpiration:           envDurationOrDefault("JWT_EXPIRATION", time.Hour),
 		JWTAbsoluteExpiration:   envDurationOrDefault("JWT_ABSOLUTE_EXPIRATION", 30*24*time.Hour),
-		SessionRenewWindow:      envDurationOrDefault("SESSION_RENEW_WINDOW", 15*time.Minute),
 		MessagePageSize:         envIntOrDefault("MESSAGE_PAGE_SIZE", 20),
 		TimeZone:                envOrDefault("TIME_ZONE", "Asia/Shanghai"),
 		WebRTCEnabled:           envBoolOrDefault("WEBRTC_ENABLED", false),
