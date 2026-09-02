@@ -5,12 +5,15 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"privatechat/internal/model"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const sessionRenewWindow = 15 * time.Minute
 
 func (a *App) secureLoginHandler(c *gin.Context) {
 	var req model.LoginRequest
@@ -72,6 +75,44 @@ func (a *App) secureAuthMiddleware() gin.HandlerFunc {
 		c.Set("nickname", nickname)
 		c.Next()
 	}
+}
+
+func (a *App) keepAliveHandler(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		unauthorized(c)
+		return
+	}
+
+	token := authTokenFromRequest(c.Request)
+	if token == "" {
+		unauthorized(c)
+		return
+	}
+
+	key := userTokenKey(userID)
+	ttl, err := a.redis.TTL(c.Request.Context(), key).Result()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, http.StatusInternalServerError, "登录状态续期失败")
+		return
+	}
+	if ttl > sessionRenewWindow {
+		respondSuccess(c, gin.H{"renewed": false})
+		return
+	}
+
+	renewed, err := a.redis.Expire(c.Request.Context(), key, a.cfg.JWTExpiration).Result()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, http.StatusInternalServerError, "登录状态续期失败")
+		return
+	}
+	if !renewed {
+		unauthorized(c)
+		return
+	}
+
+	http.SetCookie(c.Writer, newAuthCookie(token, a.cfg.JWTExpiration, a.cfg.AuthCookieSecure))
+	respondSuccess(c, gin.H{"renewed": true})
 }
 
 func (a *App) logoutHandler(c *gin.Context) {

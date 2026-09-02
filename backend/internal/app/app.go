@@ -85,7 +85,7 @@ func NewApp() (*App, error) {
 		storage:   storageClient,
 		files:     fileManager,
 		presence:  presence,
-		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTExpiration),
+		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTAbsoluteExpiration),
 		hub:       NewHub(),
 		relations: newRelationAuthorizer(db),
 		loc:       loc,
@@ -200,6 +200,7 @@ func (a *App) routes() (*gin.Engine, error) {
 					"nickname": nickname,
 				})
 			})
+			protected.POST("/auth/keepalive", a.keepAliveHandler)
 			protected.POST("/auth/logout", a.logoutHandler)
 			protected.GET("/contacts", a.contactsHandler)
 			protected.GET("/availability", a.getAvailabilityHandler)
