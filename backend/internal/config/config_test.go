@@ -259,3 +259,40 @@ func TestConfigValidateStillSupportsCoturn(t *testing.T) {
 		t.Fatalf("expected Coturn config to remain valid: %v", err)
 	}
 }
+
+
+func TestLoadSessionLifetimeDefaults(t *testing.T) {
+	t.Setenv("JWT_EXPIRATION", "")
+	t.Setenv("JWT_ABSOLUTE_EXPIRATION", "")
+	t.Setenv("SESSION_RENEW_WINDOW", "")
+
+	cfg := Load()
+
+	if cfg.JWTExpiration != time.Hour {
+		t.Fatalf("expected default idle timeout 1h, got %v", cfg.JWTExpiration)
+	}
+	if cfg.JWTAbsoluteExpiration != 30*24*time.Hour {
+		t.Fatalf("expected default absolute timeout 30d, got %v", cfg.JWTAbsoluteExpiration)
+	}
+	if cfg.SessionRenewWindow != 15*time.Minute {
+		t.Fatalf("expected default renewal window 15m, got %v", cfg.SessionRenewWindow)
+	}
+}
+
+func TestLoadReadsSessionLifetimeConfig(t *testing.T) {
+	t.Setenv("JWT_EXPIRATION", "2h")
+	t.Setenv("JWT_ABSOLUTE_EXPIRATION", "168h")
+	t.Setenv("SESSION_RENEW_WINDOW", "10m")
+
+	cfg := Load()
+
+	if cfg.JWTExpiration != 2*time.Hour {
+		t.Fatalf("expected idle timeout 2h, got %v", cfg.JWTExpiration)
+	}
+	if cfg.JWTAbsoluteExpiration != 7*24*time.Hour {
+		t.Fatalf("expected absolute timeout 7d, got %v", cfg.JWTAbsoluteExpiration)
+	}
+	if cfg.SessionRenewWindow != 10*time.Minute {
+		t.Fatalf("expected renewal window 10m, got %v", cfg.SessionRenewWindow)
+	}
+}
