@@ -1,6 +1,7 @@
 package app
 
 import (
+	"time"
 	"errors"
 	"net/http"
 	"strconv"
@@ -11,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const sessionRenewWindow = 15 * time.Minute
 
 func (a *App) secureLoginHandler(c *gin.Context) {
 	var req model.LoginRequest
@@ -93,7 +96,7 @@ func (a *App) keepAliveHandler(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, http.StatusInternalServerError, "登录状态续期失败")
 		return
 	}
-	if ttl > a.cfg.SessionRenewWindow {
+	if ttl > sessionRenewWindow {
 		respondSuccess(c, gin.H{"renewed": false})
 		return
 	}
