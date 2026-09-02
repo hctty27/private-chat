@@ -260,7 +260,6 @@ func TestConfigValidateStillSupportsCoturn(t *testing.T) {
 	}
 }
 
-
 func TestLoadSessionLifetimeDefaults(t *testing.T) {
 	t.Setenv("JWT_EXPIRATION", "")
 	t.Setenv("JWT_ABSOLUTE_EXPIRATION", "")
