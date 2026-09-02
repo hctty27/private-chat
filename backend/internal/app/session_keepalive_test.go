@@ -27,7 +27,6 @@ func newSessionKeepAliveTestApp(t *testing.T, redisTTL time.Duration) (*App, str
 		JWTSecret:             "this-is-a-valid-test-secret-with-32-characters",
 		JWTExpiration:         time.Hour,
 		JWTAbsoluteExpiration: 30 * 24 * time.Hour,
-		SessionRenewWindow:    15 * time.Minute,
 	}
 	manager := auth.NewJWTManager(cfg.JWTSecret, cfg.JWTAbsoluteExpiration)
 	token, err := manager.Generate(42, "Tester")
