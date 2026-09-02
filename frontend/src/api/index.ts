@@ -32,6 +32,10 @@ export function checkSession() {
   return api.get<ApiResponse<SessionResponse>>('/api/auth/session')
 }
 
+export function keepSessionAlive() {
+  return api.post<ApiResponse<{ renewed: boolean }>>('/api/auth/keepalive')
+}
+
 export function getContacts() {
   return api.get<ApiResponse<Contact[]>>('/api/contacts')
 }
