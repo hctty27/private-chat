@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,7 +34,7 @@ func newSessionKeepAliveTestApp(t *testing.T, redisTTL time.Duration) (*App, str
 	if err != nil {
 		t.Fatalf("generate token: %v", err)
 	}
-	if err := client.Set(t.Context(), userTokenKey(42), token, redisTTL).Err(); err != nil {
+	if err := client.Set(context.Background(), userTokenKey(42), token, redisTTL).Err(); err != nil {
 		t.Fatalf("seed redis session: %v", err)
 	}
 
