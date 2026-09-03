@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 const nginxSource = readFileSync(resolve(process.cwd(), 'nginx.conf'), 'utf8')
 
 describe('frontend nginx production policy', () => {
-  it('keeps SPA HTML fresh while caching hashed assets for a year', () => {
+  it('keeps SPA HTML fresh while caching hashed assets immutably for a year', () => {
     expect(nginxSource).toMatch(/location = \/index\.html\s*\{[^}]*expires -1;/s)
-    expect(nginxSource).toMatch(/location \/assets\/\s*\{[^}]*expires 1y;/s)
+    expect(nginxSource).toMatch(/location \/assets\/\s*\{[^}]*expires 1y;[^}]*Cache-Control "public, immutable";/s)
   })
 
   it('sends baseline browser security headers', () => {
