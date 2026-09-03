@@ -49,8 +49,6 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: private_chat
-        ports:
-          - 5432
         options: >-
           --health-cmd "pg_isready -U postgres -d private_chat"
           --health-interval 5s
@@ -67,10 +65,8 @@ jobs:
       TIME_ZONE: UTC
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve PostgreSQL service port
-        run: |
-          echo "POSTGRES_PORT=${{ job.services.postgres.ports['5432'] }}" >> "$GITHUB_ENV"
-          echo "POSTGRES_CONTAINER_ID=${{ job.services.postgres.id }}" >> "$GITHUB_ENV"
+      - name: Resolve PostgreSQL service container
+        run: echo "POSTGRES_CONTAINER_ID=${{ job.services.postgres.id }}" >> "$GITHUB_ENV"
       - name: Configure PostgreSQL client wrappers
         run: |
           mkdir -p "$RUNNER_TEMP/postgres-client"
@@ -119,7 +115,25 @@ jobs:
         run: go mod download
       - name: Build backend migration command
         working-directory: backend
-        run: go build -o ../private-chat-backend ./cmd/privatechat
+        run: |
+          go build -o ../private-chat-backend-bin ./cmd/privatechat
+          docker cp ../private-chat-backend-bin "$POSTGRES_CONTAINER_ID:/tmp/private-chat-backend"
+          docker exec "$POSTGRES_CONTAINER_ID" chmod +x /tmp/private-chat-backend
+          cat > ../private-chat-backend <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker exec -i \
+            -e TIME_ZONE="$TIME_ZONE" \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_USER="$POSTGRES_USER" \
+            -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            -e POSTGRES_DB="$POSTGRES_DB" \
+            -e POSTGRES_SSLMODE=disable \
+            "$POSTGRES_CONTAINER_ID" \
+            /tmp/private-chat-backend "$@"
+          SCRIPT
+          chmod +x ../private-chat-backend
       - name: Apply legacy schema fixture
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_legacy_schema.sql
       - name: Apply managed migrations
@@ -141,9 +155,22 @@ jobs:
           test "$(psql -h 127.0.0.1 -U postgres -d private_chat -Atc "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 't_user' AND column_name IN ('availability_start_at', 'availability_end_at', 'availability_note')")" = "3"
       - name: Test message persistence against PostgreSQL
         working-directory: backend
-        env:
-          RUN_POSTGRES_TESTS: "1"
-        run: go test ./internal/app -run 'TestSaveMessage(Idempotency|WithReply)' -count=1
+        run: |
+          go test -c ./internal/app -o ../private-chat-app.test
+          docker cp ../private-chat-app.test "$POSTGRES_CONTAINER_ID:/tmp/private-chat-app.test"
+          docker exec -i \
+            -e RUN_POSTGRES_TESTS=1 \
+            -e TIME_ZONE="$TIME_ZONE" \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_USER="$POSTGRES_USER" \
+            -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            -e POSTGRES_DB="$POSTGRES_DB" \
+            -e POSTGRES_SSLMODE=disable \
+            "$POSTGRES_CONTAINER_ID" \
+            /tmp/private-chat-app.test \
+            -test.run 'TestSaveMessage(Idempotency|WithReply)' \
+            -test.count=1
       - name: Re-run managed migrations idempotently
         run: ./private-chat-backend migrate
       - name: Verify current init.sql can be adopted
