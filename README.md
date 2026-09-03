@@ -356,7 +356,8 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `JWT_EXPIRATION` - 登录有效期
 - `AUTH_COOKIE_SECURE` - HTTPS 环境必须为 `true`
 - `WS_ALLOWED_ORIGINS` - 可选的跨域 WebSocket Origin 白名单
-- `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR
+- `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR；登录城市定位依赖它正确解析真实客户端 IP
+- `AMAP_WEB_SERVICE_KEY` - 可选，高德 Web 服务 Key；配置后登录成功会通过基础 IPv4 IP 定位异步刷新 `t_user.city`（省/市级）
 - `POSTGRES_*` - PostgreSQL 连接配置；`migrate` 和 backend 共用
 - `REDIS_*` - Redis 连接配置
 - `R2_*` - Cloudflare R2 文件存储配置
