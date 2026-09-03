@@ -88,6 +88,35 @@ describe('call store', () => {
     useCallStore().available = true
   })
 
+  it('does not initialize the WebRTC runtime while idle or only ringing', () => {
+    const call = useCallStore()
+
+    expect(useWebRtcCall).not.toHaveBeenCalled()
+
+    call.ensureBound()
+    call.handleServerMessage({
+      type: 'call_incoming',
+      data: { callId: 'call-1', callerId: 2, callType: 'audio' },
+    })
+
+    expect(call.phase).toBe('incoming')
+    expect(useWebRtcCall).not.toHaveBeenCalled()
+  })
+
+  it('initializes the WebRTC runtime when the user accepts a call', async () => {
+    const call = useCallStore()
+    call.handleServerMessage({
+      type: 'call_incoming',
+      data: { callId: 'call-1', callerId: 2, callType: 'audio' },
+    })
+
+    await call.acceptCall()
+
+    expect(useWebRtcCall).toHaveBeenCalledTimes(1)
+    expect(rtc.prepare).toHaveBeenCalledWith('audio')
+    expect(call.phase).toBe('connecting')
+  })
+
   it('does not silently ignore a user-initiated call when availability probe is false', async () => {
     const call = useCallStore()
     call.available = false
@@ -230,11 +259,29 @@ describe('call store', () => {
 
     expect(call.phase).toBe('preparing')
     expect(call.peerName).toBe('Alice')
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
 
     resolvePrepare()
     await pending
 
     expect(call.phase).toBe('outgoing')
+  })
+
+  it('does not start media preparation when cancelled during lazy runtime loading', async () => {
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+    expect(call.phase).toBe('preparing')
+
+    call.cancelCall()
+    await pending
+
+    expect(rtc.prepare).not.toHaveBeenCalled()
+    expect(chat.sendWsMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'call_invite' }),
+    )
+    expect(call.phase).toBe('ended')
   })
 
   it('cancels preparation without sending any call signal', async () => {
@@ -247,6 +294,7 @@ describe('call store', () => {
 
     const pending = call.startCall(contact())
     expect(call.phase).toBe('preparing')
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
 
     call.cancelCall()
     expect(call.phase).toBe('ended')
@@ -399,11 +447,12 @@ describe('call store', () => {
     expect(rtc.cleanup).toHaveBeenCalled()
   })
 
-  it('keeps local and remote streams in store callbacks', () => {
+  it('keeps local and remote streams in store callbacks', async () => {
     const call = useCallStore()
     const local = {} as MediaStream
     const remote = {} as MediaStream
 
+    await call.startCall(contact())
     rtcCallbacks.onLocalStream(local)
     rtcCallbacks.onRemoteStream(remote)
 
@@ -424,26 +473,26 @@ describe('call store', () => {
     expect(call.phase).toBe('failed')
   })
 
-  it('toggles local mute through rtc controller', () => {
+  it('toggles local mute through rtc controller', async () => {
     const call = useCallStore()
     call.handleServerMessage({
       type: 'call_incoming',
       data: { callId: 'call-1', callerId: 2, callType: 'audio' },
     })
-    call.phase = 'connecting'
+    await call.acceptCall()
 
     call.toggleMute()
     expect(call.muted).toBe(true)
     expect(rtc.setMuted).toHaveBeenCalledWith(true)
   })
 
-  it('toggles the local camera only for video calls', () => {
+  it('toggles the local camera only for video calls', async () => {
     const call = useCallStore()
     call.handleServerMessage({
       type: 'call_incoming',
       data: { callId: 'call-1', callerId: 2, callType: 'video' },
     })
-    call.phase = 'connecting'
+    await call.acceptCall()
 
     call.toggleCamera()
     expect(call.cameraOff).toBe(true)
@@ -460,6 +509,7 @@ describe('call store', () => {
       type: 'call_incoming',
       data: { callId: 'call-1', callerId: 2, callType: 'video' },
     })
+    await call.acceptCall()
     call.phase = 'connected'
 
     await call.switchCamera()
@@ -476,6 +526,7 @@ describe('call store', () => {
     const call = useCallStore()
 
     const pending = call.startCall(contact())
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
     chat.wsStatus = 'reconnecting'
     chat.wsConnected = false
     await nextTick()
@@ -503,6 +554,7 @@ describe('call store', () => {
     const call = useCallStore()
 
     const pending = call.startCall(contact())
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
     call.dispose()
     resolvePrepare()
     await pending

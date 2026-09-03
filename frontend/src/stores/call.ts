@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, watch, type WatchStopHandle } from 'vue'
 import { getWebRTCIceConfig, getWebRTCStatus } from '../api'
-import { useWebRtcCall, type WebRtcPrepareError } from '../composables/useWebRtcCall'
+import type { WebRtcCallCallbacks, WebRtcCallController, WebRtcPrepareError } from '../composables/useWebRtcCall'
 import type {
   CallPhase,
   CallType,
@@ -148,59 +148,77 @@ export const useCallStore = defineStore('call', () => {
   let unsubscribeWs: (() => void) | null = null
   let stopWsWatch: WatchStopHandle | null = null
 
-  const rtc = useWebRtcCall(
-    async (): Promise<WebRTCIceConfig> => {
-      const response = await getWebRTCIceConfig()
-      if (response.data.code !== 200) {
-        throw new Error(response.data.message || '获取通话配置失败')
+  let rtc: WebRtcCallController | null = null
+  let rtcLoadPromise: Promise<WebRtcCallController> | null = null
+
+  async function getIceConfig(): Promise<WebRTCIceConfig> {
+    const response = await getWebRTCIceConfig()
+    if (response.data.code !== 200) {
+      throw new Error(response.data.message || '获取通话配置失败')
+    }
+    return response.data.data
+  }
+
+  const rtcCallbacks: WebRtcCallCallbacks = {
+    sendOffer: (sdp) => {
+      if (!callId.value) return
+      useChatStore().sendWsMessage({
+        type: 'webrtc_offer',
+        data: { callId: callId.value, sdp },
+      })
+    },
+    sendAnswer: (sdp) => {
+      if (!callId.value) return
+      useChatStore().sendWsMessage({
+        type: 'webrtc_answer',
+        data: { callId: callId.value, sdp },
+      })
+    },
+    sendIce: (candidate) => {
+      if (!callId.value) return
+      useChatStore().sendWsMessage({
+        type: 'webrtc_ice',
+        data: { callId: callId.value, candidate },
+      })
+    },
+    onConnected: () => {
+      phase.value = 'connected'
+      connectedAt.value = Date.now()
+      durationSeconds.value = 0
+      startDurationTimer()
+    },
+    onFailed: () => {
+      if (callId.value) {
+        useChatStore().sendWsMessage({
+          type: 'call_hangup',
+          data: { callId: callId.value, reason: 'failed' },
+        })
       }
-      return response.data.data
+      finish('failed', '通话连接失败')
     },
-    {
-      sendOffer: (sdp) => {
-        if (!callId.value) return
-        useChatStore().sendWsMessage({
-          type: 'webrtc_offer',
-          data: { callId: callId.value, sdp },
-        })
-      },
-      sendAnswer: (sdp) => {
-        if (!callId.value) return
-        useChatStore().sendWsMessage({
-          type: 'webrtc_answer',
-          data: { callId: callId.value, sdp },
-        })
-      },
-      sendIce: (candidate) => {
-        if (!callId.value) return
-        useChatStore().sendWsMessage({
-          type: 'webrtc_ice',
-          data: { callId: callId.value, candidate },
-        })
-      },
-      onConnected: () => {
-        phase.value = 'connected'
-        connectedAt.value = Date.now()
-        durationSeconds.value = 0
-        startDurationTimer()
-      },
-      onFailed: () => {
-        if (callId.value) {
-          useChatStore().sendWsMessage({
-            type: 'call_hangup',
-            data: { callId: callId.value, reason: 'failed' },
-          })
-        }
-        finish('failed', '通话连接失败')
-      },
-      onLocalStream: (stream) => {
-        localStream.value = stream
-      },
-      onRemoteStream: (stream) => {
-        remoteStream.value = stream
-      },
+    onLocalStream: (stream) => {
+      localStream.value = stream
     },
-  )
+    onRemoteStream: (stream) => {
+      remoteStream.value = stream
+    },
+  }
+
+  function ensureRtc(): Promise<WebRtcCallController> {
+    if (rtc) return Promise.resolve(rtc)
+    if (!rtcLoadPromise) {
+      rtcLoadPromise = import('../composables/useWebRtcCall')
+        .then(({ useWebRtcCall }) => {
+          const controller = useWebRtcCall(getIceConfig, rtcCallbacks)
+          rtc = controller
+          return controller
+        })
+        .finally(() => {
+          rtcLoadPromise = null
+        })
+    }
+    return rtcLoadPromise
+  }
 
   function startDurationTimer() {
     stopDurationTimer()
@@ -226,7 +244,7 @@ export const useCallStore = defineStore('call', () => {
   }
 
   function cleanupLocal() {
-    rtc.cleanup()
+    rtc?.cleanup()
     stopDurationTimer()
     muted.value = false
     cameraOff.value = false
@@ -302,8 +320,11 @@ export const useCallStore = defineStore('call', () => {
     preparingOutgoing = true
     const prepareSeq = ++outgoingPrepareSeq
 
+    let controller: WebRtcCallController
     try {
-      await rtc.prepare(kind)
+      controller = await ensureRtc()
+      if (prepareSeq !== outgoingPrepareSeq || phase.value !== 'preparing') return
+      await controller.prepare(kind)
     } catch (prepareError) {
       if (prepareSeq !== outgoingPrepareSeq) return
       preparingOutgoing = false
@@ -319,7 +340,7 @@ export const useCallStore = defineStore('call', () => {
       chat.wsStatus !== 'connected'
     ) {
       preparingOutgoing = false
-      rtc.cleanup()
+      controller.cleanup()
       if (prepareSeq === outgoingPrepareSeq && phase.value === 'preparing') {
         finish('failed', '网络已断开')
       }
@@ -339,8 +360,14 @@ export const useCallStore = defineStore('call', () => {
     if (phase.value !== 'incoming' || !callId.value) return
     const activeCallId = callId.value
     const kind = callType.value
+    let controller: WebRtcCallController
     try {
-      await rtc.prepare(kind)
+      controller = await ensureRtc()
+      if (callId.value !== activeCallId || phase.value !== 'incoming') {
+        controller.cleanup()
+        return
+      }
+      await controller.prepare(kind)
     } catch (prepareError) {
       logPrepareFailure('incoming', prepareError, kind)
       useChatStore().sendWsMessage({
@@ -352,7 +379,7 @@ export const useCallStore = defineStore('call', () => {
     }
 
     if (callId.value !== activeCallId || phase.value !== 'incoming') {
-      rtc.cleanup()
+      controller.cleanup()
       return
     }
     phase.value = 'connecting'
@@ -409,20 +436,21 @@ export const useCallStore = defineStore('call', () => {
   function toggleMute() {
     if (phase.value !== 'connected' && phase.value !== 'connecting') return
     muted.value = !muted.value
-    rtc.setMuted(muted.value)
+    rtc?.setMuted(muted.value)
   }
 
   function toggleCamera() {
     if (callType.value !== 'video') return
     if (phase.value !== 'connected' && phase.value !== 'connecting') return
     cameraOff.value = !cameraOff.value
-    rtc.setVideoEnabled(!cameraOff.value)
+    rtc?.setVideoEnabled(!cameraOff.value)
   }
 
   async function switchCamera() {
     if (callType.value !== 'video') return
     if (phase.value !== 'connected' && phase.value !== 'connecting') return
     try {
+      if (!rtc) return
       await rtc.switchCamera()
     } catch (switchError) {
       console.error('[video-call] switch camera failed', switchError)
@@ -494,7 +522,7 @@ export const useCallStore = defineStore('call', () => {
         if (!matchesCall(message.data.callId) || phase.value !== 'outgoing') return
         callType.value = normalizeCallType(message.data.callType)
         phase.value = 'connecting'
-        void rtc.startCaller().catch(handleAsyncFailure)
+        void ensureRtc().then((controller) => controller.startCaller()).catch(handleAsyncFailure)
         return
       case 'call_rejected':
         if (matchesCall(message.data.callId)) {
@@ -519,15 +547,15 @@ export const useCallStore = defineStore('call', () => {
         return
       case 'webrtc_offer':
         if (!matchesCall(message.data.callId) || phase.value !== 'connecting') return
-        void rtc.acceptOffer(message.data.sdp).catch(handleAsyncFailure)
+        void ensureRtc().then((controller) => controller.acceptOffer(message.data.sdp)).catch(handleAsyncFailure)
         return
       case 'webrtc_answer':
         if (!matchesCall(message.data.callId) || phase.value !== 'connecting') return
-        void rtc.applyAnswer(message.data.sdp).catch(handleAsyncFailure)
+        void ensureRtc().then((controller) => controller.applyAnswer(message.data.sdp)).catch(handleAsyncFailure)
         return
       case 'webrtc_ice':
         if (!matchesCall(message.data.callId)) return
-        void rtc.addRemoteIce(message.data.candidate).catch(handleAsyncFailure)
+        void ensureRtc().then((controller) => controller.addRemoteIce(message.data.candidate)).catch(handleAsyncFailure)
         return
     }
   }
