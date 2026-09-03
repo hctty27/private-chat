@@ -44,6 +44,7 @@ func (a *App) secureLoginHandler(c *gin.Context) {
 	}
 
 	http.SetCookie(c.Writer, newAuthCookie(token, a.cfg.JWTExpiration, a.cfg.AuthCookieSecure))
+	a.refreshUserCityOnLogin(user.ID, c.ClientIP())
 	a.kickUser(user.ID, "您的账号在其他地方登录")
 	respondSuccess(c, model.LoginResponse{
 		UserID:   user.ID,
