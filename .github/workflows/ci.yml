@@ -25,8 +25,10 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Download dependencies
-        run: go mod download
+      - name: Refresh module lock
+        run: |
+          go mod tidy
+          git diff -- go.mod go.sum
       - name: Check formatting
         run: |
           unformatted="$(gofmt -l .)"
@@ -92,9 +94,11 @@ jobs:
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Download dependencies
+      - name: Refresh module lock
         working-directory: backend
-        run: go mod download
+        run: |
+          go mod tidy
+          git diff -- go.mod go.sum
       - name: Build backend migration command
         working-directory: backend
         run: go build -o ../private-chat-backend ./cmd/privatechat
