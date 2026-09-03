@@ -27,6 +27,7 @@ type Config struct {
 	StorageSecretKey        string
 	StorageBucket           string
 	ObjectStoragePrefix     string
+	AmapWebServiceKey       string
 	JWTSecret               string
 	JWTExpiration           time.Duration
 	JWTAbsoluteExpiration   time.Duration
@@ -63,6 +64,7 @@ func Load() Config {
 		StorageSecretKey:        envOrDefault("R2_SECRET_KEY", ""),
 		StorageBucket:           envOrDefault("R2_BUCKET", ""),
 		ObjectStoragePrefix:     envOrDefault("R2_OBJECT_PREFIX", ""),
+		AmapWebServiceKey:       envOrDefault("AMAP_WEB_SERVICE_KEY", ""),
 		JWTSecret:               envOrDefault("JWT_SECRET", ""),
 		JWTExpiration:           envDurationOrDefault("JWT_EXPIRATION", time.Hour),
 		JWTAbsoluteExpiration:   envDurationOrDefault("JWT_ABSOLUTE_EXPIRATION", 30*24*time.Hour),
