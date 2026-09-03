@@ -83,6 +83,16 @@ func TestLoadReadsR2StorageConfig(t *testing.T) {
 	}
 }
 
+func TestLoadReadsAmapWebServiceKey(t *testing.T) {
+	t.Setenv("AMAP_WEB_SERVICE_KEY", "server-only-amap-key")
+
+	cfg := Load()
+
+	if cfg.AmapWebServiceKey != "server-only-amap-key" {
+		t.Fatalf("expected Amap web service key, got %q", cfg.AmapWebServiceKey)
+	}
+}
+
 func TestLoadDoesNotProvideSecretDefaults(t *testing.T) {
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("REDIS_PASSWORD", "")
