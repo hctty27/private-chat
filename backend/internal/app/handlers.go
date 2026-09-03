@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"privatechat/internal/model"
@@ -42,48 +43,67 @@ func (a *App) contactsHandler(c *gin.Context) {
 		conversationIDs = append(conversationIDs, conversationID(userID, relation.TargetID))
 	}
 
-	var users []model.User
-	if err := a.db.Where("id IN ?", targetIDs).Find(&users).Error; err != nil {
-		respondError(c, http.StatusOK, 500, err.Error())
-		return
+	type unreadRow struct {
+		ConversationID string `gorm:"column:conversation_id"`
+		UnreadCount    int    `gorm:"column:unread_count"`
 	}
+
+	ctx := c.Request.Context()
+	var (
+		users           []model.User
+		lastMsgs        []model.Message
+		rows            []unreadRow
+		onlineMap       map[int64]bool
+		usersErr        error
+		lastMessagesErr error
+		unreadErr       error
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() {
+		defer wg.Done()
+		usersErr = a.db.WithContext(ctx).Where("id IN ?", targetIDs).Find(&users).Error
+	}()
+	go func() {
+		defer wg.Done()
+		onlineMap = a.onlineStatusMap(ctx, targetIDs)
+	}()
+	go func() {
+		defer wg.Done()
+		lastMessagesErr = a.db.WithContext(ctx).Raw(
+			"SELECT DISTINCT ON (conversation_id) * FROM t_message WHERE conversation_id IN ? ORDER BY conversation_id, created_at DESC, id DESC",
+			conversationIDs,
+		).Scan(&lastMsgs).Error
+	}()
+	go func() {
+		defer wg.Done()
+		unreadErr = a.db.WithContext(ctx).Model(&model.Message{}).
+			Select("conversation_id, COUNT(*) as unread_count").
+			Where("conversation_id IN ? AND receiver_id = ? AND is_read = 0", conversationIDs, userID).
+			Group("conversation_id").
+			Scan(&rows).Error
+	}()
+	wg.Wait()
+
+	for _, err := range []error{usersErr, lastMessagesErr, unreadErr} {
+		if err != nil {
+			respondError(c, http.StatusOK, 500, err.Error())
+			return
+		}
+	}
+
 	userMap := make(map[int64]model.User, len(users))
 	for _, u := range users {
 		userMap[u.ID] = u
 	}
 
-	onlineMap := make(map[int64]bool, len(targetIDs))
-	for _, targetID := range targetIDs {
-		onlineMap[targetID] = a.isOnline(c.Request.Context(), targetID)
-	}
-
 	lastMessages := make(map[string]model.Message, len(conversationIDs))
-	var lastMsgs []model.Message
-	if err := a.db.Raw(
-		"SELECT DISTINCT ON (conversation_id) * FROM t_message WHERE conversation_id IN ? ORDER BY conversation_id, created_at DESC, id DESC",
-		conversationIDs,
-	).Scan(&lastMsgs).Error; err != nil {
-		respondError(c, http.StatusOK, 500, err.Error())
-		return
-	}
 	for _, msg := range lastMsgs {
 		lastMessages[msg.ConversationID] = msg
 	}
 
-	unreadCounts := make(map[string]int)
-	type unreadRow struct {
-		ConversationID string `gorm:"column:conversation_id"`
-		UnreadCount    int    `gorm:"column:unread_count"`
-	}
-	var rows []unreadRow
-	if err := a.db.Model(&model.Message{}).
-		Select("conversation_id, COUNT(*) as unread_count").
-		Where("conversation_id IN ? AND receiver_id = ? AND is_read = 0", conversationIDs, userID).
-		Group("conversation_id").
-		Scan(&rows).Error; err != nil {
-		respondError(c, http.StatusOK, 500, err.Error())
-		return
-	}
+	unreadCounts := make(map[string]int, len(rows))
 	for _, row := range rows {
 		unreadCounts[row.ConversationID] = row.UnreadCount
 	}
@@ -128,6 +148,27 @@ func (a *App) contactsHandler(c *gin.Context) {
 	}
 
 	respondSuccess(c, result)
+}
+
+func (a *App) onlineStatusMap(ctx context.Context, userIDs []int64) map[int64]bool {
+	statuses := make(map[int64]bool, len(userIDs))
+	if len(userIDs) == 0 || a.redis == nil {
+		return statuses
+	}
+
+	keys := make([]string, len(userIDs))
+	for i, userID := range userIDs {
+		keys[i] = onlineKey(userID)
+	}
+
+	values, err := a.redis.MGet(ctx, keys...).Result()
+	if err != nil {
+		return statuses
+	}
+	for i, value := range values {
+		statuses[userIDs[i]] = value != nil
+	}
+	return statuses
 }
 
 const maxMessagePageSize = 100
