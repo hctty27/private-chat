@@ -493,6 +493,23 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function messagePreview(message: Message) {
+    switch (message.msgType) {
+      case 1:
+      case 4:
+        return message.content || ''
+      case 2:
+        return '[图片]'
+      case 5:
+        return '[视频]'
+      case 6:
+        return '[语音]'
+      case 3:
+      default:
+        return message.fileName || '[文件]'
+    }
+  }
+
   function sendChatPayload(payload: WsClientChat['data']) {
     const msg: WsClientChat = { type: 'chat', data: payload }
     if (recoveringMessages && payload.clientMsgId && sentClientMsgIds.has(payload.clientMsgId)) {
@@ -753,9 +770,7 @@ export const useChatStore = defineStore('chat', () => {
         }
         const contact = contacts.value.find((c) => c.userId === contactId)
         if (contact) {
-          contact.lastMessage = msg.content || msg.fileName
-            ? (msg.msgType === 2 ? '[图片]' : msg.msgType === 5 ? '[视频]' : msg.msgType === 6 ? '[语音]' : msg.fileName || '[文件]')
-            : '[文件]'
+          contact.lastMessage = messagePreview(msg)
           contact.lastMessageTime = msg.createdAt
           if (shouldIncrementUnread({
             senderId: msg.senderId,
