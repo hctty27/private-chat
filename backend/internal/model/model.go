@@ -137,6 +137,7 @@ type User struct {
 	Username            string     `gorm:"column:username"`
 	Password            string     `gorm:"column:password"`
 	Nickname            string     `gorm:"column:nickname"`
+	City                *string    `gorm:"column:city"`
 	LastSeenAt          *time.Time `gorm:"column:last_seen_at"`
 	AvailabilityStartAt *time.Time `gorm:"column:availability_start_at"`
 	AvailabilityEndAt   *time.Time `gorm:"column:availability_end_at"`
