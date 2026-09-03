@@ -50,7 +50,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: private_chat
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd "pg_isready -U postgres -d private_chat"
           --health-interval 5s
@@ -67,6 +67,10 @@ jobs:
       TIME_ZONE: UTC
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve PostgreSQL service port
+        run: |
+          echo "POSTGRES_PORT=${{ job.services.postgres.ports['5432'] }}" >> "$GITHUB_ENV"
+          echo "PGPORT=${{ job.services.postgres.ports['5432'] }}" >> "$GITHUB_ENV"
       - name: Configure PostgreSQL client wrappers
         run: |
           mkdir -p "$RUNNER_TEMP/postgres-client"
@@ -75,6 +79,7 @@ jobs:
           set -euo pipefail
           exec docker run --rm --network host \
             -e PGPASSWORD \
+            -e PGPORT \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
             -w "$PWD" \
             postgres:16 psql "$@"
@@ -84,6 +89,7 @@ jobs:
           set -euo pipefail
           exec docker run --rm --network host \
             -e PGPASSWORD \
+            -e PGPORT \
             postgres:16 createdb "$@"
           SCRIPT
           chmod +x "$RUNNER_TEMP/postgres-client/psql" "$RUNNER_TEMP/postgres-client/createdb"
