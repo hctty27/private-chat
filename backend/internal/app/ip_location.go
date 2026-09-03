@@ -67,6 +67,7 @@ func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (str
 	query := endpoint.Query()
 	query.Set("key", r.apiKey)
 	query.Set("ip", ipv4.String())
+	query.Set("output", "json")
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
