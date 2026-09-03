@@ -238,7 +238,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import 'element-plus/theme-chalk/base.css'
 import 'element-plus/theme-chalk/el-icon.css'
@@ -271,9 +271,10 @@ import MessageReplyQuote from '../components/MessageReplyQuote.vue'
 import ReplyComposerBar from '../components/ReplyComposerBar.vue'
 import AvailabilityDialog from '../components/AvailabilityDialog.vue'
 import VoiceCallButton from '../components/VoiceCallButton.vue'
-import VoiceCallOverlay from '../components/VoiceCallOverlay.vue'
-import IncomingCallOverlay from '../components/IncomingCallOverlay.vue'
 import type { CallType, Message } from '../types'
+
+const IncomingCallOverlay = defineAsyncComponent(() => import('../components/IncomingCallOverlay.vue'))
+const VoiceCallOverlay = defineAsyncComponent(() => import('../components/VoiceCallOverlay.vue'))
 
 const chatStore = useChatStore()
 const callStore = useCallStore()
