@@ -136,6 +136,159 @@ describe('chat store conversation loading state', () => {
     expect(chatStore.messageLoadError).toBe('')
   })
 
+  it('restores a recent conversation immediately and refreshes it in the background', async () => {
+    const refresh = deferred<{ data: { code: number; data: { messages: Message[]; hasMore: boolean; nextCursor?: string } } }>()
+
+    vi.mocked(getMessages)
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            messages: [message(10, 1, 99, 'Alice cached')],
+            hasMore: false,
+            nextCursor: '',
+          },
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            messages: [message(20, 2, 99, 'Bob latest')],
+            hasMore: false,
+            nextCursor: '',
+          },
+        },
+      } as any)
+      .mockReturnValueOnce(refresh.promise as ReturnType<typeof getMessages>)
+
+    const chatStore = useChatStore()
+    chatStore.contacts = [contact(1, 'Alice'), contact(2, 'Bob')]
+
+    await chatStore.selectContact(1)
+    await chatStore.selectContact(2)
+    await chatStore.selectContact(1)
+
+    expect(chatStore.currentContact?.userId).toBe(1)
+    expect(chatStore.messages.map(item => item.id)).toEqual([10])
+    expect(chatStore.messageLoadState).toBe('loaded')
+    expect(getMessages).toHaveBeenCalledTimes(3)
+
+    refresh.resolve({
+      data: {
+        code: 200,
+        data: {
+          messages: [
+            message(10, 1, 99, 'Alice cached'),
+            { ...message(11, 1, 99, 'Alice refreshed'), createdAt: '2026-08-14T06:01:00Z' },
+          ],
+          hasMore: false,
+          nextCursor: '',
+        },
+      },
+    })
+    await refresh.promise
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(chatStore.messages.map(item => item.id)).toEqual([10, 11])
+  })
+
+  it('preserves loaded history and cursor when restoring a cached conversation', async () => {
+    vi.mocked(getMessages)
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            messages: [
+              { ...message(10, 1, 99, 'Alice 10'), createdAt: '2026-08-14T06:10:00Z' },
+              { ...message(11, 1, 99, 'Alice 11'), createdAt: '2026-08-14T06:11:00Z' },
+            ],
+            hasMore: true,
+            nextCursor: 'cursor-initial',
+          },
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            messages: [
+              { ...message(8, 1, 99, 'Alice 8'), createdAt: '2026-08-14T06:08:00Z' },
+              { ...message(9, 1, 99, 'Alice 9'), createdAt: '2026-08-14T06:09:00Z' },
+            ],
+            hasMore: true,
+            nextCursor: 'cursor-older',
+          },
+        },
+      } as any)
+      .mockResolvedValueOnce({
+        data: {
+          code: 200,
+          data: {
+            messages: [message(20, 2, 99, 'Bob')],
+            hasMore: false,
+            nextCursor: '',
+          },
+        },
+      } as any)
+      .mockImplementationOnce(() => new Promise(() => {}) as ReturnType<typeof getMessages>)
+
+    const chatStore = useChatStore()
+    chatStore.contacts = [contact(1, 'Alice'), contact(2, 'Bob')]
+
+    await chatStore.selectContact(1)
+    await chatStore.loadMessages('loadMore')
+    expect(chatStore.messages.map(item => item.id)).toEqual([8, 9, 10, 11])
+
+    await chatStore.selectContact(2)
+    await chatStore.selectContact(1)
+
+    expect(chatStore.messages.map(item => item.id)).toEqual([8, 9, 10, 11])
+    expect(chatStore.hasMore).toBe(true)
+
+    vi.mocked(getMessages).mockResolvedValueOnce({
+      data: {
+        code: 200,
+        data: {
+          messages: [{ ...message(7, 1, 99, 'Alice 7'), createdAt: '2026-08-14T06:07:00Z' }],
+          hasMore: false,
+          nextCursor: '',
+        },
+      },
+    } as any)
+
+    expect(await chatStore.loadMessages('loadMore')).toBe(true)
+    expect(getMessages).toHaveBeenLastCalledWith(1, 'cursor-older', 20, 'loadMore')
+    expect(chatStore.messages.map(item => item.id)).toEqual([7, 8, 9, 10, 11])
+  })
+
+  it('evicts the least recently used conversation after five cached entries', async () => {
+    vi.mocked(getMessages).mockImplementation(async (targetId: number) => ({
+      data: {
+        code: 200,
+        data: {
+          messages: [message(targetId * 10, targetId, 99, `contact-${targetId}`)],
+          hasMore: false,
+          nextCursor: '',
+        },
+      },
+    } as any))
+
+    const chatStore = useChatStore()
+    chatStore.contacts = Array.from({ length: 6 }, (_, index) => contact(index + 1, `Contact ${index + 1}`))
+
+    for (let targetId = 1; targetId <= 6; targetId += 1) {
+      await chatStore.selectContact(targetId)
+    }
+
+    const callsBeforeRevisit = vi.mocked(getMessages).mock.calls.length
+    await chatStore.selectContact(1)
+
+    expect(vi.mocked(getMessages).mock.calls.length).toBe(callsBeforeRevisit + 1)
+    expect(chatStore.messages.map(item => item.id)).toEqual([10])
+  })
+
   it('keeps a staged attachment bound to its original recipient after switching contacts', async () => {
     const alice = contact(1, 'Alice')
     const bob = contact(2, 'Bob')
