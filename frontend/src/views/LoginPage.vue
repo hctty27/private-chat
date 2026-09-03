@@ -55,7 +55,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElButton } from 'element-plus/es/components/button/index'
+import { ElForm } from 'element-plus/es/components/form/index'
+import { ElInput } from 'element-plus/es/components/input/index'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-form.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-icon.css'
+import 'element-plus/theme-chalk/el-message.css'
 import { login as loginApi } from '../api'
 import { useUserStore } from '../stores/user'
 

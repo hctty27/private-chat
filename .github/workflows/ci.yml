@@ -284,6 +284,7 @@ jobs:
             src/utils/uploadQueue.test.ts \
             src/stores/chat.test.ts \
             src/stores/chat.ws-observer.test.ts \
+            src/config/elementPlusImports.test.ts \
             src/components/MessageStatusIndicator.test.ts \
             src/utils/messageReply.test.ts \
             src/composables/useWebRtcCall.test.ts \

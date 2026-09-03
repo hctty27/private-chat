@@ -78,6 +78,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-icon.css'
+import 'element-plus/theme-chalk/el-message.css'
 import { clearAvailability, getAvailability, setAvailability } from '../api'
 import { formatPlannedOnline } from '../utils/availability'
 

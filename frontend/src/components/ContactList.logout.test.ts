@@ -6,7 +6,8 @@ const source = readFileSync(resolve(process.cwd(), 'src/components/ContactList.v
 
 describe('contact list logout confirmation', () => {
   it('uses the application message box instead of browser confirm', () => {
-    expect(source).toContain("import { ElMessageBox } from 'element-plus'")
+    expect(source).toContain("import { ElMessageBox } from 'element-plus/es/components/message-box/index'")
+    expect(source).not.toContain("from 'element-plus'")
     expect(source).toContain('ElMessageBox.confirm(')
     expect(source).toContain("confirmButtonText: '退出'")
     expect(source).toContain("cancelButtonText: '取消'")
