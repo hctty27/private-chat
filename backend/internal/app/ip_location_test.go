@@ -14,7 +14,7 @@ func TestJoinAdministrativeAreaDeduplicatesMunicipality(t *testing.T) {
 	}
 }
 
-func TestAmapIPLocationResolverReturnsDistrictLevelArea(t *testing.T) {
+func TestAmapIPLocationResolverReturnsCityLevelArea(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("key") != "test-key" {
 			t.Fatalf("unexpected key")
@@ -22,11 +22,8 @@ func TestAmapIPLocationResolverReturnsDistrictLevelArea(t *testing.T) {
 		if r.URL.Query().Get("ip") != "203.0.113.10" {
 			t.Fatalf("unexpected ip %q", r.URL.Query().Get("ip"))
 		}
-		if r.URL.Query().Get("type") != "4" {
-			t.Fatalf("unexpected type %q", r.URL.Query().Get("type"))
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"1","info":"OK","province":"浙江省","city":"杭州市","district":"余杭区"}`))
+		_, _ = w.Write([]byte(`{"status":"1","info":"OK","province":"浙江省","city":"杭州市","adcode":"330100"}`))
 	}))
 	defer server.Close()
 
@@ -40,8 +37,8 @@ func TestAmapIPLocationResolverReturnsDistrictLevelArea(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve location: %v", err)
 	}
-	if got != "浙江省杭州市余杭区" {
-		t.Fatalf("expected district-level area, got %q", got)
+	if got != "浙江省杭州市" {
+		t.Fatalf("expected city-level area, got %q", got)
 	}
 }
 
@@ -54,5 +51,17 @@ func TestAmapIPLocationResolverRejectsPrivateIP(t *testing.T) {
 
 	if _, err := resolver.Resolve(context.Background(), "172.16.0.10"); err == nil {
 		t.Fatal("expected private IP to be rejected")
+	}
+}
+
+func TestAmapIPLocationResolverRejectsIPv6(t *testing.T) {
+	resolver := &amapIPLocationResolver{
+		apiKey:   "test-key",
+		endpoint: "https://example.invalid",
+		client:   http.DefaultClient,
+	}
+
+	if _, err := resolver.Resolve(context.Background(), "2001:db8::1"); err == nil {
+		t.Fatal("expected IPv6 to be rejected")
 	}
 }
