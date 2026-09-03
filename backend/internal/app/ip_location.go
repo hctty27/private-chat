@@ -15,7 +15,7 @@ import (
 	"privatechat/internal/model"
 )
 
-const amapIPLocationEndpoint = "https://restapi.amap.com/v5/ip/location"
+const amapIPLocationEndpoint = "https://restapi.amap.com/v3/ip"
 
 type cityResolver interface {
 	Resolve(context.Context, string) (string, error)
@@ -32,7 +32,6 @@ type amapIPLocationResponse struct {
 	Info     string `json:"info"`
 	Province string `json:"province"`
 	City     string `json:"city"`
-	District string `json:"district"`
 }
 
 func newAmapIPLocationResolver(apiKey string) cityResolver {
@@ -56,9 +55,9 @@ func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (str
 		return "", fmt.Errorf("client ip is not publicly routable")
 	}
 
-	ipType := "6"
-	if ip.To4() != nil {
-		ipType = "4"
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return "", fmt.Errorf("Amap basic IP location only supports IPv4")
 	}
 
 	endpoint, err := url.Parse(r.endpoint)
@@ -67,8 +66,7 @@ func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (str
 	}
 	query := endpoint.Query()
 	query.Set("key", r.apiKey)
-	query.Set("ip", ip.String())
-	query.Set("type", ipType)
+	query.Set("ip", ipv4.String())
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -94,7 +92,7 @@ func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (str
 		return "", fmt.Errorf("Amap IP location failed: %s", strings.TrimSpace(payload.Info))
 	}
 
-	city := joinAdministrativeArea(payload.Province, payload.City, payload.District)
+	city := joinAdministrativeArea(payload.Province, payload.City)
 	if city == "" {
 		return "", fmt.Errorf("Amap IP location returned no administrative area")
 	}
