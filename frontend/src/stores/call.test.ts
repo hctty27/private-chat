@@ -266,6 +266,23 @@ describe('call store', () => {
     expect(call.phase).toBe('outgoing')
   })
 
+  it('does not start media preparation when cancelled during lazy runtime loading', async () => {
+    const chat = useChatStore()
+    const call = useCallStore()
+
+    const pending = call.startCall(contact())
+    expect(call.phase).toBe('preparing')
+
+    call.cancelCall()
+    await pending
+
+    expect(rtc.prepare).not.toHaveBeenCalled()
+    expect(chat.sendWsMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'call_invite' }),
+    )
+    expect(call.phase).toBe('ended')
+  })
+
   it('cancels preparation without sending any call signal', async () => {
     let resolvePrepare!: () => void
     rtc.prepare.mockImplementationOnce(() => new Promise<void>((resolve) => {
