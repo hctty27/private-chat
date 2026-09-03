@@ -246,6 +246,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-icon.css'
+import 'element-plus/theme-chalk/el-message.css'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '../stores/chat'
 import { useCallStore } from '../stores/call'
