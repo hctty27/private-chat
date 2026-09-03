@@ -70,7 +70,12 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-icon.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-message-box.css'
 import type { Contact } from '../types'
 import { formatTime as fmtTime } from '../utils/time'
 import { formatContactPresence, hasPlannedAvailability } from '../utils/availability'
