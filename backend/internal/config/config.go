@@ -27,6 +27,8 @@ type Config struct {
 	StorageSecretKey        string
 	StorageBucket           string
 	ObjectStoragePrefix     string
+	IP2RegionV4XDBPath      string
+	IP2RegionV6XDBPath      string
 	JWTSecret               string
 	JWTExpiration           time.Duration
 	JWTAbsoluteExpiration   time.Duration
@@ -63,6 +65,8 @@ func Load() Config {
 		StorageSecretKey:        envOrDefault("R2_SECRET_KEY", ""),
 		StorageBucket:           envOrDefault("R2_BUCKET", ""),
 		ObjectStoragePrefix:     envOrDefault("R2_OBJECT_PREFIX", ""),
+		IP2RegionV4XDBPath:      envOrDefault("IP2REGION_V4_XDB", "/app/data/ip2region_v4.xdb"),
+		IP2RegionV6XDBPath:      envOrDefault("IP2REGION_V6_XDB", "/app/data/ip2region_v6.xdb"),
 		JWTSecret:               envOrDefault("JWT_SECRET", ""),
 		JWTExpiration:           envDurationOrDefault("JWT_EXPIRATION", time.Hour),
 		JWTAbsoluteExpiration:   envDurationOrDefault("JWT_ABSOLUTE_EXPIRATION", 30*24*time.Hour),

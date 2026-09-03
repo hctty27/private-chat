@@ -25,6 +25,7 @@ type App struct {
 	jwt       *auth.JWTManager
 	hub       *Hub
 	relations relationAuthorizer
+	city      cityResolver
 	calls     *callManager
 	loc       *time.Location
 	router    *gin.Engine
@@ -88,6 +89,7 @@ func NewApp() (*App, error) {
 		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTAbsoluteExpiration),
 		hub:       NewHub(),
 		relations: newRelationAuthorizer(db),
+		city:      newIP2RegionCityResolver(cfg.IP2RegionV4XDBPath, cfg.IP2RegionV6XDBPath),
 		loc:       loc,
 	}
 	router, err := app.routes()

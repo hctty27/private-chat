@@ -17,6 +17,7 @@
 - **已读状态** - 消息已读/未读实时反馈
 - **表情支持** - 内置 Emoji 表情选择器
 - **单点登录** - 新设备登录自动踢掉旧连接
+- **登录城市记录** - 使用镜像内置 ip2region IPv4/IPv6 离线库异步更新用户省/市级位置，不依赖外部定位 API
 - **联系人授权** - 历史消息、发送消息和已读回执要求联系人关系
 - **移动适配** - 针对 iOS/移动端优化的固定布局
 
@@ -69,7 +70,7 @@ AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SECURE=false
 ```
 
-`TIME_ZONE` 控制 Go 应用和 PostgreSQL 连接使用的时区，`TZ` 控制容器系统时区；通常保持两者一致。
+`TIME_ZONE` 控制 Go 应用和 PostgreSQL 连接使用的时区，`TZ` 控制容器系统时区；通常保持两者一致。Docker 后端镜像还会内置固定版本的 ip2region IPv4/IPv6 XDB，登录成功后使用真实客户端 IP 在本地查询省/市并异步更新 `t_user.city`，不需要高德或其他定位 API Key。
 
 3. 如果目标 PostgreSQL 是**完全空的新数据库**，首次部署先执行一次基线初始化：
 
@@ -210,6 +211,8 @@ cd backend
 go mod download
 go run ./cmd/privatechat
 ```
+
+直接在宿主机运行时，如果 `/app/data/ip2region_v4.xdb` / `ip2region_v6.xdb` 不存在，城市定位会自动禁用且不影响登录；可通过 `IP2REGION_V4_XDB` / `IP2REGION_V6_XDB` 指向自行下载的 XDB。Docker 部署无需额外处理。
 
 单独应用本地数据库 migration：
 
@@ -356,7 +359,8 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `JWT_EXPIRATION` - 登录有效期
 - `AUTH_COOKIE_SECURE` - HTTPS 环境必须为 `true`
 - `WS_ALLOWED_ORIGINS` - 可选的跨域 WebSocket Origin 白名单
-- `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR
+- `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR；登录城市定位依赖它正确解析真实客户端 IP
+- `IP2REGION_V4_XDB` / `IP2REGION_V6_XDB` - ip2region IPv4/IPv6 XDB 路径；Docker 镜像默认内置 v3.17.0 数据到 `/app/data`，通常无需修改
 - `POSTGRES_*` - PostgreSQL 连接配置；`migrate` 和 backend 共用
 - `REDIS_*` - Redis 连接配置
 - `R2_*` - Cloudflare R2 文件存储配置

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS t_user (
     username     VARCHAR(50) NOT NULL UNIQUE,
     password     VARCHAR(128) NOT NULL,
     nickname              VARCHAR(50) NOT NULL,
+    city                  VARCHAR(100),
     last_seen_at          TIMESTAMPTZ,
     availability_start_at TIMESTAMPTZ,
     availability_end_at   TIMESTAMPTZ,
