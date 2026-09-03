@@ -70,25 +70,43 @@ jobs:
       - name: Resolve PostgreSQL service port
         run: |
           echo "POSTGRES_PORT=${{ job.services.postgres.ports['5432'] }}" >> "$GITHUB_ENV"
-          echo "POSTGRES_NETWORK=${{ job.services.postgres.network }}" >> "$GITHUB_ENV"
+          echo "POSTGRES_CONTAINER_ID=${{ job.services.postgres.id }}" >> "$GITHUB_ENV"
       - name: Configure PostgreSQL client wrappers
         run: |
           mkdir -p "$RUNNER_TEMP/postgres-client"
           cat > "$RUNNER_TEMP/postgres-client/psql" <<'SCRIPT'
           #!/usr/bin/env bash
           set -euo pipefail
-          exec docker run --rm --network "$POSTGRES_NETWORK" \
-            -e PGPASSWORD \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE:ro" \
-            -w "$PWD" \
-            postgres:16 psql "$@" -h postgres -p 5432
+
+          args=("$@")
+          input_file=""
+          for ((i = 0; i < ${#args[@]}; i++)); do
+            if [[ "${args[$i]}" == "-f" && $((i + 1)) -lt ${#args[@]} ]]; then
+              input_file="${args[$((i + 1))]}"
+              args[$((i + 1))]="-"
+              break
+            fi
+          done
+
+          if [[ -n "$input_file" ]]; then
+            exec docker exec -i \
+              -e PGPASSWORD="$PGPASSWORD" \
+              "$POSTGRES_CONTAINER_ID" \
+              psql "${args[@]}" < "$input_file"
+          fi
+
+          exec docker exec -i \
+            -e PGPASSWORD="$PGPASSWORD" \
+            "$POSTGRES_CONTAINER_ID" \
+            psql "${args[@]}"
           SCRIPT
           cat > "$RUNNER_TEMP/postgres-client/createdb" <<'SCRIPT'
           #!/usr/bin/env bash
           set -euo pipefail
-          exec docker run --rm --network "$POSTGRES_NETWORK" \
-            -e PGPASSWORD \
-            postgres:16 createdb "$@" -h postgres -p 5432
+          exec docker exec -i \
+            -e PGPASSWORD="$PGPASSWORD" \
+            "$POSTGRES_CONTAINER_ID" \
+            createdb "$@"
           SCRIPT
           chmod +x "$RUNNER_TEMP/postgres-client/psql" "$RUNNER_TEMP/postgres-client/createdb"
           echo "$RUNNER_TEMP/postgres-client" >> "$GITHUB_PATH"
