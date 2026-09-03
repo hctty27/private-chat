@@ -259,6 +259,7 @@ describe('call store', () => {
 
     expect(call.phase).toBe('preparing')
     expect(call.peerName).toBe('Alice')
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
 
     resolvePrepare()
     await pending
@@ -293,6 +294,7 @@ describe('call store', () => {
 
     const pending = call.startCall(contact())
     expect(call.phase).toBe('preparing')
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
 
     call.cancelCall()
     expect(call.phase).toBe('ended')
@@ -524,6 +526,7 @@ describe('call store', () => {
     const call = useCallStore()
 
     const pending = call.startCall(contact())
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
     chat.wsStatus = 'reconnecting'
     chat.wsConnected = false
     await nextTick()
@@ -551,6 +554,7 @@ describe('call store', () => {
     const call = useCallStore()
 
     const pending = call.startCall(contact())
+    await vi.waitFor(() => expect(rtc.prepare).toHaveBeenCalledTimes(1))
     call.dispose()
     resolvePrepare()
     await pending
