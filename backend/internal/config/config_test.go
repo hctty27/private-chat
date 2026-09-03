@@ -83,13 +83,31 @@ func TestLoadReadsR2StorageConfig(t *testing.T) {
 	}
 }
 
-func TestLoadReadsAmapWebServiceKey(t *testing.T) {
-	t.Setenv("AMAP_WEB_SERVICE_KEY", "server-only-amap-key")
+func TestLoadReadsIP2RegionPaths(t *testing.T) {
+	t.Setenv("IP2REGION_V4_XDB", "/data/custom-v4.xdb")
+	t.Setenv("IP2REGION_V6_XDB", "/data/custom-v6.xdb")
 
 	cfg := Load()
 
-	if cfg.AmapWebServiceKey != "server-only-amap-key" {
-		t.Fatalf("expected Amap web service key, got %q", cfg.AmapWebServiceKey)
+	if cfg.IP2RegionV4XDBPath != "/data/custom-v4.xdb" {
+		t.Fatalf("expected custom IPv4 XDB path, got %q", cfg.IP2RegionV4XDBPath)
+	}
+	if cfg.IP2RegionV6XDBPath != "/data/custom-v6.xdb" {
+		t.Fatalf("expected custom IPv6 XDB path, got %q", cfg.IP2RegionV6XDBPath)
+	}
+}
+
+func TestLoadUsesIP2RegionPathDefaults(t *testing.T) {
+	t.Setenv("IP2REGION_V4_XDB", "")
+	t.Setenv("IP2REGION_V6_XDB", "")
+
+	cfg := Load()
+
+	if cfg.IP2RegionV4XDBPath != "/app/data/ip2region_v4.xdb" {
+		t.Fatalf("unexpected default IPv4 XDB path %q", cfg.IP2RegionV4XDBPath)
+	}
+	if cfg.IP2RegionV6XDBPath != "/app/data/ip2region_v6.xdb" {
+		t.Fatalf("unexpected default IPv6 XDB path %q", cfg.IP2RegionV6XDBPath)
 	}
 }
 
