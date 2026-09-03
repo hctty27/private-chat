@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -8,31 +9,110 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	sessionSendBuffer = 256
+	sessionWriteWait  = 10 * time.Second
+)
+
+var (
+	errSessionClosed        = errors.New("connection closed")
+	errSessionSendQueueFull = errors.New("websocket send queue full")
+)
+
+type outboundFrame struct {
+	payload    []byte
+	closeAfter bool
+}
+
 type Session struct {
-	userID  int64
-	conn    *websocket.Conn
-	writeMu sync.Mutex
-	closed  sync.Once
-	app     *App
+	userID   int64
+	conn     *websocket.Conn
+	send     chan outboundFrame
+	done     chan struct{}
+	initOnce sync.Once
+	closed   sync.Once
+	app      *App
+}
+
+func (s *Session) ensureChannels() {
+	s.initOnce.Do(func() {
+		s.send = make(chan outboundFrame, sessionSendBuffer)
+		s.done = make(chan struct{})
+	})
+}
+
+func (s *Session) enqueueJSON(v any, closeAfter bool) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	s.ensureChannels()
+	frame := outboundFrame{payload: payload, closeAfter: closeAfter}
+	select {
+	case <-s.done:
+		return errSessionClosed
+	default:
+	}
+
+	select {
+	case s.send <- frame:
+		return nil
+	case <-s.done:
+		return errSessionClosed
+	default:
+		return errSessionSendQueueFull
+	}
 }
 
 func (s *Session) SendJSON(v any) error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
+	return s.enqueueJSON(v, false)
+}
+
+func (s *Session) SendJSONAndClose(v any) error {
+	return s.enqueueJSON(v, true)
+}
+
+func (s *Session) writePump(period time.Duration) {
+	s.ensureChannels()
 	if s.conn == nil {
-		return errors.New("connection closed")
+		s.Close()
+		return
 	}
-	s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return s.conn.WriteJSON(v)
+
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case frame := <-s.send:
+			_ = s.conn.SetWriteDeadline(time.Now().Add(sessionWriteWait))
+			if err := s.conn.WriteMessage(websocket.TextMessage, frame.payload); err != nil {
+				s.Close()
+				return
+			}
+			if frame.closeAfter {
+				s.Close()
+				return
+			}
+		case <-ticker.C:
+			_ = s.conn.SetWriteDeadline(time.Now().Add(sessionWriteWait))
+			if err := s.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				s.Close()
+				return
+			}
+		case <-s.done:
+			return
+		}
+	}
 }
 
 func (s *Session) Close() {
+	s.ensureChannels()
 	s.closed.Do(func() {
-		s.writeMu.Lock()
-		defer s.writeMu.Unlock()
+		close(s.done)
 		if s.conn != nil {
 			_ = s.conn.Close()
-			s.conn = nil
 		}
 	})
 }

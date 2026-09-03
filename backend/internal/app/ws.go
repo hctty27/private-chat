@@ -114,26 +114,9 @@ func (a *App) wsHandler(c *gin.Context) {
 		conn:   conn,
 		app:    a,
 	}
+	go session.writePump(pingPeriod)
 	a.registerSession(session)
-	go session.pingLoop(pingPeriod)
 	session.readLoop()
-}
-
-func (s *Session) pingLoop(period time.Duration) {
-	ticker := time.NewTicker(period)
-	defer ticker.Stop()
-	for range ticker.C {
-		s.writeMu.Lock()
-		if s.conn == nil {
-			s.writeMu.Unlock()
-			return
-		}
-		err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second))
-		s.writeMu.Unlock()
-		if err != nil {
-			return
-		}
-	}
 }
 
 func (s *Session) readLoop() {
@@ -208,9 +191,15 @@ func (a *App) unregisterSession(session *Session) {
 	session.Close()
 }
 
+func sendSessionJSON(session *Session, payload any) {
+	if err := session.SendJSON(payload); err != nil {
+		session.Close()
+	}
+}
+
 func (a *App) sendToUser(userID int64, payload any) {
 	for _, session := range a.hub.GetAll(userID) {
-		_ = session.SendJSON(payload)
+		sendSessionJSON(session, payload)
 	}
 }
 
@@ -220,8 +209,9 @@ func (a *App) kickUser(userID int64, message string) {
 		"data": gin.H{"message": message},
 	}
 	for _, session := range a.hub.GetAll(userID) {
-		_ = session.SendJSON(payload)
-		session.Close()
+		if err := session.SendJSONAndClose(payload); err != nil {
+			session.Close()
+		}
 	}
 }
 
@@ -386,7 +376,7 @@ func (a *App) handleHeartbeat(userID int64, session *Session) {
 			log.Printf("persist last seen heartbeat for user %d: %v", userID, err)
 		}
 	}
-	_ = session.SendJSON(gin.H{"type": "heartbeat_ack", "data": gin.H{}})
+	sendSessionJSON(session, gin.H{"type": "heartbeat_ack", "data": gin.H{}})
 }
 
 func (a *App) broadcastOnline(userID int64, online bool, lastSeenAt *time.Time) {
@@ -397,7 +387,7 @@ func (a *App) broadcastOnline(userID int64, online bool, lastSeenAt *time.Time) 
 		return
 	}
 	for _, session := range sessions {
-		_ = session.SendJSON(payload)
+		sendSessionJSON(session, payload)
 	}
 }
 

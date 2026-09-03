@@ -59,6 +59,14 @@ func readWebSocketJSON(t *testing.T, conn *websocket.Conn) map[string]any {
 	return payload
 }
 
+func newWritableTestSession(t *testing.T, userID int64, conn *websocket.Conn) *Session {
+	t.Helper()
+	session := &Session{userID: userID, conn: conn}
+	go session.writePump(time.Hour)
+	t.Cleanup(session.Close)
+	return session
+}
+
 func TestRegisterSessionAllowsAdditionalTab(t *testing.T) {
 	a := &App{hub: NewHub()}
 	first := &Session{userID: 7}
@@ -87,8 +95,8 @@ func TestSendToUserReachesEverySession(t *testing.T) {
 	secondServer, secondClient := newWebSocketPair(t)
 
 	a := &App{hub: NewHub()}
-	a.hub.Add(7, &Session{userID: 7, conn: firstServer})
-	a.hub.Add(7, &Session{userID: 7, conn: secondServer})
+	a.hub.Add(7, newWritableTestSession(t, 7, firstServer))
+	a.hub.Add(7, newWritableTestSession(t, 7, secondServer))
 
 	a.sendToUser(7, gin.H{"type": "test"})
 
@@ -105,8 +113,8 @@ func TestKickUserReachesEverySession(t *testing.T) {
 	secondServer, secondClient := newWebSocketPair(t)
 
 	a := &App{hub: NewHub()}
-	a.hub.Add(7, &Session{userID: 7, conn: firstServer})
-	a.hub.Add(7, &Session{userID: 7, conn: secondServer})
+	a.hub.Add(7, newWritableTestSession(t, 7, firstServer))
+	a.hub.Add(7, newWritableTestSession(t, 7, secondServer))
 
 	a.kickUser(7, "relogin")
 
@@ -119,5 +127,23 @@ func TestKickUserReachesEverySession(t *testing.T) {
 		if !ok || data["message"] != "relogin" {
 			t.Fatalf("session %d received unexpected data: %#v", index, payload["data"])
 		}
+	}
+}
+
+func TestSessionSendQueueRejectsSlowClientWithoutBlocking(t *testing.T) {
+	session := &Session{}
+	for i := 0; i < sessionSendBuffer; i++ {
+		if err := session.SendJSON(gin.H{"type": "queued", "index": i}); err != nil {
+			t.Fatalf("fill send queue at %d: %v", i, err)
+		}
+	}
+
+	started := time.Now()
+	err := session.SendJSON(gin.H{"type": "overflow"})
+	if err != errSessionSendQueueFull {
+		t.Fatalf("expected queue-full error, got %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("queue overflow blocked for %s", elapsed)
 	}
 }
