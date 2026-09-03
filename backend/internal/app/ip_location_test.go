@@ -8,8 +8,8 @@ import (
 )
 
 func TestJoinAdministrativeAreaDeduplicatesMunicipality(t *testing.T) {
-	got := joinAdministrativeArea("北京市", "北京市", "朝阳区")
-	if got != "北京市朝阳区" {
+	got := joinAdministrativeArea("北京市", "北京市")
+	if got != "北京市" {
 		t.Fatalf("expected municipality without duplicate city, got %q", got)
 	}
 }
@@ -21,6 +21,9 @@ func TestAmapIPLocationResolverReturnsCityLevelArea(t *testing.T) {
 		}
 		if r.URL.Query().Get("ip") != "203.0.113.10" {
 			t.Fatalf("unexpected ip %q", r.URL.Query().Get("ip"))
+		}
+		if r.URL.Query().Get("output") != "json" {
+			t.Fatalf("unexpected output %q", r.URL.Query().Get("output"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"1","info":"OK","province":"浙江省","city":"杭州市","adcode":"330100"}`))
