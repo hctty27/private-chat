@@ -9,6 +9,14 @@ import { getAttachmentRecipientId } from '../utils/attachmentRecipient'
 import { isDocumentVisible, shouldIncrementUnread } from '../utils/chatVisibility'
 import { chatUploadQueue } from '../utils/uploadQueue'
 
+const CONVERSATION_CACHE_LIMIT = 5
+
+type ConversationCacheEntry = {
+  messages: Message[]
+  hasMore: boolean
+  cursor: string
+}
+
 export const useChatStore = defineStore('chat', () => {
   const contacts = ref<Contact[]>([])
   const currentContact = ref<Contact | null>(null)
@@ -32,11 +40,13 @@ export const useChatStore = defineStore('chat', () => {
   const pendingLocalMessages = new Map<string, Message>()
   const sentClientMsgIds = new Set<string>()
   const sentClientMsgTimes = new Map<string, number>()
+  const conversationCache = new Map<number, ConversationCacheEntry>()
   const recoveredNotice = ref(false)
   let storeGeneration = 0
   let initLoadSeq = 0
   let loadMoreSeq = 0
   let recoverySeq = 0
+  let cacheRefreshSeq = 0
   let recoveringMessages = false
   let recoveredNoticeTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectCheckTimer: ReturnType<typeof setTimeout> | null = null
@@ -76,6 +86,93 @@ export const useChatStore = defineStore('chat', () => {
     ).length
   )
 
+  function setConversationCache(targetId: number, entry: ConversationCacheEntry) {
+    conversationCache.delete(targetId)
+    conversationCache.set(targetId, entry)
+
+    while (conversationCache.size > CONVERSATION_CACHE_LIMIT) {
+      const oldest = conversationCache.keys().next().value
+      if (oldest === undefined) break
+      conversationCache.delete(oldest)
+    }
+  }
+
+  function saveCurrentConversationToCache() {
+    const targetId = currentContact.value?.userId
+    if (!targetId) return
+    if (messageLoadState.value !== 'loaded' && messages.value.length === 0) return
+
+    setConversationCache(targetId, {
+      messages: messages.value,
+      hasMore: hasMore.value,
+      cursor: messageCursor.value,
+    })
+  }
+
+  function restoreConversationFromCache(targetId: number) {
+    const cached = conversationCache.get(targetId)
+    if (!cached) return false
+
+    setConversationCache(targetId, cached)
+    messages.value = cached.messages
+    hasMore.value = cached.hasMore
+    messageCursor.value = cached.cursor
+    messageLoadState.value = 'loaded'
+    messageLoadError.value = ''
+    restorePendingLocalMessagesForCurrentContact()
+    return true
+  }
+
+  function compareMessageOrder(a: Message, b: Message) {
+    const aTime = new Date(a.createdAt).getTime()
+    const bTime = new Date(b.createdAt).getTime()
+    if (aTime !== bTime) return aTime - bTime
+    return a.id - b.id
+  }
+
+  function mergeLatestMessages(existing: Message[], latest: Message[]) {
+    const merged = [...existing]
+    for (const message of latest) {
+      appendOrReplaceMessageInList(merged, message)
+    }
+    merged.sort(compareMessageOrder)
+    return merged
+  }
+
+  async function refreshCachedConversation(targetId: number, requestSeq: number) {
+    const generation = storeGeneration
+    try {
+      const res = await getMessages(targetId, undefined, 20, 'init')
+      if (
+        generation !== storeGeneration ||
+        requestSeq !== cacheRefreshSeq ||
+        currentContact.value?.userId !== targetId ||
+        res.data.code !== 200
+      ) {
+        return
+      }
+
+      const { messages: latest, hasMore: more, nextCursor } = res.data.data
+      const hadCachedMessages = messages.value.length > 0
+      confirmServerMessagesFromHistory(latest)
+      messages.value = mergeLatestMessages(messages.value, latest)
+      restorePendingLocalMessagesForCurrentContact()
+
+      if (!hadCachedMessages) {
+        hasMore.value = more
+        messageCursor.value = nextCursor || (
+          latest.length > 0 ? String(new Date(latest[0].createdAt).getTime()) : ''
+        )
+      }
+
+      messageLoadState.value = 'loaded'
+      messageLoadError.value = ''
+      saveCurrentConversationToCache()
+    } catch (error) {
+      console.debug('Failed to refresh cached conversation', error)
+    }
+  }
+
   async function loadContacts() {
     const generation = storeGeneration
     const userStore = useUserStore()
@@ -97,11 +194,26 @@ export const useChatStore = defineStore('chat', () => {
       recoveringMessages = false
       failSentPendingMessages('消息同步中断，请点击重试')
     }
+
+    saveCurrentConversationToCache()
+    initLoadSeq += 1
+    loadMoreSeq += 1
+    const refreshSeq = ++cacheRefreshSeq
+
     const c = contacts.value.find((c) => c.userId === targetId)
     if (c) {
       currentContact.value = c
       // 不在这里清 unreadCount，等消息被看到（IntersectionObserver）再清
     }
+
+    if (restoreConversationFromCache(targetId)) {
+      if (currentContact.value?.userId === targetId && isDocumentVisible()) {
+        sendWsMessage({ type: 'read', data: { targetId } })
+      }
+      void refreshCachedConversation(targetId, refreshSeq)
+      return
+    }
+
     messages.value = []
     hasMore.value = false
     messageCursor.value = ''
@@ -159,6 +271,7 @@ export const useChatStore = defineStore('chat', () => {
           messageLoadState.value = 'loaded'
           messageLoadError.value = ''
         }
+        saveCurrentConversationToCache()
         return true
       }
     } catch (e) {
@@ -326,25 +439,57 @@ export const useChatStore = defineStore('chat', () => {
     )
   }
 
+  function appendOrReplaceMessageInList(targetMessages: Message[], msg: Message) {
+    const serverMessage = {
+      ...msg,
+      localStatus: undefined,
+      localError: undefined,
+      uploadProgress: undefined,
+      localFile: undefined,
+    }
+
+    if (msg.clientMsgId) {
+      const localIndex = targetMessages.findIndex((m) => m.clientMsgId === msg.clientMsgId)
+      if (localIndex >= 0) {
+        targetMessages[localIndex] = serverMessage
+        return
+      }
+    }
+
+    const existingIndex = targetMessages.findIndex((m) => m.id === msg.id)
+    if (existingIndex >= 0) {
+      targetMessages[existingIndex] = serverMessage
+      return
+    }
+
+    targetMessages.push(serverMessage)
+  }
+
   function appendOrReplaceMessage(msg: Message) {
     if (msg.clientMsgId) {
       clearSendTimer(msg.clientMsgId)
       removePendingMessage(msg.clientMsgId)
       untrackLocalMessage(msg.clientMsgId)
-      const localIndex = messages.value.findIndex((m) => m.clientMsgId === msg.clientMsgId)
-      if (localIndex >= 0) {
-        messages.value[localIndex] = {
-          ...msg,
-          localStatus: undefined,
-          localError: undefined,
-          uploadProgress: undefined,
-          localFile: undefined,
-        }
-        return
-      }
     }
-    if (!messages.value.find((m) => m.id === msg.id)) {
-      messages.value.push(msg)
+    appendOrReplaceMessageInList(messages.value, msg)
+  }
+
+  function appendOrReplaceCachedMessage(targetId: number, msg: Message) {
+    const cached = conversationCache.get(targetId)
+    if (!cached) return
+    appendOrReplaceMessageInList(cached.messages, msg)
+    setConversationCache(targetId, cached)
+  }
+
+  function markCachedConversationRead(readerId: number, currentUserId: number) {
+    const cached = conversationCache.get(readerId)
+    if (!cached) return
+
+    for (let i = cached.messages.length - 1; i >= 0; i--) {
+      const message = cached.messages[i]
+      if (message.senderId !== currentUserId) continue
+      if (message.isRead === 1) break
+      message.isRead = 1
     }
   }
 
@@ -598,11 +743,14 @@ export const useChatStore = defineStore('chat', () => {
           sentClientMsgIds.delete(msg.clientMsgId)
           sentClientMsgTimes.delete(msg.clientMsgId)
         }
+        const contactId = msg.senderId === userStore.userId ? msg.receiverId : msg.senderId
         if (currentContact.value && belongsToConversation(msg, userStore.userId, currentContact.value.userId)) {
           appendOrReplaceMessage(msg)
+          saveCurrentConversationToCache()
           // 不在这里发 read，由可见消息检查负责
+        } else {
+          appendOrReplaceCachedMessage(contactId, msg)
         }
-        const contactId = msg.senderId === userStore.userId ? msg.receiverId : msg.senderId
         const contact = contacts.value.find((c) => c.userId === contactId)
         if (contact) {
           contact.lastMessage = msg.content || msg.fileName
@@ -633,6 +781,7 @@ export const useChatStore = defineStore('chat', () => {
           }
           currentContact.value.unreadCount = 0
         }
+        markCachedConversationRead(readerId, userStore.userId)
         const readerContact = contacts.value.find(c => c.userId === readerId)
         if (readerContact) readerContact.unreadCount = 0
         break
@@ -886,7 +1035,9 @@ export const useChatStore = defineStore('chat', () => {
     sentClientMsgIds.clear()
     sentClientMsgTimes.clear()
     recoverySeq += 1
+    cacheRefreshSeq += 1
     recoveringMessages = false
+    conversationCache.clear()
     clearRecoveredNoticeTimer()
     recoveredNotice.value = false
     contacts.value = []
