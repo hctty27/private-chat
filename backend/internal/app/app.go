@@ -89,7 +89,7 @@ func NewApp() (*App, error) {
 		jwt:       auth.NewJWTManager(cfg.JWTSecret, cfg.JWTAbsoluteExpiration),
 		hub:       NewHub(),
 		relations: newRelationAuthorizer(db),
-		city:      newAmapIPLocationResolver(cfg.AmapWebServiceKey),
+		city:      newIP2RegionCityResolver(cfg.IP2RegionV4XDBPath, cfg.IP2RegionV6XDBPath),
 		loc:       loc,
 	}
 	router, err := app.routes()
