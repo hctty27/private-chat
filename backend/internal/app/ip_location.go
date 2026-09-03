@@ -2,51 +2,68 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"privatechat/internal/model"
-)
 
-const amapIPLocationEndpoint = "https://restapi.amap.com/v3/ip"
+	"github.com/lionsoul2014/ip2region/binding/golang/service"
+)
 
 type cityResolver interface {
 	Resolve(context.Context, string) (string, error)
 }
 
-type amapIPLocationResolver struct {
-	apiKey   string
-	endpoint string
-	client   *http.Client
+type regionSearcher interface {
+	Search(any) (string, error)
 }
 
-type amapIPLocationResponse struct {
-	Status   string `json:"status"`
-	Info     string `json:"info"`
-	Province string `json:"province"`
-	City     string `json:"city"`
+type ip2RegionCityResolver struct {
+	searcher regionSearcher
 }
 
-func newAmapIPLocationResolver(apiKey string) cityResolver {
-	key := strings.TrimSpace(apiKey)
-	if key == "" {
+func newIP2RegionCityResolver(v4Path, v6Path string) cityResolver {
+	var v4Config, v6Config *service.Config
+
+	if path := strings.TrimSpace(v4Path); path != "" {
+		cfg, err := service.NewV4Config(service.VIndexCache, path, 8)
+		if err != nil {
+			log.Printf("ip2region IPv4 database disabled: %v", err)
+		} else {
+			v4Config = cfg
+		}
+	}
+
+	if path := strings.TrimSpace(v6Path); path != "" {
+		cfg, err := service.NewV6Config(service.VIndexCache, path, 8)
+		if err != nil {
+			log.Printf("ip2region IPv6 database disabled: %v", err)
+		} else {
+			v6Config = cfg
+		}
+	}
+
+	if v4Config == nil && v6Config == nil {
+		log.Printf("ip2region city resolver disabled: no usable XDB database")
 		return nil
 	}
-	return &amapIPLocationResolver{
-		apiKey:   key,
-		endpoint: amapIPLocationEndpoint,
-		client:   &http.Client{Timeout: 3 * time.Second},
+
+	searcher, err := service.NewIp2Region(v4Config, v6Config)
+	if err != nil {
+		log.Printf("ip2region city resolver disabled: %v", err)
+		return nil
 	}
+	return &ip2RegionCityResolver{searcher: searcher}
 }
 
-func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (string, error) {
+func (r *ip2RegionCityResolver) Resolve(ctx context.Context, rawIP string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	ip := net.ParseIP(strings.TrimSpace(rawIP))
 	if ip == nil {
 		return "", fmt.Errorf("invalid client ip")
@@ -55,66 +72,57 @@ func (r *amapIPLocationResolver) Resolve(ctx context.Context, rawIP string) (str
 		return "", fmt.Errorf("client ip is not publicly routable")
 	}
 
-	ipv4 := ip.To4()
-	if ipv4 == nil {
-		return "", fmt.Errorf("Amap basic IP location only supports IPv4")
-	}
-
-	endpoint, err := url.Parse(r.endpoint)
+	region, err := r.searcher.Search(ip.String())
 	if err != nil {
-		return "", fmt.Errorf("parse Amap endpoint: %w", err)
+		return "", fmt.Errorf("query ip2region: %w", err)
 	}
-	query := endpoint.Query()
-	query.Set("key", r.apiKey)
-	query.Set("ip", ipv4.String())
-	query.Set("output", "json")
-	endpoint.RawQuery = query.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return "", fmt.Errorf("build Amap IP location request: %w", err)
-	}
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("request Amap IP location: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Amap IP location returned HTTP %d", resp.StatusCode)
-	}
-
-	var payload amapIPLocationResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode Amap IP location response: %w", err)
-	}
-	if payload.Status != "1" {
-		return "", fmt.Errorf("Amap IP location failed: %s", strings.TrimSpace(payload.Info))
-	}
-
-	city := joinAdministrativeArea(payload.Province, payload.City)
-	if city == "" {
-		return "", fmt.Errorf("Amap IP location returned no administrative area")
-	}
-	return city, nil
+	return cityFromIP2Region(region)
 }
 
-func joinAdministrativeArea(parts ...string) string {
-	seen := make(map[string]struct{}, len(parts))
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		value := strings.TrimSpace(part)
-		if value == "" || value == "[]" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+func cityFromIP2Region(region string) (string, error) {
+	parts := strings.Split(region, "|")
+	if len(parts) < 3 {
+		return "", fmt.Errorf("invalid ip2region result")
 	}
-	return strings.Join(result, "")
+
+	country := cleanRegionPart(parts[0])
+	province := cleanRegionPart(parts[1])
+	city := cleanRegionPart(parts[2])
+	if country == "" || strings.EqualFold(country, "Reserved") {
+		return "", fmt.Errorf("ip2region returned no public region")
+	}
+	if province == "" && city == "" {
+		return "", fmt.Errorf("ip2region returned no city")
+	}
+	if province == "" {
+		return city, nil
+	}
+	if city == "" {
+		return province, nil
+	}
+	if administrativeBase(province) == administrativeBase(city) {
+		if len(city) >= len(province) {
+			return city, nil
+		}
+		return province, nil
+	}
+	return province + city, nil
+}
+
+func cleanRegionPart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "0" {
+		return ""
+	}
+	return value
+}
+
+func administrativeBase(value string) string {
+	value = strings.TrimSpace(value)
+	for _, suffix := range []string{"特别行政区", "壮族自治区", "回族自治区", "维吾尔自治区", "自治区", "省", "市"} {
+		value = strings.TrimSuffix(value, suffix)
+	}
+	return value
 }
 
 func (a *App) refreshUserCityOnLogin(userID int64, clientIP string) {
@@ -123,7 +131,7 @@ func (a *App) refreshUserCityOnLogin(userID int64, clientIP string) {
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 
 		city, err := a.city.Resolve(ctx, clientIP)
