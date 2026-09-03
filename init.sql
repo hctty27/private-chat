@@ -95,6 +95,10 @@ CREATE INDEX IF NOT EXISTS idx_message_conversation_cursor
 CREATE INDEX IF NOT EXISTS idx_message_receiver_unread
     ON t_message (receiver_id, is_read, created_at);
 
+CREATE INDEX IF NOT EXISTS idx_message_unread_receiver_conversation
+    ON t_message (receiver_id, conversation_id)
+    WHERE is_read = 0;
+
 CREATE INDEX IF NOT EXISTS idx_message_conv_sender_receiver_read
     ON t_message (conversation_id, sender_id, receiver_id, is_read);
 
