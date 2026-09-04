@@ -71,8 +71,9 @@ describe('chat interaction performance guards', () => {
     expect(chatPageSource).not.toContain('CHAT_SCROLL_MARGIN')
   })
 
-  it('skips offscreen rendering only on the desktop native message flow', () => {
-    expect(chatPageSource).toMatch(/\.message-item\s*\{[^}]*content-visibility:\s*auto[^}]*contain-intrinsic-block-size:\s*auto 72px/s)
+  it('keeps desktop message heights fully laid out for reliable bottom scrolling', () => {
+    expect(chatPageSource).not.toContain('content-visibility: auto')
+    expect(chatPageSource).not.toContain('contain-intrinsic-block-size')
     expect(mobileChatSource).not.toContain('content-visibility: auto')
     expect(mobileChatSource).not.toContain('contain-intrinsic-block-size')
   })

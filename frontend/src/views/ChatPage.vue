@@ -594,7 +594,6 @@ html, body, #app { margin: 0; padding: 0; width: 100%; height: 100%; overflow: h
 .ch-name { font-size: 15px; font-weight: 500; color: #111; }
 .ch-status { font-size: 12px; color: #999; }
 .msg-scroll { flex: 1; overflow-y: auto; padding: 12px; background: #ededed; }
-.message-item { content-visibility: auto; contain-intrinsic-block-size: auto 72px; }
 :deep(.new-message-button) { position: absolute; right: 24px; bottom: 74px; z-index: 5; }
 .load-more { text-align: center; height: 44px; padding: 0 8px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .load-text { font-size: 12px; color: #999; }
