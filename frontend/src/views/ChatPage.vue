@@ -100,7 +100,7 @@
                   <MediaMessageCard
                     v-else-if="isRichMediaMessage(message)"
                     :message="message"
-                    :lazy-image="true"
+                    :lazy-image="shouldLazyLoadImage(index)"
                     @open="openMediaFromBubble"
                     @retry="retryMessageByClientId(message.clientMsgId)"
                     @cancel="cancelUploadByClientId(message.clientMsgId)"
@@ -304,6 +304,7 @@ const actionMenuX = ref(0)
 const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
 const replyingTo = ref<Message | null>(null)
+const EAGER_IMAGE_TAIL_COUNT = 8
 let selectionSeq = 0
 let dragDepth = 0
 
@@ -360,6 +361,10 @@ watch(() => chatStore.currentContact?.userId, () => {
 watch(listEl, (el) => { scroll.onListReady(el) })
 watch(() => chatStore.messages.length, () => { scroll.onMessagesChange() })
 watch(() => chatStore.messages, closeMessageMenu)
+
+function shouldLazyLoadImage(index: number) {
+  return index < chatStore.messages.length - EAGER_IMAGE_TAIL_COUNT
+}
 
 async function pickContact(id: number) {
   const seq = ++selectionSeq
