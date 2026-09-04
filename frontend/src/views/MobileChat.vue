@@ -306,7 +306,7 @@ const actionMenuY = ref(0)
 const actionMessage = ref<Message | null>(null)
 const replyingTo = ref<Message | null>(null)
 
-const scroll = useChatScroll(listEl, uid, { virtualized: false })
+const scroll = useChatScroll(listEl, uid)
 const composer = useChatComposer({
   inputEl,
   emojiOpen,
