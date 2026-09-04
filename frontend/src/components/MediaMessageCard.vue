@@ -11,6 +11,7 @@
       <span class="image-shell">
         <img
           v-if="message.fileUrl && !imageFailed"
+          ref="imageEl"
           :src="imageSrc"
           :loading="lazyImage ? 'lazy' : undefined"
           decoding="async"
@@ -88,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AudioMessageCard from './AudioMessageCard.vue'
 import VideoMessageCard from './VideoMessageCard.vue'
 import type { Message } from '../types'
@@ -110,6 +111,7 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+const imageEl = ref<HTMLImageElement | null>(null)
 const imageLoaded = ref(false)
 const imageFailed = ref(false)
 const posterUrl = computed(() => (
@@ -175,13 +177,24 @@ function onImageError() {
   imageFailed.value = true
 }
 
-watch(
-  () => [props.message.fileId, props.message.fileUrl],
-  () => {
-    imageLoaded.value = false
-    imageFailed.value = false
+function syncImageState() {
+  const image = imageEl.value
+  if (!image || !imageSrc.value || !image.complete) return
+  if (image.naturalWidth > 0) {
+    onImageLoad()
+    return
   }
-)
+  onImageError()
+}
+
+onMounted(syncImageState)
+
+watch(imageSrc, async () => {
+  imageLoaded.value = false
+  imageFailed.value = false
+  await nextTick()
+  syncImageState()
+})
 </script>
 
 <style scoped>
