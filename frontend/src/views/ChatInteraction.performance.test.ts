@@ -62,7 +62,7 @@ describe('chat interaction performance guards', () => {
   })
 
   it('keeps the desktop conversation on the native DOM scroll path', () => {
-    expect(chatPageSource).toContain('useChatScroll(listEl, uid, { virtualized: false })')
+    expect(chatPageSource).toContain('useChatScroll(listEl, uid)')
     expect(chatPageSource).toContain('v-for="(message, index) in chatStore.messages"')
     expect(chatPageSource).toContain('class="message-item"')
     expect(chatPageSource).not.toContain('scroll.virtualizer')
