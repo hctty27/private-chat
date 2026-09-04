@@ -30,9 +30,6 @@ export default defineConfig({
           if (id.includes('/node_modules/axios/')) {
             return 'http-vendor'
           }
-          if (id.includes('/node_modules/@tanstack/')) {
-            return 'tanstack-vendor'
-          }
           return 'vendor'
         },
       },

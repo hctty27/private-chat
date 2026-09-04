@@ -5,31 +5,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '../stores/chat'
 import { useChatScroll } from './useChatScroll'
 
-const virtualizerMock = vi.hoisted(() => ({
-  options: null as unknown,
-  scrollToEnd: vi.fn(),
-  scrollToIndex: vi.fn(),
-  scrollToOffset: vi.fn(),
-  measure: vi.fn(),
-}))
-
-vi.mock('@tanstack/vue-virtual', async () => {
-  const { ref } = await import('vue')
-  return {
-    useVirtualizer: (options: unknown) => {
-      virtualizerMock.options = options
-      return ref({
-        getVirtualItems: () => [],
-        measureElement: vi.fn(),
-        scrollToEnd: virtualizerMock.scrollToEnd,
-        scrollToIndex: virtualizerMock.scrollToIndex,
-        scrollToOffset: virtualizerMock.scrollToOffset,
-        measure: virtualizerMock.measure,
-      })
-    },
-  }
-})
-
 function createMessage(id: number) {
   return {
     id,
@@ -46,13 +21,13 @@ function createMessage(id: number) {
   }
 }
 
-function mountScrollHarness(virtualized = true) {
+function mountScrollHarness() {
   let scroll!: ReturnType<typeof useChatScroll>
 
   const Harness = defineComponent({
     setup() {
       const listEl = ref<HTMLElement | null>(null)
-      scroll = useChatScroll(listEl, ref(99), { virtualized })
+      scroll = useChatScroll(listEl, ref(99))
       onMounted(() => scroll.onListReady(listEl.value))
       return { listEl }
     },
@@ -63,35 +38,26 @@ function mountScrollHarness(virtualized = true) {
   return { wrapper, getScroll: () => scroll }
 }
 
-describe('useChatScroll chat mode', () => {
+function rect(top: number, bottom: number) {
+  return {
+    top,
+    bottom,
+    left: 0,
+    right: 320,
+    width: 320,
+    height: bottom - top,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  }
+}
+
+describe('useChatScroll native chat mode', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    virtualizerMock.options = null
-    virtualizerMock.scrollToEnd.mockReset()
-    virtualizerMock.scrollToIndex.mockReset()
-    virtualizerMock.scrollToOffset.mockReset()
-    virtualizerMock.measure.mockReset()
   })
 
-  it('configures end anchoring and accounts for the history status row', async () => {
-    const chatStore = useChatStore()
-    chatStore.messages = [createMessage(1)]
-    const { wrapper } = mountScrollHarness()
-    await nextTick()
-
-    const optionsRef = virtualizerMock.options as { value: Record<string, unknown> }
-    expect(optionsRef.value).toMatchObject({
-      anchorTo: 'end',
-      followOnAppend: true,
-      scrollEndThreshold: 80,
-      overscan: 6,
-      scrollMargin: 44,
-    })
-
-    wrapper.unmount()
-  })
-
-  it('uses the virtualizer end command instead of writing the DOM scroll position', async () => {
+  it('scrolls to the native DOM end', async () => {
     const chatStore = useChatStore()
     chatStore.messages = [createMessage(1)]
     const { wrapper, getScroll } = mountScrollHarness()
@@ -100,98 +66,16 @@ describe('useChatScroll chat mode', () => {
     const container = wrapper.element as HTMLElement
     const scrollTo = vi.fn()
     Object.defineProperty(container, 'scrollTo', { configurable: true, value: scrollTo })
-
     Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1200 })
-    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
-    container.scrollTop = 0
 
     getScroll().scrollToBottom(false)
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
-    expect(virtualizerMock.scrollToEnd).toHaveBeenCalledTimes(1)
-    expect(virtualizerMock.scrollToEnd).toHaveBeenLastCalledWith({ behavior: 'auto' })
-
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
-    expect(container.scrollTop).toBe(800)
-    expect(scrollTo).not.toHaveBeenCalled()
-
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1200, behavior: 'auto' })
     wrapper.unmount()
   })
 
-  it('resets stale virtualizer state before opening another conversation', async () => {
-    const chatStore = useChatStore()
-    chatStore.messages = [createMessage(1), createMessage(2)]
-    const { wrapper, getScroll } = mountScrollHarness()
-    await nextTick()
-
-    const container = wrapper.element as HTMLElement
-    container.scrollTop = 640
-
-    getScroll().onContactChange({ scrollToBottom: false })
-
-    expect(virtualizerMock.scrollToOffset).toHaveBeenCalledWith(0, { behavior: 'auto' })
-    expect(virtualizerMock.measure).toHaveBeenCalledTimes(1)
-    expect(container.scrollTop).toBe(0)
-
-    wrapper.unmount()
-  })
-
-  it('does not manually change scrollTop when older messages are prepended', async () => {
-    const chatStore = useChatStore()
-    chatStore.hasMore = true
-    chatStore.messages = [createMessage(1), createMessage(2)]
-    vi.spyOn(chatStore, 'loadMessages').mockImplementation(async () => {
-      chatStore.messages = [createMessage(0), ...chatStore.messages]
-      return true
-    })
-
-    const { wrapper } = mountScrollHarness()
-    await nextTick()
-    await nextTick()
-
-    const container = wrapper.element as HTMLElement
-    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
-    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
-    container.scrollTop = 20
-    container.getBoundingClientRect = () => ({
-      top: 0,
-      bottom: 400,
-      left: 0,
-      right: 320,
-      width: 320,
-      height: 400,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    })
-
-    const item = document.createElement('div')
-    item.className = 'virtual-item'
-    item.dataset.msgId = '1'
-    item.getBoundingClientRect = () => ({
-      top: 10,
-      bottom: 82,
-      left: 0,
-      right: 320,
-      width: 320,
-      height: 72,
-      x: 0,
-      y: 10,
-      toJSON: () => ({}),
-    })
-    container.appendChild(item)
-
-    container.dispatchEvent(new Event('scroll'))
-    await vi.waitFor(() => expect(chatStore.loadMessages).toHaveBeenCalledWith('loadMore'))
-    await nextTick()
-
-    expect(container.scrollTop).toBe(20)
-
-    wrapper.unmount()
-  })
-
-  it('preserves the visible message when native mobile history is prepended', async () => {
+  it('preserves the visible message when older history is prepended', async () => {
     const chatStore = useChatStore()
     chatStore.hasMore = true
     chatStore.messages = [createMessage(1), createMessage(2)]
@@ -203,44 +87,21 @@ describe('useChatScroll chat mode', () => {
       return true
     })
 
-    const { wrapper } = mountScrollHarness(false)
+    const { wrapper } = mountScrollHarness()
     await nextTick()
     await nextTick()
-
-    const optionsRef = virtualizerMock.options as { value: Record<string, unknown> }
-    expect(optionsRef.value.enabled).toBe(false)
 
     const container = wrapper.element as HTMLElement
     Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
     container.scrollTop = 20
-    container.getBoundingClientRect = () => ({
-      top: 0,
-      bottom: 400,
-      left: 0,
-      right: 320,
-      width: 320,
-      height: 400,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    })
+    container.getBoundingClientRect = () => rect(0, 400) as DOMRect
 
     const item = document.createElement('div')
     item.className = 'message-item'
     item.dataset.index = '0'
     item.dataset.msgId = '1'
-    item.getBoundingClientRect = () => ({
-      top: prepended ? 82 : 10,
-      bottom: prepended ? 154 : 82,
-      left: 0,
-      right: 320,
-      width: 320,
-      height: 72,
-      x: 0,
-      y: prepended ? 82 : 10,
-      toJSON: () => ({}),
-    })
+    item.getBoundingClientRect = () => rect(prepended ? 82 : 10, prepended ? 154 : 82) as DOMRect
     container.appendChild(item)
 
     container.dispatchEvent(new Event('scroll'))
@@ -248,11 +109,10 @@ describe('useChatScroll chat mode', () => {
     await nextTick()
 
     expect(container.scrollTop).toBe(92)
-
     wrapper.unmount()
   })
 
-  it('loads history ahead of the top edge only once until the viewport leaves the top zone', async () => {
+  it('loads history only once until the viewport leaves the top trigger zone', async () => {
     vi.useFakeTimers()
     const chatStore = useChatStore()
     chatStore.hasMore = true
@@ -280,7 +140,6 @@ describe('useChatScroll chat mode', () => {
       expect(loadMessages).toHaveBeenCalledTimes(1)
       expect(getScroll().loading.value).toBe(true)
 
-      await vi.advanceTimersByTimeAsync(301)
       resolveLoad(true)
       await Promise.resolve()
       await nextTick()

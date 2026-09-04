@@ -307,7 +307,7 @@ const replyingTo = ref<Message | null>(null)
 let selectionSeq = 0
 let dragDepth = 0
 
-const scroll = useChatScroll(listEl, uid, { virtualized: false })
+const scroll = useChatScroll(listEl, uid)
 const composer = useChatComposer({
   inputEl,
   emojiOpen,

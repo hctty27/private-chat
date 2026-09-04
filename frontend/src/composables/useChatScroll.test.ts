@@ -5,26 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '../stores/chat'
 import { useChatScroll } from './useChatScroll'
 
-const virtualizerMock = vi.hoisted(() => ({
-  items: [] as Array<{ index: number }>,
-  scrollToIndex: vi.fn<(index: number, options?: { align?: string; behavior?: string }) => void>(),
-  onScrollToIndex: null as ((index: number) => void) | null,
-}))
-
-vi.mock('@tanstack/vue-virtual', async () => {
-  const { ref } = await import('vue')
-  return {
-    useVirtualizer: () => ref({
-      getVirtualItems: () => virtualizerMock.items,
-      measureElement: vi.fn(),
-      scrollToIndex: (index: number, options?: { align?: string; behavior?: string }) => {
-        virtualizerMock.scrollToIndex(index, options)
-        virtualizerMock.onScrollToIndex?.(index)
-      },
-    }),
-  }
-})
-
 function createMessage(id: number, overrides: Record<string, unknown> = {}) {
   return {
     id,
@@ -42,13 +22,13 @@ function createMessage(id: number, overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mountScrollHarness(virtualized = true) {
+function mountScrollHarness() {
   let scroll!: ReturnType<typeof useChatScroll>
 
   const Harness = defineComponent({
     setup() {
       const listEl = ref<HTMLElement | null>(null)
-      scroll = useChatScroll(listEl, ref(99), { virtualized })
+      scroll = useChatScroll(listEl, ref(99))
       onMounted(() => scroll.onListReady(listEl.value))
       return { listEl }
     },
@@ -71,12 +51,23 @@ function setVisibility(value: 'visible' | 'hidden') {
   })
 }
 
+function rect(top: number, bottom: number) {
+  return {
+    top,
+    bottom,
+    left: 0,
+    right: 300,
+    width: 300,
+    height: bottom - top,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  }
+}
+
 describe('useChatScroll load-more feedback', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    virtualizerMock.items = []
-    virtualizerMock.scrollToIndex.mockClear()
-    virtualizerMock.onScrollToIndex = null
   })
 
   it('exposes a load-more error without moving the current scroll position', async () => {
@@ -135,9 +126,6 @@ describe('useChatScroll load-more feedback', () => {
 describe('useChatScroll public anchor API', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    virtualizerMock.items = []
-    virtualizerMock.scrollToIndex.mockClear()
-    virtualizerMock.onScrollToIndex = null
   })
 
   it('captures the first visible message anchor', async () => {
@@ -147,32 +135,12 @@ describe('useChatScroll public anchor API', () => {
     const { wrapper, getScroll } = mountScrollHarness()
     await settleScrollBinding()
     const container = wrapper.element as HTMLElement
-    container.getBoundingClientRect = () => ({
-      top: 100,
-      bottom: 500,
-      left: 0,
-      right: 300,
-      width: 300,
-      height: 400,
-      x: 0,
-      y: 100,
-      toJSON: () => ({}),
-    })
+    container.getBoundingClientRect = () => rect(100, 500) as DOMRect
 
     const item = document.createElement('div')
-    item.className = 'virtual-item'
+    item.className = 'message-item'
     item.dataset.msgId = '10'
-    item.getBoundingClientRect = () => ({
-      top: 112,
-      bottom: 184,
-      left: 0,
-      right: 300,
-      width: 300,
-      height: 72,
-      x: 0,
-      y: 112,
-      toJSON: () => ({}),
-    })
+    item.getBoundingClientRect = () => rect(112, 184) as DOMRect
     container.appendChild(item)
 
     expect(getScroll().captureVisibleAnchor()).toEqual({ messageId: 10, offset: 12 })
@@ -191,49 +159,25 @@ describe('useChatScroll public anchor API', () => {
     wrapper.unmount()
   })
 
-  it('restores an anchor that is loaded but not initially rendered', async () => {
+  it('restores a loaded native message anchor', async () => {
     const chatStore = useChatStore()
     chatStore.messages = [createMessage(10), createMessage(20), createMessage(30)]
     const { wrapper, getScroll } = mountScrollHarness()
     await settleScrollBinding()
     const container = wrapper.element as HTMLElement
     container.scrollTop = 100
-    container.getBoundingClientRect = () => ({
-      top: 100,
-      bottom: 500,
-      left: 0,
-      right: 300,
-      width: 300,
-      height: 400,
-      x: 0,
-      y: 100,
-      toJSON: () => ({}),
-    })
+    container.getBoundingClientRect = () => rect(100, 500) as DOMRect
 
-    virtualizerMock.onScrollToIndex = (index) => {
-      expect(index).toBe(1)
-      const item = document.createElement('div')
-      item.className = 'virtual-item'
-      item.dataset.msgId = '20'
-      item.getBoundingClientRect = () => {
-        const top = 200 - container.scrollTop
-        return {
-          top,
-          bottom: top + 72,
-          left: 0,
-          right: 300,
-          width: 300,
-          height: 72,
-          x: 0,
-          y: top,
-          toJSON: () => ({}),
-        }
-      }
-      container.appendChild(item)
+    const item = document.createElement('div')
+    item.className = 'message-item'
+    item.dataset.msgId = '20'
+    item.getBoundingClientRect = () => {
+      const top = 200 - container.scrollTop
+      return rect(top, top + 72) as DOMRect
     }
+    container.appendChild(item)
 
     await expect(getScroll().restoreVisibleAnchor({ messageId: 20, offset: -12 })).resolves.toBe(true)
-    expect(virtualizerMock.scrollToIndex).toHaveBeenCalledWith(1, { align: 'start', behavior: 'auto' })
     expect(container.scrollTop).toBe(112)
 
     wrapper.unmount()
@@ -245,18 +189,16 @@ describe('useChatScroll visibility-aware read receipts', () => {
 
   beforeEach(() => {
     setActivePinia(createPinia())
-    virtualizerMock.items = [{ index: 0 }]
-    virtualizerMock.scrollToIndex.mockClear()
-    virtualizerMock.onScrollToIndex = null
     vi.useFakeTimers()
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
     if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility)
   })
 
-  it('tracks native mobile visibility without scanning every message row', async () => {
+  it('tracks native message visibility with IntersectionObserver', async () => {
     const chatStore = useChatStore()
     chatStore.currentContact = {
       userId: 2,
@@ -276,58 +218,43 @@ describe('useChatScroll visibility-aware read receipts', () => {
 
     let observerCallback: IntersectionObserverCallback | null = null
     const observe = vi.fn()
-    const unobserve = vi.fn()
     const disconnect = vi.fn()
     vi.stubGlobal('IntersectionObserver', class {
       constructor(callback: IntersectionObserverCallback) {
         observerCallback = callback
       }
       observe = observe
-      unobserve = unobserve
+      unobserve = vi.fn()
       disconnect = disconnect
     })
 
-    try {
-      setVisibility('visible')
-      const { wrapper, getScroll } = mountScrollHarness(false)
-      await settleScrollBinding()
+    setVisibility('visible')
+    const { wrapper, getScroll } = mountScrollHarness()
+    await settleScrollBinding()
 
-      const item = document.createElement('div')
-      item.className = 'message-item'
-      item.dataset.msgId = '1'
-      wrapper.element.appendChild(item)
+    const item = document.createElement('div')
+    item.className = 'message-item'
+    item.dataset.msgId = '1'
+    wrapper.element.appendChild(item)
 
-      getScroll().bindScrollListener()
-      await settleScrollBinding()
-      expect(observe).toHaveBeenCalledWith(item)
+    getScroll().bindScrollListener()
+    await settleScrollBinding()
+    expect(observe).toHaveBeenCalledWith(item)
 
-      observerCallback?.([
-        {
-          target: item,
-          isIntersecting: false,
-          intersectionRatio: 0,
-        } as IntersectionObserverEntry,
-      ], {} as IntersectionObserver)
-      await vi.advanceTimersByTimeAsync(350)
-      expect(send).not.toHaveBeenCalled()
+    observerCallback?.([
+      {
+        target: item,
+        isIntersecting: true,
+        intersectionRatio: 1,
+      } as IntersectionObserverEntry,
+    ], {} as IntersectionObserver)
+    await vi.advanceTimersByTimeAsync(350)
 
-      observerCallback?.([
-        {
-          target: item,
-          isIntersecting: true,
-          intersectionRatio: 1,
-        } as IntersectionObserverEntry,
-      ], {} as IntersectionObserver)
-      await vi.advanceTimersByTimeAsync(350)
+    expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
+    expect(chatStore.currentContact.unreadCount).toBe(0)
 
-      expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
-      expect(chatStore.currentContact.unreadCount).toBe(0)
-
-      wrapper.unmount()
-      expect(disconnect).toHaveBeenCalled()
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    wrapper.unmount()
+    expect(disconnect).toHaveBeenCalled()
   })
 
   it('does not send while hidden and retries when the document becomes visible', async () => {
@@ -347,10 +274,20 @@ describe('useChatScroll visibility-aware read receipts', () => {
       isRead: 0,
     })]
     const send = vi.spyOn(chatStore, 'sendWsMessage')
+    vi.stubGlobal('IntersectionObserver', undefined)
 
     setVisibility('hidden')
     const { wrapper } = mountScrollHarness()
     await settleScrollBinding()
+    const container = wrapper.element as HTMLElement
+    container.getBoundingClientRect = () => rect(0, 400) as DOMRect
+
+    const item = document.createElement('div')
+    item.className = 'message-item'
+    item.dataset.index = '0'
+    item.dataset.msgId = '1'
+    item.getBoundingClientRect = () => rect(20, 92) as DOMRect
+    container.appendChild(item)
 
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(350)

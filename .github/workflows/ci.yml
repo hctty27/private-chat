@@ -284,7 +284,10 @@ jobs:
             src/utils/uploadQueue.test.ts \
             src/stores/chat.test.ts \
             src/stores/chat.ws-observer.test.ts \
+            src/composables/useChatScroll.test.ts \
+            src/composables/useChatScroll.chat-mode.test.ts \
             src/config/elementPlusImports.test.ts \
+            src/config/dependencyHygiene.test.ts \
             src/components/MessageStatusIndicator.test.ts \
             src/utils/messageReply.test.ts \
             src/composables/useWebRtcCall.test.ts \
@@ -292,6 +295,7 @@ jobs:
             src/stores/call.test.ts \
             src/components/VoiceCallOverlay.test.ts \
             src/views/VoiceCallIntegration.test.ts \
+            src/views/ChatInteraction.performance.test.ts \
             src/views/MobileChat.ios.test.ts
       - name: Type-check and build
         run: npm run build

@@ -32,6 +32,10 @@ function assertBudget(asset, limit, label) {
 
 const js = findAsset('.js')
 const css = findAsset('.css')
+const assetNames = readdirSync(assetsDir)
+if (assetNames.some((name) => name.startsWith('tanstack-vendor-'))) {
+  throw new Error('Unused TanStack virtualizer chunk must not be emitted')
+}
 assertBudget(js, limits.js, 'JS')
 assertBudget(css, limits.css, 'CSS')
 
