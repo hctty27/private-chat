@@ -58,7 +58,7 @@ describe('MobileChat iOS viewport layout', () => {
   it('uses native DOM flow for mobile history instead of virtual item positioning', () => {
     expect(mobileChatSource).toContain('v-for="(message, index) in chatStore.messages"')
     expect(mobileChatSource).toContain('class="message-item"')
-    expect(mobileChatSource).toContain('useChatScroll(listEl, uid, { virtualized: false })')
+    expect(mobileChatSource).toContain('useChatScroll(listEl, uid)')
     expect(mobileChatSource).toContain('overflow-anchor: none')
     expect(mobileChatSource).not.toContain('scroll.virtualizer.value.getVirtualItems()')
     expect(mobileChatSource).not.toContain('CHAT_SCROLL_MARGIN')
@@ -72,7 +72,7 @@ describe('MobileChat voice call isolation', () => {
     expect(mobileChatSource).not.toContain("mobileHistory.pushOverlay(contactId, 'call')")
     expect(mobileChatSource).not.toContain("state.overlay === 'call'")
     expect(mobileChatSource).toContain('viewportTop.value = vv ? Math.max(0, vv.pageTop) : 0')
-    expect(mobileChatSource).toContain('useChatScroll(listEl, uid, { virtualized: false })')
+    expect(mobileChatSource).toContain('useChatScroll(listEl, uid)')
   })
 })
 
