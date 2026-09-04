@@ -28,10 +28,21 @@ describe('chat media loading', () => {
     expect(mediaMessageSource).toContain(':class="{ loaded: imageLoaded }"')
   })
 
-  it('keeps desktop image lazy loading while avoiding native lazy loading on mobile chat', () => {
-    expect(chatPageSource).toContain(':lazy-image="true"')
+  it('eager-loads the recent desktop image tail and keeps older history lazy', () => {
+    expect(chatPageSource).toContain(':lazy-image="shouldLazyLoadImage(index)"')
+    expect(chatPageSource).toContain('const EAGER_IMAGE_TAIL_COUNT = 8')
+    expect(chatPageSource).toContain('index < chatStore.messages.length - EAGER_IMAGE_TAIL_COUNT')
     expect(mobileChatSource).toContain(':lazy-image="false"')
     expect(mediaMessageSource).toContain(':loading="lazyImage ? \'lazy\' : undefined"')
+  })
+
+  it('restores already-complete cached images when a media card mounts again', () => {
+    expect(mediaMessageSource).toContain('ref="imageEl"')
+    expect(mediaMessageSource).toContain('image.complete')
+    expect(mediaMessageSource).toContain('image.naturalWidth > 0')
+    expect(mediaMessageSource).toContain('onMounted(syncImageState)')
+    expect(mediaMessageSource).toContain('watch(imageSrc, async () =>')
+    expect(mediaMessageSource).toContain('await nextTick()')
   })
 
   it('keeps video card height stable while posters load', () => {
