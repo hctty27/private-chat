@@ -1,9 +1,7 @@
-import { ref, computed, nextTick, onUnmounted, watch, type ComponentPublicInstance, type Ref } from 'vue'
-import { useVirtualizer } from '@tanstack/vue-virtual'
+import { ref, nextTick, onUnmounted, type Ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { isDocumentVisible } from '../utils/chatVisibility'
 
-export const CHAT_SCROLL_MARGIN = 44
 const LOAD_MORE_TRIGGER_PX = 120
 const LOAD_MORE_REARM_PX = 120
 
@@ -12,35 +10,15 @@ export interface ConversationScrollAnchor {
   offset: number
 }
 
-export interface ChatScrollOptions {
-  virtualized?: boolean
-}
-
 export function useChatScroll(
   listEl: Ref<HTMLElement | null>,
   uid: Ref<number>,
-  options: ChatScrollOptions = {}
 ) {
   const chatStore = useChatStore()
-  const virtualized = options.virtualized !== false
   const loading = ref(false)
   const loadMoreError = ref('')
   const newMessageCount = ref(0)
   const showBottomButton = ref(false)
-  const estimatedMessageHeight = 72
-
-  const virtualizer = useVirtualizer(computed(() => ({
-    count: chatStore.messages.length,
-    getScrollElement: () => listEl.value,
-    enabled: virtualized,
-    estimateSize: () => estimatedMessageHeight,
-    getItemKey: (index: number) => chatStore.messages[index]?.id ?? index,
-    anchorTo: 'end' as const,
-    followOnAppend: true,
-    scrollEndThreshold: 80,
-    scrollMargin: CHAT_SCROLL_MARGIN,
-    overscan: 6,
-  })))
 
   let isLoadingMore = false
   let prevMsgCount = 0
@@ -60,7 +38,7 @@ export function useChatScroll(
   }
 
   function syncMessageObserver() {
-    if (virtualized || !listEl.value || typeof IntersectionObserver === 'undefined') return
+    if (!listEl.value || typeof IntersectionObserver === 'undefined') return
 
     if (!messageObserver) {
       messageObserver = new IntersectionObserver((entries) => {
@@ -109,12 +87,11 @@ export function useChatScroll(
     removeScrollListener()
     loadMoreArmed = true
     nextTick(() => {
-      if (listEl.value) {
-        scrollHandler = onScroll
-        listEl.value.addEventListener('scroll', scrollHandler, { passive: true })
-        wasNearBottom = isNearBottom(80)
-        syncMessageObserver()
-      }
+      if (!listEl.value) return
+      scrollHandler = onScroll
+      listEl.value.addEventListener('scroll', scrollHandler, { passive: true })
+      wasNearBottom = isNearBottom(80)
+      syncMessageObserver()
     })
   }
 
@@ -142,19 +119,6 @@ export function useChatScroll(
     }
 
     requestAnimationFrame(() => {
-      if (virtualized) {
-        virtualizer.value.scrollToEnd({ behavior: smooth ? 'smooth' : 'auto' })
-        if (!smooth) {
-          bottomSettleFrame = requestAnimationFrame(() => {
-            bottomSettleFrame = null
-            const el = listEl.value
-            if (!el) return
-            el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight)
-          })
-        }
-        return
-      }
-
       const el = listEl.value
       if (!el) return
       el.scrollTo({
@@ -164,15 +128,11 @@ export function useChatScroll(
     })
   }
 
-  function nextFrame() {
-    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  }
-
   function captureVisibleAnchor(): ConversationScrollAnchor | null {
     if (!listEl.value) return null
     const containerTop = listEl.value.getBoundingClientRect().top
 
-    if (!virtualized && messageObserver && visibleMessageIds.size > 0) {
+    if (messageObserver && visibleMessageIds.size > 0) {
       const message = chatStore.messages.find((item) => visibleMessageIds.has(item.id))
       if (message) {
         const observedItem = listEl.value.querySelector<HTMLElement>(
@@ -187,7 +147,7 @@ export function useChatScroll(
       }
     }
 
-    const items = listEl.value.querySelectorAll<HTMLElement>('.virtual-item[data-msg-id], .message-item[data-msg-id]')
+    const items = listEl.value.querySelectorAll<HTMLElement>('.message-item[data-msg-id]')
     for (const item of items) {
       const messageId = Number(item.dataset.msgId)
       if (!Number.isFinite(messageId)) continue
@@ -203,7 +163,7 @@ export function useChatScroll(
   function restoreAnchorPosition(anchor: ConversationScrollAnchor) {
     if (!listEl.value) return false
     const item = listEl.value.querySelector<HTMLElement>(
-      `.virtual-item[data-msg-id="${anchor.messageId}"], .message-item[data-msg-id="${anchor.messageId}"]`
+      `.message-item[data-msg-id="${anchor.messageId}"]`
     )
     if (!item) return false
 
@@ -213,22 +173,10 @@ export function useChatScroll(
   }
 
   async function restoreVisibleAnchor(anchor: ConversationScrollAnchor) {
-    const index = chatStore.messages.findIndex((m) => m.id === anchor.messageId)
-    if (index < 0) return false
+    if (!chatStore.messages.some((message) => message.id === anchor.messageId)) return false
 
-    if (!virtualized) {
-      await nextTick()
-      const restored = restoreAnchorPosition(anchor)
-      wasNearBottom = isNearBottom(80)
-      return restored
-    }
-
-    virtualizer.value.scrollToIndex(index, { align: 'start', behavior: 'auto' })
-    await nextFrame()
     await nextTick()
     const restored = restoreAnchorPosition(anchor)
-    await nextFrame()
-    restoreAnchorPosition(anchor)
     wasNearBottom = isNearBottom(80)
     return restored
   }
@@ -237,16 +185,9 @@ export function useChatScroll(
     const index = chatStore.messages.findIndex((message) => message.id === messageId)
     if (index < 0 || !listEl.value) return false
 
-    if (virtualized) {
-      virtualizer.value.scrollToIndex(index, { align: 'center', behavior: 'auto' })
-      await nextFrame()
-      await nextTick()
-    } else {
-      await nextTick()
-    }
-
+    await nextTick()
     const item = listEl.value.querySelector<HTMLElement>(
-      `.virtual-item[data-msg-id="${messageId}"], .message-item[data-msg-id="${messageId}"]`
+      `.message-item[data-msg-id="${messageId}"]`
     )
     if (!item) return false
 
@@ -278,10 +219,6 @@ export function useChatScroll(
     }
   }
 
-  function measureItem(el: Element | ComponentPublicInstance | null) {
-    if (el instanceof Element) virtualizer.value.measureElement(el)
-  }
-
   function onScroll() {
     if (!listEl.value) return
 
@@ -291,7 +228,7 @@ export function useChatScroll(
     wasNearBottom = isNearBottom(80)
     if (isNearBottom(160)) newMessageCount.value = 0
     updateBottomButton()
-    if (!virtualized && !messageObserver) scheduleReadCheck()
+    if (!messageObserver) scheduleReadCheck()
 
     if (loading.value || !chatStore.hasMore || !loadMoreArmed) return
     if (scrollTop <= LOAD_MORE_TRIGGER_PX) {
@@ -305,7 +242,7 @@ export function useChatScroll(
     loading.value = true
     loadMoreError.value = ''
     isLoadingMore = true
-    const anchor = virtualized ? null : captureVisibleAnchor()
+    const anchor = captureVisibleAnchor()
 
     try {
       const loaded = await chatStore.loadMessages('loadMore')
@@ -316,7 +253,7 @@ export function useChatScroll(
 
       await nextTick()
       if (anchor) restoreAnchorPosition(anchor)
-      if (!virtualized) syncMessageObserver()
+      syncMessageObserver()
     } finally {
       isLoadingMore = false
       loading.value = false
@@ -333,37 +270,14 @@ export function useChatScroll(
   function checkVisibleUnread() {
     if (!isDocumentVisible() || !chatStore.currentContact || !listEl.value) return
 
-    if (!virtualized) {
-      if (messageObserver) {
-        for (let i = chatStore.messages.length - 1; i >= 0; i--) {
-          const msg = chatStore.messages[i]
-          if (
-            visibleMessageIds.has(msg.id) &&
-            msg.senderId !== uid.value &&
-            msg.isRead !== 1
-          ) {
-            sendReadReceipt()
-            return
-          }
-        }
-        return
-      }
-
-      const containerRect = listEl.value.getBoundingClientRect()
-      const items = Array.from(
-        listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
-      )
-
-      for (let i = items.length - 1; i >= 0; i--) {
-        const item = items[i]
-        const index = Number(item.dataset.index)
-        if (!Number.isInteger(index)) continue
-
-        const rect = item.getBoundingClientRect()
-        if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) continue
-
-        const msg = chatStore.messages[index]
-        if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
+    if (messageObserver) {
+      for (let i = chatStore.messages.length - 1; i >= 0; i--) {
+        const msg = chatStore.messages[i]
+        if (
+          visibleMessageIds.has(msg.id) &&
+          msg.senderId !== uid.value &&
+          msg.isRead !== 1
+        ) {
           sendReadReceipt()
           return
         }
@@ -371,12 +285,20 @@ export function useChatScroll(
       return
     }
 
-    const items = virtualizer.value.getVirtualItems()
-    if (!items.length) return
+    const containerRect = listEl.value.getBoundingClientRect()
+    const items = Array.from(
+      listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
+    )
 
     for (let i = items.length - 1; i >= 0; i--) {
       const item = items[i]
-      const msg = chatStore.messages[item.index]
+      const index = Number(item.dataset.index)
+      if (!Number.isInteger(index)) continue
+
+      const rect = item.getBoundingClientRect()
+      if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) continue
+
+      const msg = chatStore.messages[index]
       if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
         sendReadReceipt()
         return
@@ -403,22 +325,10 @@ export function useChatScroll(
     document.addEventListener('visibilitychange', onVisibilityChange)
   }
 
-  watch(
-    () => virtualizer.value.getVirtualItems(),
-    () => { scheduleReadCheck() },
-    { flush: 'post' }
-  )
-
   function onContactChange(options: { scrollToBottom?: boolean } = {}) {
     prevMsgCount = chatStore.messages.length
     newMessageCount.value = 0
     showBottomButton.value = false
-
-    if (virtualized) {
-      virtualizer.value.scrollToOffset(0, { behavior: 'auto' })
-      virtualizer.value.measure()
-      if (listEl.value) listEl.value.scrollTop = 0
-    }
 
     bindScrollListener()
     if (options.scrollToBottom !== false) scrollToBottom(false)
@@ -431,11 +341,9 @@ export function useChatScroll(
     if (!isLoadingMore && addedCount > 0) {
       if (wasNearBottom) {
         newMessageCount.value = 0
-        if (!virtualized) {
-          const appended = chatStore.messages.slice(-addedCount)
-          if (appended.some((message) => message.senderId !== uid.value)) {
-            scrollToBottom(false)
-          }
+        const appended = chatStore.messages.slice(-addedCount)
+        if (appended.some((message) => message.senderId !== uid.value)) {
+          scrollToBottom(false)
         }
       } else {
         newMessageCount.value += addedCount
@@ -444,10 +352,8 @@ export function useChatScroll(
 
     prevMsgCount = currentMsgCount
     updateBottomButton()
-    if (!virtualized) {
-      nextTick(syncMessageObserver)
-      if (!messageObserver) scheduleReadCheck()
-    }
+    nextTick(syncMessageObserver)
+    if (!messageObserver) scheduleReadCheck()
   }
 
   function onListReady(el: HTMLElement | null) {
@@ -475,11 +381,9 @@ export function useChatScroll(
     loadMoreError,
     newMessageCount,
     showBottomButton,
-    virtualizer,
     isNearBottom,
     scrollToBottom,
     scrollToBottomAndClear,
-    measureItem,
     bindScrollListener,
     retryLoadMore,
     captureVisibleAnchor,
