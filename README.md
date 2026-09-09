@@ -18,6 +18,7 @@
 - **表情支持** - 内置 Emoji 表情选择器
 - **单点登录** - 新设备登录自动踢掉旧连接
 - **登录城市记录** - 使用镜像内置 ip2region IPv4/IPv6 离线库异步更新用户省/市级位置，不依赖外部定位 API
+- **登录邮件提醒** - 可按用户 ID 通过 Resend 异步发送登录 IP、地区和设备信息，失败不影响登录
 - **联系人授权** - 历史消息、发送消息和已读回执要求联系人关系
 - **移动适配** - 针对 iOS/移动端优化的固定布局
 
@@ -361,6 +362,8 @@ WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORI
 - `WS_ALLOWED_ORIGINS` - 可选的跨域 WebSocket Origin 白名单
 - `TRUSTED_PROXIES` - Gin 可信代理 IP/CIDR；登录城市定位依赖它正确解析真实客户端 IP
 - `IP2REGION_V4_XDB` / `IP2REGION_V6_XDB` - ip2region IPv4/IPv6 XDB 路径；Docker 镜像默认内置 v3.17.0 数据到 `/app/data`，通常无需修改
+- `LOGIN_ALERT_USER_IDS` - 需要发送登录提醒的用户 ID，多个使用逗号分隔；留空关闭功能
+- `RESEND_API_KEY` / `RESEND_FROM` / `LOGIN_ALERT_EMAIL` - Resend API Key、已验证发件地址和提醒收件地址；仅在启用登录提醒时必填
 - `POSTGRES_*` - PostgreSQL 连接配置；`migrate` 和 backend 共用
 - `REDIS_*` - Redis 连接配置
 - `R2_*` - Cloudflare R2 文件存储配置

@@ -34,6 +34,10 @@ type Config struct {
 	JWTAbsoluteExpiration   time.Duration
 	MessagePageSize         int
 	TimeZone                string
+	ResendAPIKey            string
+	ResendFrom              string
+	LoginAlertUserIDs       []string
+	LoginAlertEmail         string
 	WebRTCEnabled           bool
 	WebRTCICEPolicy         string
 	WebRTCTurnProvider      string
@@ -72,6 +76,10 @@ func Load() Config {
 		JWTAbsoluteExpiration:   envDurationOrDefault("JWT_ABSOLUTE_EXPIRATION", 30*24*time.Hour),
 		MessagePageSize:         envIntOrDefault("MESSAGE_PAGE_SIZE", 20),
 		TimeZone:                envOrDefault("TIME_ZONE", "Asia/Shanghai"),
+		ResendAPIKey:            envOrDefault("RESEND_API_KEY", ""),
+		ResendFrom:              envOrDefault("RESEND_FROM", ""),
+		LoginAlertUserIDs:       envList("LOGIN_ALERT_USER_IDS"),
+		LoginAlertEmail:         envOrDefault("LOGIN_ALERT_EMAIL", ""),
 		WebRTCEnabled:           envBoolOrDefault("WEBRTC_ENABLED", false),
 		WebRTCICEPolicy:         envOrDefault("WEBRTC_ICE_POLICY", "all"),
 		WebRTCTurnProvider:      envOrDefault("WEBRTC_TURN_PROVIDER", "cloudflare"),
@@ -91,6 +99,9 @@ func (c Config) Validate() error {
 	}
 	if len(secret) < 32 {
 		return fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	}
+	if err := c.validateLoginAlert(); err != nil {
+		return err
 	}
 	if !c.WebRTCEnabled {
 		return nil
@@ -129,6 +140,28 @@ func (c Config) Validate() error {
 		return fmt.Errorf("WEBRTC_TURN_PROVIDER must be cloudflare or coturn")
 	}
 
+	return nil
+}
+
+func (c Config) validateLoginAlert() error {
+	if len(c.LoginAlertUserIDs) == 0 {
+		return nil
+	}
+	for _, rawID := range c.LoginAlertUserIDs {
+		id, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+		if err != nil || id <= 0 {
+			return fmt.Errorf("LOGIN_ALERT_USER_IDS must contain positive integer user IDs")
+		}
+	}
+	if strings.TrimSpace(c.ResendAPIKey) == "" {
+		return fmt.Errorf("RESEND_API_KEY is required when LOGIN_ALERT_USER_IDS is configured")
+	}
+	if strings.TrimSpace(c.ResendFrom) == "" {
+		return fmt.Errorf("RESEND_FROM is required when LOGIN_ALERT_USER_IDS is configured")
+	}
+	if strings.TrimSpace(c.LoginAlertEmail) == "" {
+		return fmt.Errorf("LOGIN_ALERT_EMAIL is required when LOGIN_ALERT_USER_IDS is configured")
+	}
 	return nil
 }
 
