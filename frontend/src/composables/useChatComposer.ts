@@ -47,6 +47,17 @@ export function useChatComposer(options: {
     nextTick(grow)
   }
 
+  function appendSpeech(transcript: string, contactId: number) {
+    if (chatStore.currentContact?.userId !== contactId) return
+    const value = transcript.trim()
+    if (!value) return
+
+    const previous = text.value
+    const separator = /[a-zA-Z0-9]$/.test(previous) && /^[a-zA-Z0-9]/.test(value) ? ' ' : ''
+    text.value = previous + separator + value
+    nextTick(grow)
+  }
+
   async function send() {
     const contactId = chatStore.currentContact?.userId
     const value = text.value.trim()
@@ -71,6 +82,7 @@ export function useChatComposer(options: {
     text,
     grow,
     addEmoji,
+    appendSpeech,
     send,
   }
 }
