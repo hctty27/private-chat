@@ -165,6 +165,13 @@
               @recorded="onVoiceRecorded"
               @warning="ElMessage.warning($event)"
             />
+            <SpeechToTextButton
+              compact
+              :contact-id="chatStore.currentContact?.userId ?? null"
+              @listening-start="emojiOpen = false"
+              @transcript="appendSpeech"
+              @warning="ElMessage.warning($event)"
+            />
             <button class="ibtn tap-target" type="button" @click="fileEl?.click()">＋</button>
             <input ref="fileEl" type="file" multiple hidden @change="onFile" />
             <textarea
@@ -267,6 +274,7 @@ import ConversationMessageState from '../components/ConversationMessageState.vue
 import MediaPreview from '../components/MediaPreview.vue'
 import MediaMessageCard from '../components/MediaMessageCard.vue'
 import VoiceRecorderButton from '../components/VoiceRecorderButton.vue'
+import SpeechToTextButton from '../components/SpeechToTextButton.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
 import NewMessageButton from '../components/NewMessageButton.vue'
 import AttachmentSendDialog from '../components/AttachmentSendDialog.vue'
@@ -317,7 +325,7 @@ const composer = useChatComposer({
   getReplyTo: () => replyingTo.value,
   onReplySent: clearReply,
 })
-const { drafts, text, grow, addEmoji, send } = composer
+const { drafts, text, grow, addEmoji, appendSpeech, send } = composer
 const attachments = useChatAttachments({
   emojiOpen,
   scroll,
