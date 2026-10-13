@@ -60,6 +60,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   transcript: [value: string, contactId: number]
   warning: [message: string]
+  'listening-start': []
 }>()
 
 const supported = ref(false)
@@ -173,6 +174,7 @@ function toggle() {
 
   try {
     instance.start()
+    emit('listening-start')
   } catch {
     cancel()
     emit('warning', '无法开始语音识别，请检查浏览器权限')
