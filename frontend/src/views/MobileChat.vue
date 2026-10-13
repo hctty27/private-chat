@@ -933,6 +933,11 @@ body.mobile-chat-viewport { position: fixed; inset: 0; }
 .prog { padding: 0 16px; height: 3px; }
 .prog-fill { height: 100%; background: #07c160; transition: width 0.2s; }
 .input-row { display: flex; align-items: flex-end; gap: 6px; padding: 7px 10px; }
+@media (max-width: 390px) {
+  .input-row { flex-wrap: wrap; }
+  .input-row > .txt { order: 1; flex: 1 1 calc(100% - 70px); min-width: 0; }
+  .input-row > .sbtn { order: 2; }
+}
 .ibtn { width: 44px; height: 44px; flex-shrink: 0; background: transparent; border: none; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; border-radius: 22px; touch-action: manipulation; color: #1c1c1e; }
 .ibtn:active, .ibtn.on { background: #e9e9ee; }
 .ibtn:disabled { cursor: not-allowed; opacity: 0.45; }
