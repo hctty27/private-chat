@@ -157,6 +157,7 @@ function toggle() {
   instance.onerror = (event) => {
     if (recognition !== instance) return
     handleError(event.error)
+    cancel()
   }
 
   instance.onend = () => {
