@@ -175,6 +175,12 @@
             @recorded="onVoiceRecorded"
             @warning="ElMessage.warning($event)"
           />
+          <SpeechToTextButton
+            :contact-id="chatStore.currentContact?.userId ?? null"
+            @listening-start="prepareSpeechInput"
+            @transcript="appendSpeech"
+            @warning="ElMessage.warning($event)"
+          />
           <button class="ibtn tap-target" type="button" aria-label="添加附件" @click="fileEl?.click()">＋</button>
           <input ref="fileEl" type="file" multiple hidden @change="onFile" />
           <textarea
@@ -261,6 +267,7 @@ import ContactList from '../components/ContactList.vue'
 import MediaPreview from '../components/MediaPreview.vue'
 import MediaMessageCard from '../components/MediaMessageCard.vue'
 import VoiceRecorderButton from '../components/VoiceRecorderButton.vue'
+import SpeechToTextButton from '../components/SpeechToTextButton.vue'
 import ConnectionNotice from '../components/ConnectionNotice.vue'
 import ConversationMessageState from '../components/ConversationMessageState.vue'
 import MessageStatusIndicator from '../components/MessageStatusIndicator.vue'
@@ -318,7 +325,7 @@ const composer = useChatComposer({
   getReplyTo: () => replyingTo.value,
   onReplySent: clearReply,
 })
-const { drafts, text, grow, addEmoji, send } = composer
+const { drafts, text, grow, addEmoji, appendSpeech, send } = composer
 const attachments = useChatAttachments({
   emojiOpen,
   scroll,
@@ -579,6 +586,11 @@ async function onFile(event: Event) {
   const contactId = chatStore.currentContact?.userId
   if (!contactId || !attachmentIngress.acceptFiles(files)) return
   await mobileHistory.pushOverlay(contactId, 'attachment')
+}
+
+function prepareSpeechInput() {
+  if (emojiOpen.value) closeOverlay('emoji')
+  inputEl.value?.blur()
 }
 
 function prepareVoiceRecording() {
