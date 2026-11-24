@@ -6,7 +6,7 @@ import { forceLogout } from '../auth/session'
 import { useUserStore } from './user'
 import { belongsToConversation, chatPayloadFromMessage, createClientMsgId, createLocalMessage } from '../utils/chatLocal'
 import { getAttachmentRecipientId } from '../utils/attachmentRecipient'
-import { isDocumentVisible, shouldIncrementUnread } from '../utils/chatVisibility'
+import { shouldIncrementUnread } from '../utils/chatVisibility'
 import { chatUploadQueue } from '../utils/uploadQueue'
 
 const CONVERSATION_CACHE_LIMIT = 5
@@ -153,12 +153,15 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       const { messages: latest, hasMore: more, nextCursor } = res.data.data
-      const hadCachedMessages = messages.value.length > 0
+      const cachedIds = new Set(messages.value.filter(message => message.id > 0).map(message => message.id))
+      // A stale cache and a fresh page may be disjoint after a long disconnect.
+      // Start a new contiguous window rather than retaining a hidden history gap.
+      const overlaps = latest.some(message => cachedIds.has(message.id))
       confirmServerMessagesFromHistory(latest)
-      messages.value = mergeLatestMessages(messages.value, latest)
+      messages.value = overlaps ? mergeLatestMessages(messages.value, latest) : latest
       restorePendingLocalMessagesForCurrentContact()
 
-      if (!hadCachedMessages) {
+      if (!overlaps) {
         hasMore.value = more
         messageCursor.value = nextCursor || (
           latest.length > 0 ? String(new Date(latest[0].createdAt).getTime()) : ''
@@ -207,9 +210,6 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     if (restoreConversationFromCache(targetId)) {
-      if (currentContact.value?.userId === targetId && isDocumentVisible()) {
-        sendWsMessage({ type: 'read', data: { targetId } })
-      }
       void refreshCachedConversation(targetId, refreshSeq)
       return
     }
@@ -219,11 +219,7 @@ export const useChatStore = defineStore('chat', () => {
     messageCursor.value = ''
     messageLoadState.value = 'idle'
     messageLoadError.value = ''
-    const loaded = await loadMessages('init')
-    // 发送已读请求，让后端标记已读；隐藏标签页不能仅因选中会话就标已读
-    if (loaded && currentContact.value?.userId === targetId && isDocumentVisible()) {
-      sendWsMessage({ type: 'read', data: { targetId } })
-    }
+    await loadMessages('init')
   }
 
   async function loadMessages(mode: 'init' | 'loadMore' = 'init', pageSize = 20) {
@@ -481,15 +477,11 @@ export const useChatStore = defineStore('chat', () => {
     setConversationCache(targetId, cached)
   }
 
-  function markCachedConversationRead(readerId: number, currentUserId: number) {
-    const cached = conversationCache.get(readerId)
-    if (!cached) return
-
-    for (let i = cached.messages.length - 1; i >= 0; i--) {
-      const message = cached.messages[i]
-      if (message.senderId !== currentUserId) continue
-      if (message.isRead === 1) break
-      message.isRead = 1
+  function applyReadReceipt(targetMessages: Message[], readerId: number, targetId: number, ids: Set<number>) {
+    for (const message of targetMessages) {
+      if (message.senderId === targetId && message.receiverId === readerId && ids.has(message.id)) {
+        message.isRead = 1
+      }
     }
   }
 
@@ -761,6 +753,10 @@ export const useChatStore = defineStore('chat', () => {
           sentClientMsgTimes.delete(msg.clientMsgId)
         }
         const contactId = msg.senderId === userStore.userId ? msg.receiverId : msg.senderId
+        const knownMessages = currentContact.value?.userId === contactId
+          ? messages.value
+          : conversationCache.get(contactId)?.messages
+        const alreadyKnown = knownMessages?.some(message => message.id === msg.id) ?? false
         if (currentContact.value && belongsToConversation(msg, userStore.userId, currentContact.value.userId)) {
           appendOrReplaceMessage(msg)
           saveCurrentConversationToCache()
@@ -772,33 +768,30 @@ export const useChatStore = defineStore('chat', () => {
         if (contact) {
           contact.lastMessage = messagePreview(msg)
           contact.lastMessageTime = msg.createdAt
-          if (shouldIncrementUnread({
-            senderId: msg.senderId,
-            currentUserId: userStore.userId,
-            contactId,
-            currentContactId: currentContact.value?.userId ?? null,
-            documentVisible: isDocumentVisible(),
-          })) {
+          if (!alreadyKnown && msg.isRead !== 1 && shouldIncrementUnread(msg.senderId, userStore.userId)) {
             contact.unreadCount++
+            if (currentContact.value?.userId === contactId) currentContact.value.unreadCount = contact.unreadCount
           }
         }
         break
       }
-      case 'read': {
-        const readerId = data.data.readerId
-        if (currentContact.value && readerId === currentContact.value.userId) {
-          for (let i = messages.value.length - 1; i >= 0; i--) {
-            const m = messages.value[i]
-            if (m.senderId === userStore.userId) {
-              if (m.isRead === 1) break
-              m.isRead = 1
-            }
-          }
-          currentContact.value.unreadCount = 0
+      case 'read_visible': {
+        const { readerId, targetId, messageIds, unreadCount } = data.data
+        if (!Array.isArray(messageIds) || (readerId !== userStore.userId && targetId !== userStore.userId)) break
+        const peerId = readerId === userStore.userId ? targetId : readerId
+        const ids = new Set(messageIds)
+        if (currentContact.value?.userId === peerId) {
+          applyReadReceipt(messages.value, readerId, targetId, ids)
         }
-        markCachedConversationRead(readerId, userStore.userId)
-        const readerContact = contacts.value.find(c => c.userId === readerId)
-        if (readerContact) readerContact.unreadCount = 0
+        const cached = conversationCache.get(peerId)
+        if (cached) applyReadReceipt(cached.messages, readerId, targetId, ids)
+        // A receipt from the peer confirms our outgoing messages, not our
+        // incoming unread count. Only the reader's acknowledgement may set it.
+        if (readerId === userStore.userId && typeof unreadCount === 'number') {
+          const contact = contacts.value.find(item => item.userId === peerId)
+          if (contact) contact.unreadCount = unreadCount
+          if (currentContact.value?.userId === peerId) currentContact.value.unreadCount = unreadCount
+        }
         break
       }
       case 'online': {

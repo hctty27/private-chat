@@ -169,7 +169,7 @@ jobs:
             -e POSTGRES_SSLMODE=disable \
             "$POSTGRES_CONTAINER_ID" \
             /tmp/private-chat-app.test \
-            -test.run 'TestSaveMessage(Idempotency|WithReply)' \
+            -test.run 'Test(SaveMessage(Idempotency|WithReply)|GetMessagesContiguous|MarkVisibleMessagesRead)' \
             -test.count=1
       - name: Re-run managed migrations idempotently
         run: ./private-chat-backend migrate
@@ -288,6 +288,8 @@ jobs:
             src/composables/useChatScroll.chat-mode.test.ts \
             src/config/elementPlusImports.test.ts \
             src/config/dependencyHygiene.test.ts \
+            src/config/nginx.test.ts \
+            src/utils/chatVisibility.test.ts \
             src/components/MessageStatusIndicator.test.ts \
             src/utils/messageReply.test.ts \
             src/composables/useWebRtcCall.test.ts \

@@ -207,81 +207,40 @@ func (a *App) messagesHandler(c *gin.Context) {
 }
 
 func (a *App) getMessages(ctx context.Context, userID, targetID int64, cursorStr string, size int, mode string) (model.MessagePageDTO, error) {
-	_ = ctx
 	convID := conversationID(userID, targetID)
+	query := a.db.WithContext(ctx).Where("conversation_id = ?", convID)
 
 	if mode == "loadMore" && cursorStr != "" {
 		cursor, err := parseMessageCursor(cursorStr, a.loc)
 		if err != nil {
 			return model.MessagePageDTO{}, err
 		}
-
-		query := a.db.Where("conversation_id = ?", convID)
 		if cursor.HasID {
 			query = query.Where("(created_at, id) < (?, ?)", cursor.CreatedAt, cursor.ID)
 		} else {
 			// Compatibility with clients that still send the legacy millisecond timestamp cursor.
 			query = query.Where("created_at < ?", cursor.CreatedAt)
 		}
-
-		var messages []model.Message
-		if err := query.
-			Preload("ReplyTo").
-			Order("created_at desc, id desc").
-			Limit(size + 1).
-			Find(&messages).Error; err != nil {
-			return model.MessagePageDTO{}, err
-		}
-		hasMore := len(messages) > size
-		if hasMore {
-			messages = messages[:size]
-		}
-		reverseMessages(messages)
-		return model.MessagePageDTO{
-			Messages:   toMessageDTOs(messages, a.loc),
-			HasMore:    hasMore,
-			NextCursor: nextMessageCursor(messages),
-		}, nil
 	}
 
-	var latest []model.Message
-	if err := a.db.Where("conversation_id = ?", convID).
-		Preload("ReplyTo").
+	// A history page must be contiguous. Mixing the oldest unread messages into
+	// the latest page moves the next cursor past the unseen middle of the history.
+	var messages []model.Message
+	if err := query.Preload("ReplyTo").
 		Order("created_at desc, id desc").
 		Limit(size + 1).
-		Find(&latest).Error; err != nil {
+		Find(&messages).Error; err != nil {
 		return model.MessagePageDTO{}, err
 	}
-	hasMore := len(latest) > size
+	hasMore := len(messages) > size
 	if hasMore {
-		latest = latest[:size]
+		messages = messages[:size]
 	}
-
-	var unread []model.Message
-	if err := a.db.Where("conversation_id = ? AND receiver_id = ? AND is_read = 0", convID, userID).
-		Preload("ReplyTo").
-		Order("created_at asc, id asc").
-		Limit(size).
-		Find(&unread).Error; err != nil {
-		return model.MessagePageDTO{}, err
-	}
-
-	seen := make(map[int64]struct{}, len(latest))
-	merged := make([]model.Message, 0, len(latest)+len(unread))
-	for _, msg := range latest {
-		seen[msg.ID] = struct{}{}
-		merged = append(merged, msg)
-	}
-	for _, msg := range unread {
-		if _, ok := seen[msg.ID]; !ok {
-			merged = append(merged, msg)
-		}
-	}
-	sortMessages(merged)
+	reverseMessages(messages)
 	return model.MessagePageDTO{
-		Messages:   toMessageDTOs(merged, a.loc),
+		Messages:   toMessageDTOs(messages, a.loc),
 		HasMore:    hasMore,
-		NextCursor: nextMessageCursor(merged),
+		NextCursor: nextMessageCursor(messages),
 	}, nil
 }
 

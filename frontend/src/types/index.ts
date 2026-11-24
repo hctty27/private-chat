@@ -110,8 +110,8 @@ export interface WsChatMessage {
 }
 
 export interface WsReadMessage {
-  type: 'read'
-  data: { readerId: number; conversationId: string }
+  type: 'read_visible'
+  data: { readerId: number; targetId: number; conversationId: string; messageIds: number[]; unreadCount?: number }
 }
 
 export interface WsOnlineMessage {
@@ -162,8 +162,8 @@ export interface WsClientHeartbeat {
 }
 
 export interface WsClientRead {
-  type: 'read'
-  data: { targetId: number }
+  type: 'read_visible'
+  data: { targetId: number; messageIds: number[] }
 }
 
 export type WsClientMessage = WsClientChat | WsClientHeartbeat | WsClientRead | WsCallClientMessage

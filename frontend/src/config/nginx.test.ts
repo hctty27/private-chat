@@ -14,7 +14,7 @@ describe('frontend nginx production policy', () => {
     expect(nginxSource).toContain('X-Content-Type-Options "nosniff"')
     expect(nginxSource).toContain('Referrer-Policy "strict-origin-when-cross-origin"')
     expect(nginxSource).toContain('X-Frame-Options "DENY"')
-    expect(nginxSource).toContain('Permissions-Policy "camera=(), microphone=(), geolocation=()"')
+    expect(nginxSource).toContain('Permissions-Policy "camera=(), microphone=(self), geolocation=()"')
   })
 
   it('allows the existing R2 media/upload and websocket paths without opening scripts', () => {

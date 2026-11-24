@@ -1,4 +1,4 @@
-import { ref, nextTick, onUnmounted, type Ref } from 'vue'
+import { ref, nextTick, onUnmounted, watch, type Ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { isDocumentVisible } from '../utils/chatVisibility'
 
@@ -268,42 +268,32 @@ export function useChatScroll(
   let readCheckTimer: ReturnType<typeof setTimeout> | null = null
 
   function checkVisibleUnread() {
-    if (!isDocumentVisible() || !chatStore.currentContact || !listEl.value) return
+    const contact = chatStore.currentContact
+    if (!isDocumentVisible() || !contact || !listEl.value) return
+    const isUnreadIncoming = (message: (typeof chatStore.messages)[number]) =>
+      message.id > 0 && message.senderId === contact.userId &&
+      message.receiverId === uid.value && message.isRead !== 1
 
     if (messageObserver) {
-      for (let i = chatStore.messages.length - 1; i >= 0; i--) {
-        const msg = chatStore.messages[i]
-        if (
-          visibleMessageIds.has(msg.id) &&
-          msg.senderId !== uid.value &&
-          msg.isRead !== 1
-        ) {
-          sendReadReceipt()
-          return
-        }
-      }
+      const ids = chatStore.messages
+        .filter(message => visibleMessageIds.has(message.id) && isUnreadIncoming(message))
+        .map(message => message.id)
+      sendReadReceipt(ids)
       return
     }
 
     const containerRect = listEl.value.getBoundingClientRect()
-    const items = Array.from(
-      listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
-    )
-
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i]
+    const items = listEl.value.querySelectorAll<HTMLElement>('.message-item[data-index]')
+    const ids: number[] = []
+    for (const item of items) {
       const index = Number(item.dataset.index)
       if (!Number.isInteger(index)) continue
-
       const rect = item.getBoundingClientRect()
       if (rect.bottom <= containerRect.top || rect.top >= containerRect.bottom) continue
-
-      const msg = chatStore.messages[index]
-      if (msg && msg.senderId !== uid.value && msg.isRead !== 1) {
-        sendReadReceipt()
-        return
-      }
+      const message = chatStore.messages[index]
+      if (message && isUnreadIncoming(message)) ids.push(message.id)
     }
+    sendReadReceipt(ids)
   }
 
   function scheduleReadCheck() {
@@ -311,11 +301,19 @@ export function useChatScroll(
     readCheckTimer = setTimeout(checkVisibleUnread, 300)
   }
 
-  function sendReadReceipt() {
-    if (!chatStore.currentContact || !isDocumentVisible()) return
-    chatStore.sendWsMessage({ type: 'read', data: { targetId: chatStore.currentContact.userId } })
-    chatStore.currentContact.unreadCount = 0
+  function sendReadReceipt(messageIds: number[]) {
+    const targetId = chatStore.currentContact?.userId
+    if (!targetId || !isDocumentVisible()) return
+    for (let offset = 0; offset < messageIds.length; offset += 100) {
+      chatStore.sendWsMessage({ type: 'read_visible', data: { targetId, messageIds: messageIds.slice(offset, offset + 100) } })
+    }
   }
+
+  // If a visible receipt was lost while disconnected, send it again after
+  // reconnect. The server acknowledges matching IDs idempotently.
+  watch(() => chatStore.wsConnected, connected => {
+    if (connected) scheduleReadCheck()
+  })
 
   function onVisibilityChange() {
     if (isDocumentVisible()) scheduleReadCheck()
@@ -352,8 +350,10 @@ export function useChatScroll(
 
     prevMsgCount = currentMsgCount
     updateBottomButton()
-    nextTick(syncMessageObserver)
-    if (!messageObserver) scheduleReadCheck()
+    nextTick(() => {
+      syncMessageObserver()
+      scheduleReadCheck()
+    })
   }
 
   function onListReady(el: HTMLElement | null) {
