@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"privatechat/internal/model"
@@ -138,7 +139,7 @@ func (s *Session) readLoop() {
 			if err := s.app.handleWsChat(s.userID, data); err != nil {
 				log.Printf("handle chat failed for user %d: %v", s.userID, err)
 			}
-		case "read":
+		case "read_visible":
 			if err := s.app.handleWsRead(s.userID, data); err != nil {
 				log.Printf("handle read failed for user %d: %v", s.userID, err)
 			}
@@ -345,25 +346,65 @@ func (a *App) handleWsChat(senderID int64, data map[string]any) error {
 	return nil
 }
 
+const maxReadReceiptIDs = 100
+
+func parseReadMessageIDs(value any) ([]int64, error) {
+	raw, ok := value.([]any)
+	if !ok || len(raw) == 0 || len(raw) > maxReadReceiptIDs {
+		return nil, fmt.Errorf("invalid read messageIds")
+	}
+	ids := make([]int64, 0, len(raw))
+	seen := make(map[int64]struct{}, len(raw))
+	for _, item := range raw {
+		n, ok := item.(float64)
+		if !ok || n < 1 || n > 9007199254740991 || n != float64(int64(n)) {
+			return nil, fmt.Errorf("invalid read message id")
+		}
+		id := int64(n)
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
 func (a *App) handleWsRead(userID int64, data map[string]any) error {
 	targetID := toInt64(data["targetId"])
 	if targetID <= 0 {
 		return fmt.Errorf("invalid read target")
 	}
-	if err := a.requireContact(context.Background(), userID, targetID); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := a.requireContact(ctx, userID, targetID); err != nil {
 		return err
 	}
-	if err := a.markAsRead(userID, targetID); err != nil {
-		return fmt.Errorf("mark as read: %w", err)
+	ids, err := parseReadMessageIDs(data["messageIds"])
+	if err != nil {
+		return err
+	}
+	readIDs, unreadCount, err := a.markVisibleMessagesRead(ctx, userID, targetID, ids)
+	if err != nil {
+		return fmt.Errorf("mark visible messages as read: %w", err)
 	}
 
-	a.sendToUser(targetID, gin.H{
-		"type": "read",
-		"data": gin.H{
-			"readerId":       userID,
-			"conversationId": conversationID(userID, targetID),
-		},
-	})
+	payload := gin.H{
+		"readerId":       userID,
+		"targetId":       targetID,
+		"conversationId": conversationID(userID, targetID),
+		"messageIds":     readIDs,
+	}
+	a.sendToUser(targetID, gin.H{"type": "read_visible", "data": payload})
+	// The reader (including other tabs) also needs confirmation of the exact IDs
+	// and the authoritative unread count for this conversation.
+	readerPayload := gin.H{
+		"readerId":       userID,
+		"targetId":       targetID,
+		"conversationId": conversationID(userID, targetID),
+		"messageIds":     readIDs,
+		"unreadCount":    unreadCount,
+	}
+	a.sendToUser(userID, gin.H{"type": "read_visible", "data": readerPayload})
 	return nil
 }
 
@@ -466,10 +507,24 @@ func (a *App) saveMessageWithReply(
 	return toMessageDTO(existing, a.loc), nil
 }
 
-func (a *App) markAsRead(userID, targetID int64) error {
-	return a.db.Model(&model.Message{}).
-		Where("conversation_id = ? AND receiver_id = ? AND sender_id = ? AND is_read = 0", conversationID(userID, targetID), userID, targetID).
-		Update("is_read", 1).Error
+func (a *App) markVisibleMessagesRead(ctx context.Context, userID, targetID int64, ids []int64) ([]int64, int64, error) {
+	readIDs := make([]int64, 0, len(ids))
+	var unreadCount int64
+	convID := conversationID(userID, targetID)
+	err := a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Return matching IDs even if already read, so a retry after a lost
+		// acknowledgement is safe. Never touch another conversation or direction.
+		if err := tx.Raw(
+			"UPDATE t_message SET is_read = 1 WHERE conversation_id = ? AND receiver_id = ? AND sender_id = ? AND id IN ? RETURNING id",
+			convID, userID, targetID, ids,
+		).Scan(&readIDs).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Message{}).
+			Where("conversation_id = ? AND receiver_id = ? AND sender_id = ? AND is_read = 0", convID, userID, targetID).
+			Count(&unreadCount).Error
+	})
+	return readIDs, unreadCount, err
 }
 
 func (a *App) isOnline(ctx context.Context, userID int64) bool {

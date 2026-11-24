@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: [self-hosted, linux, x64, cursor]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend

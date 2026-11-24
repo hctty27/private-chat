@@ -299,7 +299,7 @@ HTTP API 和 WebSocket 都只使用浏览器自动携带的 `private_chat_sessio
 **客户端消息类型**
 
 - `chat` - 发送消息；图片/文件/视频消息必须包含已确认的 `fileId`
-- `read` - 标记已读
+- `read_visible` - 按实际可见的消息 ID 标记已读（`targetId`、`messageIds`，单批最多 100 条）
 - `heartbeat` - 心跳保活
 - `call_invite` / `call_accept` / `call_reject` / `call_cancel` / `call_hangup` - 通话生命周期
 - `webrtc_offer` / `webrtc_answer` / `webrtc_ice` - WebRTC SDP/ICE 信令
@@ -307,12 +307,14 @@ HTTP API 和 WebSocket 都只使用浏览器自动携带的 `private_chat_sessio
 **服务端消息类型**
 
 - `chat` - 接收消息
-- `read` - 已读通知
+- `read_visible` - 向双方确认实际已读消息 ID，仅向阅读方返回该会话剩余未读数
 - `online` - 联系人在线状态
 - `heartbeat_ack` - 心跳确认
 - `kicked` - 会话失效或被踢下线
 - `call_ringing` / `call_incoming` / `call_unavailable` / `call_busy` / `call_accepted` / `call_rejected` / `call_cancelled` / `call_timeout` / `call_ended` - 通话状态
 - `webrtc_offer` / `webrtc_answer` / `webrtc_ice` - 转发给通话对端的 WebRTC 信令
+
+历史消息首屏与后续分页均返回连续的消息窗口；打开会话不自动清空未读。旧版整会话 `read` 请求不再处理，部署时请同步更新前后端并刷新旧页面。
 
 WebSocket 默认只允许同源连接。额外跨域来源通过 `WS_ALLOWED_ORIGINS` 配置，多个地址使用逗号分隔。单条 WebSocket 消息最大 64 KiB。
 

@@ -4,13 +4,7 @@ export function isDocumentVisible() {
     document.visibilityState === 'visible'
 }
 
-export function shouldIncrementUnread(options: {
-  senderId: number
-  currentUserId: number
-  contactId: number
-  currentContactId: number | null
-  documentVisible: boolean
-}) {
-  return options.senderId !== options.currentUserId &&
-    (options.currentContactId !== options.contactId || !options.documentVisible)
+// Incoming messages remain unread until a visible-message receipt is acknowledged.
+export function shouldIncrementUnread(senderId: number, currentUserId: number) {
+  return senderId !== currentUserId
 }

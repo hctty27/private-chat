@@ -214,6 +214,9 @@ describe('useChatScroll visibility-aware read receipts', () => {
       receiverId: 99,
       isRead: 0,
     })]
+    // A second unread message exists but is outside the viewport.
+    chatStore.messages.push(createMessage(2, { senderId: 2, receiverId: 99, isRead: 0 }))
+    chatStore.currentContact.unreadCount = 2
     const send = vi.spyOn(chatStore, 'sendWsMessage')
 
     let observerCallback: IntersectionObserverCallback | null = null
@@ -250,8 +253,10 @@ describe('useChatScroll visibility-aware read receipts', () => {
     ], {} as IntersectionObserver)
     await vi.advanceTimersByTimeAsync(350)
 
-    expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
-    expect(chatStore.currentContact.unreadCount).toBe(0)
+    expect(send).toHaveBeenCalledWith({ type: 'read_visible', data: { targetId: 2, messageIds: [1] } })
+    // Unread count changes only on the server's acknowledgement.
+    expect(chatStore.currentContact.unreadCount).toBe(2)
+    expect(chatStore.messages[1].isRead).toBe(0)
 
     wrapper.unmount()
     expect(disconnect).toHaveBeenCalled()
@@ -297,8 +302,9 @@ describe('useChatScroll visibility-aware read receipts', () => {
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(350)
 
-    expect(send).toHaveBeenCalledWith({ type: 'read', data: { targetId: 2 } })
-    expect(chatStore.currentContact.unreadCount).toBe(0)
+    expect(send).toHaveBeenCalledWith({ type: 'read_visible', data: { targetId: 2, messageIds: [1] } })
+    // Unread count changes only on the server's acknowledgement.
+    expect(chatStore.currentContact.unreadCount).toBe(1)
 
     wrapper.unmount()
   })

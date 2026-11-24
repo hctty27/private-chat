@@ -125,6 +125,28 @@ describe('chat websocket observers', () => {
     store.clearState()
   })
 
+  it('applies exact read receipts without clearing unrelated unread messages', () => {
+    const store = useChatStore()
+    store.contacts = [{ ...contact(2, 'Bob'), unreadCount: 2 }]
+    store.currentContact = store.contacts[0]
+    store.messages = [
+      message(1, 2, 99, 'incoming visible'),
+      message(2, 2, 99, 'incoming hidden'),
+      message(3, 99, 2, 'outgoing visible'),
+      message(4, 99, 2, 'outgoing hidden'),
+    ]
+    store.connectWs()
+    const socket = FakeWebSocket.instances[0]
+    const deliver = (data: WsServerMessage) => socket.onmessage?.({ data: JSON.stringify(data) } as MessageEvent)
+    deliver({ type: 'read_visible', data: { readerId: 2, targetId: 99, conversationId: '2_99', messageIds: [3] } })
+    expect(store.messages.map(item => item.isRead)).toEqual([0, 0, 1, 0])
+    expect(store.currentContact?.unreadCount).toBe(2)
+    deliver({ type: 'read_visible', data: { readerId: 99, targetId: 2, conversationId: '2_99', messageIds: [1], unreadCount: 1 } })
+    expect(store.messages.map(item => item.isRead)).toEqual([1, 0, 1, 0])
+    expect(store.currentContact?.unreadCount).toBe(1)
+    store.clearState()
+  })
+
   it('notifies observers about call events without owning call state', () => {
     const store = useChatStore()
     const seen: WsServerMessage[] = []

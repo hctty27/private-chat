@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   backend:
-    runs-on: [self-hosted, linux, x64, cursor]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
@@ -41,7 +41,7 @@ jobs:
         run: go vet ./...
 
   migrations:
-    runs-on: [self-hosted, linux, x64, cursor]
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
@@ -169,7 +169,7 @@ jobs:
             -e POSTGRES_SSLMODE=disable \
             "$POSTGRES_CONTAINER_ID" \
             /tmp/private-chat-app.test \
-            -test.run 'TestSaveMessage(Idempotency|WithReply)' \
+            -test.run 'Test(SaveMessage(Idempotency|WithReply)|GetMessagesContiguous|MarkVisibleMessagesRead)' \
             -test.count=1
       - name: Re-run managed migrations idempotently
         run: ./private-chat-backend migrate
@@ -223,7 +223,7 @@ jobs:
         run: psql -h 127.0.0.1 -U postgres -d private_chat -v ON_ERROR_STOP=1 -f migrations/test_file_security_down_assertions.sql
 
   compose:
-    runs-on: [self-hosted, linux, x64, cursor]
+    runs-on: ubuntu-latest
     env:
       POSTGRES_HOST: postgres.example
       POSTGRES_USER: postgres
@@ -248,7 +248,7 @@ jobs:
           docker compose --profile voice config --quiet
 
   frontend:
-    runs-on: [self-hosted, linux, x64, cursor]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
@@ -288,6 +288,8 @@ jobs:
             src/composables/useChatScroll.chat-mode.test.ts \
             src/config/elementPlusImports.test.ts \
             src/config/dependencyHygiene.test.ts \
+            src/config/nginx.test.ts \
+            src/utils/chatVisibility.test.ts \
             src/components/MessageStatusIndicator.test.ts \
             src/utils/messageReply.test.ts \
             src/composables/useWebRtcCall.test.ts \
